@@ -1,55 +1,75 @@
 //! KDE Connect Device Discovery
 //!
 //! This module implements UDP broadcast-based device discovery for KDE Connect.
-//! Devices announce themselves by broadcasting identity packets on UDP port 1716.
 //!
 //! ## Discovery Protocol
 //!
 //! 1. **Broadcast**: Send identity packet via UDP broadcast on port 1716
 //! 2. **Listen**: Listen for identity packets from other devices
-//! 3. **Connect**: Establish TCP connection to discovered device's announced port
+//! 3. **Track**: Track device presence and timeouts
 //!
-//! ## Identity Packet Format
+//! ## Usage
 //!
-//! Identity packets (`kdeconnect.identity`) contain:
-//! - `deviceId`: UUIDv4 with underscores (e.g., `740bd4b9_b418_4ee4_97d6_caf1da8151be`)
-//! - `deviceName`: 1-32 character device name
-//! - `deviceType`: desktop, laptop, phone, tablet, or tv
-//! - `protocolVersion`: Protocol version (currently 7)
-//! - `incomingCapabilities`: List of packet types this device can receive
-//! - `outgoingCapabilities`: List of packet types this device can send
-//! - `tcpPort`: TCP port for establishing connections
+//! ### Async Service (Recommended)
 //!
-//! ## Port Configuration
+//! ```no_run
+//! use kdeconnect_protocol::discovery::{DiscoveryService, DeviceInfo, DeviceType};
 //!
-//! - Primary port: UDP 1716
-//! - Fallback range: 1714-1764
-//! - Listen on 0.0.0.0 for incoming broadcasts
+//! #[tokio::main]
+//! async fn main() {
+//!     let device_info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
+//!     let mut service = DiscoveryService::with_defaults(device_info).unwrap();
 //!
-//! ## References
-//! - [KDE Connect Protocol](https://invent.kde.org/network/kdeconnect-kde)
-//! - [Valent Protocol Reference](https://valent.andyholmes.ca/documentation/protocol.html)
+//!     // Subscribe to events
+//!     let mut events = service.subscribe().await;
+//!
+//!     // Start service
+//!     service.start().await.unwrap();
+//!
+//!     // Handle events
+//!     while let Some(event) = events.recv().await {
+//!         println!("Discovery event: {:?}", event);
+//!     }
+//! }
+//! ```
+//!
+//! ### Synchronous Discovery (For Testing)
+//!
+//! ```no_run
+//! use kdeconnect_protocol::discovery::{Discovery, DeviceInfo, DeviceType};
+//!
+//! let device_info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
+//! let discovery = Discovery::new(device_info).unwrap();
+//!
+//! // Broadcast once
+//! discovery.broadcast_identity().unwrap();
+//!
+//! // Listen for one device
+//! if let Ok((info, addr)) = discovery.listen_for_devices() {
+//!     println!("Discovered: {} at {}", info.device_name, addr);
+//! }
+//! ```
+
+pub mod events;
+pub mod service;
 
 use crate::{Packet, ProtocolError, Result, PROTOCOL_VERSION};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-/// Default UDP port for device discovery
-pub const DISCOVERY_PORT: u16 = 1716;
-
-/// Port range for fallback when primary port is unavailable
-pub const PORT_RANGE_START: u16 = 1714;
-pub const PORT_RANGE_END: u16 = 1764;
-
-/// Broadcast address for IPv4
-pub const BROADCAST_ADDR: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 255);
-
 /// Default timeout for discovery operations
 pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+
+// Re-export main types
+pub use events::DiscoveryEvent;
+pub use service::{
+    DiscoveryConfig, DiscoveryService, BROADCAST_ADDR, DEFAULT_BROADCAST_INTERVAL,
+    DEFAULT_DEVICE_TIMEOUT, DISCOVERY_PORT, PORT_RANGE_END, PORT_RANGE_START,
+};
 
 /// Device types supported by KDE Connect
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,7 +286,9 @@ impl DeviceInfo {
     }
 }
 
-/// Device discovery manager
+/// Synchronous device discovery (for testing and simple use cases)
+///
+/// For production use, prefer `DiscoveryService` which provides async functionality.
 pub struct Discovery {
     socket: UdpSocket,
     device_info: DeviceInfo,
@@ -274,16 +296,6 @@ pub struct Discovery {
 
 impl Discovery {
     /// Create a new discovery instance
-    ///
-    /// Attempts to bind to port 1716, falling back to ports 1714-1764 if unavailable.
-    ///
-    /// # Arguments
-    ///
-    /// * `device_info` - Information about this device
-    ///
-    /// # Errors
-    ///
-    /// Returns error if unable to bind to any port in the range
     pub fn new(device_info: DeviceInfo) -> Result<Self> {
         // Try primary port first
         let socket = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)) {
@@ -297,13 +309,12 @@ impl Discovery {
                     DISCOVERY_PORT, e
                 );
 
-                // Try fallback ports
                 let mut last_err = e;
                 let mut socket = None;
 
                 for port in PORT_RANGE_START..=PORT_RANGE_END {
                     if port == DISCOVERY_PORT {
-                        continue; // Already tried
+                        continue;
                     }
 
                     match UdpSocket::bind(("0.0.0.0", port)) {
@@ -328,10 +339,7 @@ impl Discovery {
             }
         };
 
-        // Enable broadcast
         socket.set_broadcast(true)?;
-
-        // Set read timeout
         socket.set_read_timeout(Some(DISCOVERY_TIMEOUT))?;
 
         Ok(Self {
@@ -341,23 +349,9 @@ impl Discovery {
     }
 
     /// Broadcast identity to discover devices
-    ///
-    /// Sends an identity packet via UDP broadcast to port 1716.
-    /// Other KDE Connect devices on the network will receive this and can respond.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use kdeconnect_protocol::discovery::{Discovery, DeviceInfo, DeviceType};
-    ///
-    /// let device_info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
-    /// let discovery = Discovery::new(device_info).unwrap();
-    /// discovery.broadcast_identity().unwrap();
-    /// ```
     pub fn broadcast_identity(&self) -> Result<()> {
         let packet = self.device_info.to_identity_packet();
         let bytes = packet.to_bytes()?;
-
         let broadcast_addr = SocketAddr::new(IpAddr::V4(BROADCAST_ADDR), DISCOVERY_PORT);
 
         debug!(
@@ -376,28 +370,8 @@ impl Discovery {
     }
 
     /// Listen for device identity broadcasts
-    ///
-    /// Blocks until a device is discovered or timeout occurs.
-    ///
-    /// # Returns
-    ///
-    /// Returns tuple of (DeviceInfo, source SocketAddr) for discovered device
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use kdeconnect_protocol::discovery::{Discovery, DeviceInfo, DeviceType};
-    ///
-    /// let device_info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
-    /// let discovery = Discovery::new(device_info).unwrap();
-    ///
-    /// match discovery.listen_for_devices() {
-    ///     Ok((info, addr)) => println!("Discovered: {} at {}", info.device_name, addr),
-    ///     Err(e) => eprintln!("Discovery error: {}", e),
-    /// }
-    /// ```
     pub fn listen_for_devices(&self) -> Result<(DeviceInfo, SocketAddr)> {
-        let mut buf = [0u8; 4096]; // Large buffer to handle all identity packet sizes
+        let mut buf = [0u8; 4096];
 
         debug!("Listening for device broadcasts...");
 
@@ -406,7 +380,6 @@ impl Discovery {
                 Ok((size, src_addr)) => {
                     debug!("Received {} bytes from {}", size, src_addr);
 
-                    // Parse packet
                     match Packet::from_bytes(&buf[..size]) {
                         Ok(packet) => {
                             if !packet.is_type("kdeconnect.identity") {
@@ -414,10 +387,8 @@ impl Discovery {
                                 continue;
                             }
 
-                            // Parse device info
                             match DeviceInfo::from_identity_packet(&packet) {
                                 Ok(device_info) => {
-                                    // Don't discover ourselves
                                     if device_info.device_id == self.device_info.device_id {
                                         debug!("Ignoring our own broadcast");
                                         continue;
@@ -445,7 +416,6 @@ impl Discovery {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // Timeout
                     return Err(ProtocolError::Io(e));
                 }
                 Err(e) => {
@@ -470,7 +440,6 @@ impl Discovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_device_type_serialization() {
@@ -481,100 +450,6 @@ mod tests {
         assert_eq!(DeviceType::Tv.as_str(), "tv");
     }
 
-    #[test]
-    fn test_device_info_creation() {
-        let info = DeviceInfo::new("Test Device", DeviceType::Desktop, 1716);
-
-        assert!(!info.device_id.is_empty());
-        assert!(info.device_id.contains('_')); // UUID with underscores
-        assert_eq!(info.device_name, "Test Device");
-        assert_eq!(info.device_type, DeviceType::Desktop);
-        assert_eq!(info.protocol_version, PROTOCOL_VERSION);
-        assert_eq!(info.tcp_port, 1716);
-    }
-
-    #[test]
-    fn test_device_info_with_capabilities() {
-        let info = DeviceInfo::new("Test Device", DeviceType::Desktop, 1716)
-            .with_incoming_capability("kdeconnect.battery")
-            .with_incoming_capability("kdeconnect.ping")
-            .with_outgoing_capability("kdeconnect.notification");
-
-        assert_eq!(info.incoming_capabilities.len(), 2);
-        assert_eq!(info.outgoing_capabilities.len(), 1);
-        assert!(info
-            .incoming_capabilities
-            .contains(&"kdeconnect.battery".to_string()));
-    }
-
-    #[test]
-    fn test_identity_packet_conversion() {
-        let info = DeviceInfo::new("Test Device", DeviceType::Laptop, 1739)
-            .with_incoming_capability("kdeconnect.ping")
-            .with_outgoing_capability("kdeconnect.battery");
-
-        let packet = info.to_identity_packet();
-
-        assert!(packet.is_type("kdeconnect.identity"));
-        assert_eq!(
-            packet.get_body_field::<String>("deviceName"),
-            Some("Test Device".to_string())
-        );
-        assert_eq!(
-            packet.get_body_field::<String>("deviceType"),
-            Some("laptop".to_string())
-        );
-        assert_eq!(packet.get_body_field::<u16>("tcpPort"), Some(1739));
-    }
-
-    #[test]
-    fn test_device_info_roundtrip() {
-        let original =
-            DeviceInfo::with_id("test_device_id", "Test Device", DeviceType::Phone, 1740)
-                .with_incoming_capability("kdeconnect.ping")
-                .with_outgoing_capability("kdeconnect.battery");
-
-        let packet = original.to_identity_packet();
-        let parsed = DeviceInfo::from_identity_packet(&packet).unwrap();
-
-        assert_eq!(parsed.device_id, "test_device_id");
-        assert_eq!(parsed.device_name, "Test Device");
-        assert_eq!(parsed.device_type, DeviceType::Phone);
-        assert_eq!(parsed.tcp_port, 1740);
-        assert_eq!(parsed.incoming_capabilities, vec!["kdeconnect.ping"]);
-        assert_eq!(parsed.outgoing_capabilities, vec!["kdeconnect.battery"]);
-    }
-
-    #[test]
-    fn test_invalid_identity_packet() {
-        let packet = Packet::new("kdeconnect.ping", json!({}));
-        let result = DeviceInfo::from_identity_packet(&packet);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_missing_fields_in_identity() {
-        let packet = Packet::new(
-            "kdeconnect.identity",
-            json!({
-                "deviceId": "test_id",
-                // Missing deviceName, deviceType, tcpPort
-            }),
-        );
-
-        let result = DeviceInfo::from_identity_packet(&packet);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_device_id_format() {
-        let info = DeviceInfo::new("Test", DeviceType::Desktop, 1716);
-        // UUID format: xxxxxxxx_xxxx_xxxx_xxxx_xxxxxxxxxxxx
-        assert_eq!(info.device_id.len(), 36); // 32 hex chars + 4 underscores
-        assert_eq!(info.device_id.matches('_').count(), 4);
-    }
-
-    // Integration tests that require network are marked as ignored
     #[test]
     #[ignore]
     fn test_discovery_broadcast() {

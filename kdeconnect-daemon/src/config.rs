@@ -55,6 +55,10 @@ pub struct NetworkConfig {
     /// Discovery broadcast interval in seconds
     #[serde(default = "default_discovery_interval")]
     pub discovery_interval: u64,
+
+    /// Device timeout in seconds (how long before a device is considered offline)
+    #[serde(default = "default_device_timeout")]
+    pub device_timeout: u64,
 }
 
 /// Plugin configuration
@@ -114,6 +118,10 @@ fn default_discovery_interval() -> u64 {
     5
 }
 
+fn default_device_timeout() -> u64 {
+    30
+}
+
 fn default_true() -> bool {
     true
 }
@@ -125,6 +133,7 @@ impl Default for NetworkConfig {
             transfer_port_start: default_transfer_port_start(),
             transfer_port_end: default_transfer_port_end(),
             discovery_interval: default_discovery_interval(),
+            device_timeout: default_device_timeout(),
         }
     }
 }
@@ -227,6 +236,11 @@ impl Config {
     /// Get the private key path for this device
     pub fn private_key_path(&self) -> PathBuf {
         self.paths.cert_dir.join("device.key")
+    }
+
+    /// Get the device registry path
+    pub fn device_registry_path(&self) -> PathBuf {
+        self.paths.data_dir.join("devices.json")
     }
 }
 

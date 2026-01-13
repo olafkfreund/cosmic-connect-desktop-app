@@ -2,15 +2,17 @@ mod config;
 
 use anyhow::{Context, Result};
 use kdeconnect_protocol::{
+    discovery::{DiscoveryConfig, DiscoveryEvent, DiscoveryService},
     plugins::{
         battery::BatteryPlugin, clipboard::ClipboardPlugin, mpris::MprisPlugin,
         notification::NotificationPlugin, ping::PingPlugin, share::SharePlugin, PluginManager,
     },
-    CertificateInfo, Device, DeviceInfo, DeviceType,
+    CertificateInfo, Device, DeviceInfo, DeviceManager, DeviceType,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use config::Config;
 
@@ -28,6 +30,12 @@ struct Daemon {
 
     /// Plugin manager
     plugin_manager: Arc<RwLock<PluginManager>>,
+
+    /// Device manager (tracks discovered/paired devices)
+    device_manager: Arc<RwLock<DeviceManager>>,
+
+    /// Discovery service
+    discovery_service: Option<DiscoveryService>,
 }
 
 impl Daemon {
@@ -71,11 +79,19 @@ impl Daemon {
         // Create plugin manager
         let plugin_manager = Arc::new(RwLock::new(PluginManager::new()));
 
+        // Create device manager
+        let device_manager = Arc::new(RwLock::new(
+            DeviceManager::new(config.device_registry_path())
+                .context("Failed to create device manager")?,
+        ));
+
         Ok(Self {
             config,
             certificate,
             device_info,
             plugin_manager,
+            device_manager,
+            discovery_service: None,
         })
     }
 
@@ -177,6 +193,110 @@ impl Daemon {
         Ok(())
     }
 
+    /// Start discovery service
+    async fn start_discovery(&mut self) -> Result<()> {
+        info!("Starting device discovery...");
+
+        // Get capabilities from plugin manager
+        let manager = self.plugin_manager.read().await;
+        let incoming = manager.get_all_incoming_capabilities();
+        let outgoing = manager.get_all_outgoing_capabilities();
+        drop(manager);
+
+        // Create device info with capabilities
+        let mut device_info = self.device_info.clone();
+        device_info.incoming_capabilities = incoming;
+        device_info.outgoing_capabilities = outgoing;
+
+        // Create discovery config
+        let discovery_config = DiscoveryConfig {
+            broadcast_interval: Duration::from_secs(self.config.network.discovery_interval),
+            device_timeout: Duration::from_secs(self.config.network.device_timeout),
+            enable_timeout_check: true,
+        };
+
+        // Create discovery service
+        let mut discovery_service =
+            DiscoveryService::new(device_info, discovery_config).context("Failed to create discovery service")?;
+
+        // Subscribe to discovery events
+        let mut event_rx = discovery_service.subscribe().await;
+
+        // Start discovery service
+        discovery_service
+            .start()
+            .await
+            .context("Failed to start discovery service")?;
+
+        info!(
+            "Discovery service started on port {}",
+            discovery_service.local_port()?
+        );
+
+        // Store discovery service
+        self.discovery_service = Some(discovery_service);
+
+        // Spawn task to handle discovery events
+        let device_manager = self.device_manager.clone();
+        tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                if let Err(e) = Self::handle_discovery_event(event, &device_manager).await {
+                    error!("Error handling discovery event: {}", e);
+                }
+            }
+            info!("Discovery event handler stopped");
+        });
+
+        Ok(())
+    }
+
+    /// Handle a discovery event
+    async fn handle_discovery_event(
+        event: DiscoveryEvent,
+        device_manager: &Arc<RwLock<DeviceManager>>,
+    ) -> Result<()> {
+        match event {
+            DiscoveryEvent::DeviceDiscovered { info, address } => {
+                info!(
+                    "Device discovered: {} ({}) at {}",
+                    info.device_name,
+                    info.device_type.as_str(),
+                    address
+                );
+                let mut manager = device_manager.write().await;
+                manager.update_from_discovery(info);
+                if let Err(e) = manager.save_registry() {
+                    warn!("Failed to save device registry: {}", e);
+                }
+            }
+            DiscoveryEvent::DeviceUpdated { info, address } => {
+                debug!(
+                    "Device updated: {} at {}",
+                    info.device_name, address
+                );
+                let mut manager = device_manager.write().await;
+                manager.update_from_discovery(info);
+            }
+            DiscoveryEvent::DeviceTimeout { device_id } => {
+                info!("Device timed out: {}", device_id);
+                let mut manager = device_manager.write().await;
+                if let Err(e) = manager.mark_disconnected(&device_id) {
+                    debug!("Failed to mark device {} as disconnected: {}", device_id, e);
+                }
+            }
+            DiscoveryEvent::ServiceStarted { port } => {
+                info!("Discovery service started successfully on port {}", port);
+            }
+            DiscoveryEvent::ServiceStopped => {
+                info!("Discovery service stopped");
+            }
+            DiscoveryEvent::Error { message } => {
+                error!("Discovery error: {}", message);
+            }
+        }
+        Ok(())
+    }
+
     /// Run the daemon
     async fn run(&self) -> Result<()> {
         info!("KDE Connect daemon running");
@@ -204,6 +324,13 @@ impl Daemon {
 
         drop(manager);
 
+        // Display device manager status
+        let device_manager = self.device_manager.read().await;
+        info!("Device registry: {} devices loaded", device_manager.device_count());
+        info!("  - Paired devices: {}", device_manager.paired_count());
+        info!("  - Connected devices: {}", device_manager.connected_count());
+        drop(device_manager);
+
         info!("Daemon initialized successfully");
         info!("Press Ctrl+C to stop");
 
@@ -216,8 +343,20 @@ impl Daemon {
     }
 
     /// Shutdown the daemon
-    async fn shutdown(&self) -> Result<()> {
+    async fn shutdown(&mut self) -> Result<()> {
         info!("Shutting down daemon...");
+
+        // Stop discovery service
+        if let Some(mut discovery) = self.discovery_service.take() {
+            discovery.stop().await;
+        }
+
+        // Save device registry
+        let device_manager = self.device_manager.read().await;
+        if let Err(e) = device_manager.save_registry() {
+            error!("Error saving device registry: {}", e);
+        }
+        drop(device_manager);
 
         // Stop all plugins
         let mut manager = self.plugin_manager.write().await;
@@ -251,7 +390,7 @@ async fn main() -> Result<()> {
     info!("Discovery port: {}", config.network.discovery_port);
 
     // Create daemon
-    let daemon = Daemon::new(config)
+    let mut daemon = Daemon::new(config)
         .await
         .context("Failed to create daemon")?;
 
@@ -260,6 +399,12 @@ async fn main() -> Result<()> {
         .initialize_plugins()
         .await
         .context("Failed to initialize plugins")?;
+
+    // Start discovery
+    daemon
+        .start_discovery()
+        .await
+        .context("Failed to start discovery")?;
 
     // Run daemon
     let result = daemon.run().await;

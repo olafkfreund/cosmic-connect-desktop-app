@@ -356,6 +356,17 @@ impl DeviceManager {
         }
     }
 
+    /// Mark device as reachable (update last seen)
+    pub fn mark_reachable(&mut self, device_id: &str) -> Result<()> {
+        let device = self
+            .devices
+            .get_mut(device_id)
+            .ok_or_else(|| ProtocolError::DeviceNotFound(device_id.to_string()))?;
+
+        device.update_last_seen();
+        Ok(())
+    }
+
     /// Mark device as connected
     pub fn mark_connected(&mut self, device_id: &str, host: String, port: u16) -> Result<()> {
         let device = self

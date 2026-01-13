@@ -12,7 +12,10 @@ pub mod transport;
 
 mod error;
 pub use device::{ConnectionState, Device, DeviceManager};
-pub use discovery::{DeviceInfo, DeviceType, Discovery};
+pub use discovery::{
+    DeviceInfo, DeviceType, Discovery, DiscoveryConfig, DiscoveryEvent, DiscoveryService,
+    DISCOVERY_PORT,
+};
 pub use error::{ProtocolError, Result};
 pub use packet::{current_timestamp, Packet};
 pub use pairing::{CertificateInfo, PairingHandler, PairingPacket, PairingStatus};

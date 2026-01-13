@@ -16,6 +16,7 @@ pub use discovery::{DeviceInfo, DeviceType, Discovery};
 pub use error::{ProtocolError, Result};
 pub use packet::{current_timestamp, Packet};
 pub use pairing::{CertificateInfo, PairingHandler, PairingPacket, PairingStatus};
+pub use plugins::{Plugin, PluginManager};
 
 /// Protocol version we implement
 pub const PROTOCOL_VERSION: u32 = 7;

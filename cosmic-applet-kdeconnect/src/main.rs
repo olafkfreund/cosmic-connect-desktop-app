@@ -1,3 +1,5 @@
+mod dbus_client;
+
 use cosmic::iced::widget::{column, container, row, scrollable, text};
 use cosmic::{
     app::{Core, Task},

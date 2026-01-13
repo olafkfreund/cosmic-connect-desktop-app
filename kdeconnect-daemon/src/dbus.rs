@@ -363,8 +363,44 @@ impl KdeConnectInterface {
 
         drop(device_manager);
 
-        // TODO: Implement notification plugin packet sending
-        warn!("DBus: SendNotification not fully implemented yet");
+        // Create notification using NotificationPlugin's helper
+        use kdeconnect_protocol::plugins::notification::Notification;
+        use kdeconnect_protocol::Packet;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Generate a unique notification ID based on timestamp
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .to_string();
+
+        // Create notification with COSMIC Desktop as the app name
+        let notification = Notification::new(
+            timestamp.clone(),
+            "COSMIC Desktop",
+            title,
+            body,
+            true, // is_clearable
+        );
+
+        // Create notification packet
+        let packet_body = serde_json::to_value(&notification).map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to serialize notification: {}", e))
+        })?;
+        let packet = Packet::new("kdeconnect.notification", packet_body);
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send notification: {}", e)))?;
+
+        info!(
+            "DBus: Notification sent successfully to {} (id: {})",
+            device_id, timestamp
+        );
         Ok(())
     }
 

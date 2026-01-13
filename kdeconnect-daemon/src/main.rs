@@ -2,6 +2,7 @@ mod config;
 
 use anyhow::{Context, Result};
 use kdeconnect_protocol::{
+    connection::{ConnectionConfig, ConnectionEvent, ConnectionManager},
     discovery::{DiscoveryConfig, DiscoveryEvent, DiscoveryService},
     pairing::{PairingConfig, PairingEvent, PairingService, PairingStatus},
     plugins::{
@@ -40,6 +41,9 @@ struct Daemon {
 
     /// Pairing service
     pairing_service: Option<PairingService>,
+
+    /// Connection manager
+    connection_manager: Option<ConnectionManager>,
 }
 
 impl Daemon {
@@ -97,6 +101,7 @@ impl Daemon {
             device_manager,
             discovery_service: None,
             pairing_service: None,
+            connection_manager: None,
         })
     }
 
@@ -368,6 +373,117 @@ impl Daemon {
         Ok(())
     }
 
+    /// Start connection manager
+    async fn start_connections(&mut self) -> Result<()> {
+        info!("Starting connection manager...");
+
+        // Create connection config
+        let connection_config = ConnectionConfig {
+            listen_addr: format!("0.0.0.0:{}", self.config.network.discovery_port)
+                .parse()
+                .context("Invalid listen address")?,
+            keep_alive_interval: Duration::from_secs(30),
+            connection_timeout: Duration::from_secs(60),
+        };
+
+        // Create connection manager
+        let connection_manager = ConnectionManager::new(
+            self.certificate.clone(),
+            self.device_manager.clone(),
+            connection_config,
+        );
+
+        // Start the manager (starts TLS server)
+        let port = connection_manager
+            .start()
+            .await
+            .context("Failed to start connection manager")?;
+
+        info!("Connection manager started on port {}", port);
+
+        // Subscribe to connection events
+        let mut event_rx = connection_manager.subscribe().await;
+
+        // Store connection manager
+        self.connection_manager = Some(connection_manager);
+
+        // Spawn task to handle connection events
+        let device_manager = self.device_manager.clone();
+        let plugin_manager = self.plugin_manager.clone();
+        tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                if let Err(e) =
+                    Self::handle_connection_event(event, &device_manager, &plugin_manager).await
+                {
+                    error!("Error handling connection event: {}", e);
+                }
+            }
+            info!("Connection event handler stopped");
+        });
+
+        info!("Connection manager started successfully");
+
+        Ok(())
+    }
+
+    /// Handle a connection event
+    async fn handle_connection_event(
+        event: ConnectionEvent,
+        device_manager: &Arc<RwLock<DeviceManager>>,
+        plugin_manager: &Arc<RwLock<PluginManager>>,
+    ) -> Result<()> {
+        match event {
+            ConnectionEvent::Connected {
+                device_id,
+                remote_addr,
+            } => {
+                info!("Device {} connected from {}", device_id, remote_addr);
+                // Device manager is already updated by ConnectionManager
+            }
+            ConnectionEvent::Disconnected { device_id, reason } => {
+                info!(
+                    "Device {} disconnected (reason: {:?})",
+                    device_id, reason
+                );
+                // Device manager is already updated by ConnectionManager
+            }
+            ConnectionEvent::PacketReceived { device_id, packet } => {
+                debug!(
+                    "Received packet '{}' from device {}",
+                    packet.packet_type, device_id
+                );
+
+                // Get device from device manager
+                let mut dev_manager = device_manager.write().await;
+                if let Some(device) = dev_manager.get_device_mut(&device_id) {
+                    // Route packet to plugin manager
+                    let mut plug_manager = plugin_manager.write().await;
+                    if let Err(e) = plug_manager.handle_packet(&packet, device).await {
+                        error!(
+                            "Error handling packet from device {}: {}",
+                            device_id, e
+                        );
+                    }
+                } else {
+                    warn!("Received packet from unknown device: {}", device_id);
+                }
+            }
+            ConnectionEvent::ConnectionError { device_id, message } => {
+                error!(
+                    "Connection error for device {:?}: {}",
+                    device_id, message
+                );
+            }
+            ConnectionEvent::ManagerStarted { port } => {
+                info!("Connection manager started on port {}", port);
+            }
+            ConnectionEvent::ManagerStopped => {
+                info!("Connection manager stopped");
+            }
+        }
+        Ok(())
+    }
+
     /// Handle a discovery event
     async fn handle_discovery_event(
         event: DiscoveryEvent,
@@ -469,6 +585,11 @@ impl Daemon {
             discovery.stop().await;
         }
 
+        // Stop connection manager
+        if let Some(connection_manager) = self.connection_manager.take() {
+            connection_manager.stop().await;
+        }
+
         // Save device registry
         let device_manager = self.device_manager.read().await;
         if let Err(e) = device_manager.save_registry() {
@@ -529,6 +650,12 @@ async fn main() -> Result<()> {
         .start_pairing()
         .await
         .context("Failed to start pairing")?;
+
+    // Start connection manager
+    daemon
+        .start_connections()
+        .await
+        .context("Failed to start connection manager")?;
 
     // Run daemon
     let result = daemon.run().await;

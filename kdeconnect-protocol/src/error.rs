@@ -13,6 +13,9 @@ pub enum ProtocolError {
     #[error("TLS error: {0}")]
     Tls(#[from] rustls::Error),
 
+    #[error("Certificate error: {0}")]
+    Certificate(#[from] rcgen::Error),
+
     #[error("Device not found: {0}")]
     DeviceNotFound(String),
 

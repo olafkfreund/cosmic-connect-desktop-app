@@ -203,13 +203,13 @@ jobs:
         run: cargo build --release --all
 
       - name: Upload applet artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cosmic-applet-kdeconnect-${{ matrix.target }}
           path: target/release/cosmic-applet-kdeconnect
 
       - name: Upload daemon artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: kdeconnect-daemon-${{ matrix.target }}
           path: target/release/kdeconnect-daemon

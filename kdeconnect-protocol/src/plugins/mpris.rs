@@ -227,7 +227,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Loop status for media playback
 ///
@@ -1103,6 +1103,34 @@ impl Plugin for MprisPlugin {
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// Factory for creating MprisPlugin instances
+#[derive(Debug, Clone, Copy)]
+pub struct MprisPluginFactory;
+
+impl PluginFactory for MprisPluginFactory {
+    fn name(&self) -> &str {
+        "mpris"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.mpris".to_string(),
+            "kdeconnect.mpris.request".to_string(),
+        ]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.mpris".to_string(),
+            "kdeconnect.mpris.request".to_string(),
+        ]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(MprisPlugin::new())
     }
 }
 

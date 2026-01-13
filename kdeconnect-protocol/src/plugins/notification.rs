@@ -120,7 +120,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Notification data
 ///
@@ -659,6 +659,38 @@ impl Plugin for NotificationPlugin {
             }
         }
         Ok(())
+    }
+}
+
+/// Factory for creating NotificationPlugin instances
+#[derive(Debug, Clone, Copy)]
+pub struct NotificationPluginFactory;
+
+impl PluginFactory for NotificationPluginFactory {
+    fn name(&self) -> &str {
+        "notification"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.notification".to_string(),
+            "kdeconnect.notification.request".to_string(),
+            "kdeconnect.notification.action".to_string(),
+            "kdeconnect.notification.reply".to_string(),
+        ]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.notification".to_string(),
+            "kdeconnect.notification.request".to_string(),
+            "kdeconnect.notification.action".to_string(),
+            "kdeconnect.notification.reply".to_string(),
+        ]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(NotificationPlugin::new())
     }
 }
 

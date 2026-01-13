@@ -107,7 +107,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Clipboard state with content and timestamp
 ///
@@ -579,6 +579,34 @@ impl Plugin for ClipboardPlugin {
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// Factory for creating ClipboardPlugin instances
+#[derive(Debug, Clone, Copy)]
+pub struct ClipboardPluginFactory;
+
+impl PluginFactory for ClipboardPluginFactory {
+    fn name(&self) -> &str {
+        "clipboard"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.clipboard".to_string(),
+            "kdeconnect.clipboard.connect".to_string(),
+        ]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.clipboard".to_string(),
+            "kdeconnect.clipboard.connect".to_string(),
+        ]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(ClipboardPlugin::new())
     }
 }
 

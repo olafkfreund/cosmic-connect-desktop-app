@@ -99,7 +99,7 @@ use serde_json::json;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Battery status information
 ///
@@ -446,6 +446,34 @@ impl Plugin for BatteryPlugin {
             }
         }
         Ok(())
+    }
+}
+
+/// Factory for creating BatteryPlugin instances
+#[derive(Debug, Clone, Copy)]
+pub struct BatteryPluginFactory;
+
+impl PluginFactory for BatteryPluginFactory {
+    fn name(&self) -> &str {
+        "battery"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.battery".to_string(),
+            "kdeconnect.battery.request".to_string(),
+        ]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.battery".to_string(),
+            "kdeconnect.battery.request".to_string(),
+        ]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(BatteryPlugin::new())
     }
 }
 

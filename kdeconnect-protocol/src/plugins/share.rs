@@ -137,7 +137,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Information about a file being shared
 ///
@@ -663,6 +663,34 @@ impl Plugin for SharePlugin {
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// Factory for creating SharePlugin instances
+#[derive(Debug, Clone, Copy)]
+pub struct SharePluginFactory;
+
+impl PluginFactory for SharePluginFactory {
+    fn name(&self) -> &str {
+        "share"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.share.request".to_string(),
+            "kdeconnect.share.request.update".to_string(),
+        ]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec![
+            "kdeconnect.share.request".to_string(),
+            "kdeconnect.share.request.update".to_string(),
+        ]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(SharePlugin::new())
     }
 }
 

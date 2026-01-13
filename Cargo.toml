@@ -41,7 +41,7 @@ rustls-pemfile = "2.2"
 mdns-sd = "0.11"
 
 # DBus
-zbus = "4"
+zbus = "5"
 
 # Error Handling
 thiserror = "1.0"

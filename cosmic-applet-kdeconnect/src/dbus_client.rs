@@ -110,12 +110,8 @@ trait KdeConnect {
     async fn share_text(&self, device_id: &str, text: &str) -> zbus::Result<()>;
 
     /// Send a notification to a device
-    async fn send_notification(
-        &self,
-        device_id: &str,
-        title: &str,
-        body: &str,
-    ) -> zbus::Result<()>;
+    async fn send_notification(&self, device_id: &str, title: &str, body: &str)
+        -> zbus::Result<()>;
 
     /// Get battery status from a device
     async fn get_battery_status(&self, device_id: &str) -> zbus::Result<BatteryStatus>;
@@ -353,12 +349,7 @@ impl DbusClient {
     }
 
     /// Send a notification to a device
-    pub async fn send_notification(
-        &self,
-        device_id: &str,
-        title: &str,
-        body: &str,
-    ) -> Result<()> {
+    pub async fn send_notification(&self, device_id: &str, title: &str, body: &str) -> Result<()> {
         info!("Sending notification to device {}: {}", device_id, title);
         self.proxy
             .send_notification(device_id, title, body)
@@ -423,9 +414,7 @@ impl ReconnectingClient {
                 client.start_signal_listener().await?;
 
                 // Notify about reconnection
-                let _ = self
-                    .reconnect_tx
-                    .send(DaemonEvent::DaemonReconnected);
+                let _ = self.reconnect_tx.send(DaemonEvent::DaemonReconnected);
 
                 self.client = Some(client);
                 self.event_rx = new_event_rx;

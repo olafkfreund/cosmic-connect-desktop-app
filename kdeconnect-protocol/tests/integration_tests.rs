@@ -4,8 +4,8 @@
 //! pairing, and plugin communication.
 
 use kdeconnect_protocol::{
-    CertificateInfo, ConnectionState, Device, DeviceInfo, DeviceManager, DeviceType,
-    PairingStatus, Packet,
+    CertificateInfo, ConnectionState, Device, DeviceInfo, DeviceManager, DeviceType, Packet,
+    PairingStatus,
 };
 use serde_json::json;
 use tempfile::TempDir;

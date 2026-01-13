@@ -145,13 +145,14 @@ impl ConnectionManager {
         );
 
         // Create TLS server
-        let server = TlsServer::new(self.config.listen_addr, &self.certificate, trusted_certs).await?;
+        let server =
+            TlsServer::new(self.config.listen_addr, &self.certificate, trusted_certs).await?;
         let local_port = server.local_addr().port();
 
         // Emit started event
-        let _ = self.event_tx.send(ConnectionEvent::ManagerStarted {
-            port: local_port,
-        });
+        let _ = self
+            .event_tx
+            .send(ConnectionEvent::ManagerStarted { port: local_port });
 
         // Spawn server accept task
         let connections = self.connections.clone();
@@ -208,21 +209,16 @@ impl ConnectionManager {
             .get_device(device_id)
             .ok_or_else(|| ProtocolError::DeviceNotFound(device_id.to_string()))?;
 
-        let peer_cert = device
-            .certificate_data
-            .clone()
-            .ok_or_else(|| ProtocolError::CertificateValidation("Device has no certificate".to_string()))?;
+        let peer_cert = device.certificate_data.clone().ok_or_else(|| {
+            ProtocolError::CertificateValidation("Device has no certificate".to_string())
+        })?;
 
         drop(device_manager);
 
         // Connect with TLS
-        let mut connection = TlsConnection::connect(
-            addr,
-            &self.certificate,
-            peer_cert,
-            &addr.ip().to_string(),
-        )
-        .await?;
+        let mut connection =
+            TlsConnection::connect(addr, &self.certificate, peer_cert, &addr.ip().to_string())
+                .await?;
 
         connection.set_device_id(device_id.to_string());
 
@@ -242,20 +238,25 @@ impl ConnectionManager {
 
     /// Send a packet to a device
     pub async fn send_packet(&self, device_id: &str, packet: &Packet) -> Result<()> {
-        debug!("Sending packet '{}' to device {}", packet.packet_type, device_id);
+        debug!(
+            "Sending packet '{}' to device {}",
+            packet.packet_type, device_id
+        );
 
         let connections = self.connections.read().await;
-        let connection = connections
-            .get(device_id)
-            .ok_or_else(|| ProtocolError::DeviceNotFound(format!("Not connected to device {}", device_id)))?;
+        let connection = connections.get(device_id).ok_or_else(|| {
+            ProtocolError::DeviceNotFound(format!("Not connected to device {}", device_id))
+        })?;
 
         connection
             .command_tx
             .send(ConnectionCommand::SendPacket(packet.clone()))
-            .map_err(|_| ProtocolError::Io(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "Connection closed",
-            )))?;
+            .map_err(|_| {
+                ProtocolError::Io(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Connection closed",
+                ))
+            })?;
 
         debug!("Packet queued for device {}", device_id);
         Ok(())
@@ -331,11 +332,9 @@ impl ConnectionManager {
 
                         // Update device manager
                         let mut dm = device_manager.write().await;
-                        if let Err(e) = dm.mark_connected(
-                            id,
-                            remote_addr.ip().to_string(),
-                            remote_addr.port(),
-                        ) {
+                        if let Err(e) =
+                            dm.mark_connected(id, remote_addr.ip().to_string(), remote_addr.port())
+                        {
                             warn!("Failed to mark device {} as connected: {}", id, e);
                         }
                         drop(dm);
@@ -370,7 +369,10 @@ impl ConnectionManager {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to receive identity packet from {}: {}", remote_addr, e);
+                    error!(
+                        "Failed to receive identity packet from {}: {}",
+                        remote_addr, e
+                    );
                     return;
                 }
             }

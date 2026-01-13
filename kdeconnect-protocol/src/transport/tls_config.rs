@@ -7,7 +7,9 @@ use crate::{CertificateInfo, ProtocolError, Result};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
-use rustls::{ClientConfig, DigitallySignedStruct, DistinguishedName, ServerConfig, SignatureScheme};
+use rustls::{
+    ClientConfig, DigitallySignedStruct, DistinguishedName, ServerConfig, SignatureScheme,
+};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -180,8 +182,9 @@ pub fn create_server_config(
 
     // Convert our certificate to rustls format
     let cert_der = CertificateDer::from(our_cert.certificate.clone());
-    let key_der = PrivateKeyDer::try_from(our_cert.private_key.clone())
-        .map_err(|_| ProtocolError::CertificateValidation("Invalid private key format".to_string()))?;
+    let key_der = PrivateKeyDer::try_from(our_cert.private_key.clone()).map_err(|_| {
+        ProtocolError::CertificateValidation("Invalid private key format".to_string())
+    })?;
 
     // Create custom client cert verifier
     let client_verifier = Arc::new(KdeConnectServerCertVerifier::new(trusted_device_certs));
@@ -190,7 +193,9 @@ pub fn create_server_config(
     let config = ServerConfig::builder()
         .with_client_cert_verifier(client_verifier)
         .with_single_cert(vec![cert_der], key_der)
-        .map_err(|e| ProtocolError::CertificateValidation(format!("Failed to create server config: {}", e)))?;
+        .map_err(|e| {
+            ProtocolError::CertificateValidation(format!("Failed to create server config: {}", e))
+        })?;
 
     debug!("TLS server config created successfully");
     Ok(config)
@@ -206,13 +211,17 @@ pub fn create_server_config(
 /// # Returns
 ///
 /// Configured ClientConfig that validates the server certificate matches the paired device
-pub fn create_client_config(our_cert: &CertificateInfo, peer_cert: Vec<u8>) -> Result<ClientConfig> {
+pub fn create_client_config(
+    our_cert: &CertificateInfo,
+    peer_cert: Vec<u8>,
+) -> Result<ClientConfig> {
     debug!("Creating TLS client config for specific peer");
 
     // Convert our certificate to rustls format
     let cert_der = CertificateDer::from(our_cert.certificate.clone());
-    let key_der = PrivateKeyDer::try_from(our_cert.private_key.clone())
-        .map_err(|_| ProtocolError::CertificateValidation("Invalid private key format".to_string()))?;
+    let key_der = PrivateKeyDer::try_from(our_cert.private_key.clone()).map_err(|_| {
+        ProtocolError::CertificateValidation("Invalid private key format".to_string())
+    })?;
 
     // Create custom server cert verifier
     let server_verifier = Arc::new(KdeConnectClientCertVerifier::new(peer_cert));
@@ -222,7 +231,9 @@ pub fn create_client_config(our_cert: &CertificateInfo, peer_cert: Vec<u8>) -> R
         .dangerous()
         .with_custom_certificate_verifier(server_verifier)
         .with_client_auth_cert(vec![cert_der], key_der)
-        .map_err(|e| ProtocolError::CertificateValidation(format!("Failed to create client config: {}", e)))?;
+        .map_err(|e| {
+            ProtocolError::CertificateValidation(format!("Failed to create client config: {}", e))
+        })?;
 
     debug!("TLS client config created successfully");
     Ok(config)

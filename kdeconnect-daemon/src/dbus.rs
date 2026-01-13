@@ -124,9 +124,7 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         Ok(DeviceInfo::from(device))
     }
@@ -145,9 +143,7 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let _device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
         drop(device_manager);
 
         // TODO: Need to integrate with PairingService to actually request pairing
@@ -173,9 +169,7 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let _device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
         drop(device_manager);
 
         // TODO: Need to integrate with PairingService to actually unpair
@@ -211,9 +205,7 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         let state = if device.is_connected() {
             "connected"
@@ -233,24 +225,19 @@ impl KdeConnectInterface {
     /// # Arguments
     /// * `device_id` - The device ID to ping
     /// * `message` - Optional message to include in the ping
-    async fn send_ping(
-        &self,
-        device_id: String,
-        message: String,
-    ) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: SendPing called for {} with message '{}'", device_id, message);
+    async fn send_ping(&self, device_id: String, message: String) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: SendPing called for {} with message '{}'",
+            device_id, message
+        );
 
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         if !device.is_connected() {
-            return Err(zbus::fdo::Error::Failed(
-                "Device not connected".to_string(),
-            ));
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
         }
 
         drop(device_manager);
@@ -265,24 +252,19 @@ impl KdeConnectInterface {
     /// # Arguments
     /// * `device_id` - The device ID to share with
     /// * `path` - Absolute path to the file to share
-    async fn share_file(
-        &self,
-        device_id: String,
-        path: String,
-    ) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: ShareFile called for {} with path '{}'", device_id, path);
+    async fn share_file(&self, device_id: String, path: String) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: ShareFile called for {} with path '{}'",
+            device_id, path
+        );
 
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         if !device.is_connected() {
-            return Err(zbus::fdo::Error::Failed(
-                "Device not connected".to_string(),
-            ));
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
         }
 
         drop(device_manager);
@@ -297,24 +279,19 @@ impl KdeConnectInterface {
     /// # Arguments
     /// * `device_id` - The device ID to share with
     /// * `text` - Text or URL to share
-    async fn share_text(
-        &self,
-        device_id: String,
-        text: String,
-    ) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: ShareText called for {} with text '{}'", device_id, text);
+    async fn share_text(&self, device_id: String, text: String) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: ShareText called for {} with text '{}'",
+            device_id, text
+        );
 
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         if !device.is_connected() {
-            return Err(zbus::fdo::Error::Failed(
-                "Device not connected".to_string(),
-            ));
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
         }
 
         drop(device_manager);
@@ -344,14 +321,10 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         if !device.is_connected() {
-            return Err(zbus::fdo::Error::Failed(
-                "Device not connected".to_string(),
-            ));
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
         }
 
         drop(device_manager);
@@ -377,14 +350,10 @@ impl KdeConnectInterface {
         let device_manager = self.device_manager.read().await;
         let device = device_manager
             .get_device(&device_id)
-            .ok_or_else(|| {
-                zbus::fdo::Error::Failed(format!("Device not found: {}", device_id))
-            })?;
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         if !device.is_connected() {
-            return Err(zbus::fdo::Error::Failed(
-                "Device not connected".to_string(),
-            ));
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
         }
 
         drop(device_manager);
@@ -503,10 +472,7 @@ impl DbusServer {
     ) -> Result<Self> {
         info!("Starting DBus server on {}", SERVICE_NAME);
 
-        let interface = KdeConnectInterface::new(
-            device_manager,
-            plugin_manager,
-        );
+        let interface = KdeConnectInterface::new(device_manager, plugin_manager);
 
         let connection = connection::Builder::session()?
             .name(SERVICE_NAME)?
@@ -517,9 +483,7 @@ impl DbusServer {
 
         info!("DBus server started successfully");
 
-        Ok(Self {
-            connection,
-        })
+        Ok(Self { connection })
     }
 
     /// Get the DBus connection
@@ -535,12 +499,8 @@ impl DbusServer {
             .interface::<_, KdeConnectInterface>(OBJECT_PATH)
             .await?;
 
-        KdeConnectInterface::device_added(
-            iface_ref.signal_context(),
-            device.id(),
-            device_info,
-        )
-        .await?;
+        KdeConnectInterface::device_added(iface_ref.signal_context(), device.id(), device_info)
+            .await?;
 
         debug!("Emitted DeviceAdded signal for {}", device.id());
         Ok(())
@@ -566,14 +526,13 @@ impl DbusServer {
             .interface::<_, KdeConnectInterface>(OBJECT_PATH)
             .await?;
 
-        KdeConnectInterface::device_state_changed(
-            iface_ref.signal_context(),
-            device_id,
-            state,
-        )
-        .await?;
+        KdeConnectInterface::device_state_changed(iface_ref.signal_context(), device_id, state)
+            .await?;
 
-        debug!("Emitted DeviceStateChanged signal for {} ({})", device_id, state);
+        debug!(
+            "Emitted DeviceStateChanged signal for {} ({})",
+            device_id, state
+        );
         Ok(())
     }
 
@@ -597,36 +556,25 @@ impl DbusServer {
             .interface::<_, KdeConnectInterface>(OBJECT_PATH)
             .await?;
 
-        KdeConnectInterface::pairing_status_changed(
-            iface_ref.signal_context(),
-            device_id,
-            status,
-        )
-        .await?;
+        KdeConnectInterface::pairing_status_changed(iface_ref.signal_context(), device_id, status)
+            .await?;
 
-        debug!("Emitted PairingStatusChanged signal for {} ({})", device_id, status);
+        debug!(
+            "Emitted PairingStatusChanged signal for {} ({})",
+            device_id, status
+        );
         Ok(())
     }
 
     /// Emit a plugin_event signal
-    pub async fn emit_plugin_event(
-        &self,
-        device_id: &str,
-        plugin: &str,
-        data: &str,
-    ) -> Result<()> {
+    pub async fn emit_plugin_event(&self, device_id: &str, plugin: &str, data: &str) -> Result<()> {
         let object_server = self.connection.object_server();
         let iface_ref = object_server
             .interface::<_, KdeConnectInterface>(OBJECT_PATH)
             .await?;
 
-        KdeConnectInterface::plugin_event(
-            iface_ref.signal_context(),
-            device_id,
-            plugin,
-            data,
-        )
-        .await?;
+        KdeConnectInterface::plugin_event(iface_ref.signal_context(), device_id, plugin, data)
+            .await?;
 
         debug!("Emitted PluginEvent signal for {} ({})", device_id, plugin);
         Ok(())

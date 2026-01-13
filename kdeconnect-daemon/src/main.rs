@@ -232,8 +232,8 @@ impl Daemon {
         };
 
         // Create discovery service
-        let mut discovery_service =
-            DiscoveryService::new(device_info, discovery_config).context("Failed to create discovery service")?;
+        let mut discovery_service = DiscoveryService::new(device_info, discovery_config)
+            .context("Failed to create discovery service")?;
 
         // Subscribe to discovery events
         let mut event_rx = discovery_service.subscribe().await;
@@ -257,7 +257,9 @@ impl Daemon {
         let dbus_server = self.dbus_server.clone();
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
-                if let Err(e) = Self::handle_discovery_event(event, &device_manager, &dbus_server).await {
+                if let Err(e) =
+                    Self::handle_discovery_event(event, &device_manager, &dbus_server).await
+                {
                     error!("Error handling discovery event: {}", e);
                 }
             }
@@ -277,11 +279,9 @@ impl Daemon {
             timeout: Duration::from_secs(30),
         };
 
-        let pairing_service = PairingService::new(
-            self.device_info.device_id.clone(),
-            pairing_config,
-        )
-        .context("Failed to create pairing service")?;
+        let pairing_service =
+            PairingService::new(self.device_info.device_id.clone(), pairing_config)
+                .context("Failed to create pairing service")?;
 
         info!(
             "Pairing service created (fingerprint: {})",
@@ -299,7 +299,9 @@ impl Daemon {
         let dbus_server = self.dbus_server.clone();
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
-                if let Err(e) = Self::handle_pairing_event(event, &device_manager, &dbus_server).await {
+                if let Err(e) =
+                    Self::handle_pairing_event(event, &device_manager, &dbus_server).await
+                {
                     error!("Error handling pairing event: {}", e);
                 }
             }
@@ -366,7 +368,10 @@ impl Daemon {
 
                 // Emit DBus signal for pairing status changed
                 if let Some(dbus) = dbus_server {
-                    if let Err(e) = dbus.emit_pairing_status_changed(&device_id, "rejected").await {
+                    if let Err(e) = dbus
+                        .emit_pairing_status_changed(&device_id, "rejected")
+                        .await
+                    {
                         warn!("Failed to emit PairingStatusChanged signal: {}", e);
                     }
                 }
@@ -377,9 +382,11 @@ impl Daemon {
             PairingEvent::DeviceUnpaired { device_id } => {
                 info!("Device unpaired: {}", device_id);
                 let mut manager = device_manager.write().await;
-                if let Err(e) = manager.update_pairing_status(&device_id, PairingStatus::Unpaired)
-                {
-                    warn!("Failed to update device {} pairing status: {}", device_id, e);
+                if let Err(e) = manager.update_pairing_status(&device_id, PairingStatus::Unpaired) {
+                    warn!(
+                        "Failed to update device {} pairing status: {}",
+                        device_id, e
+                    );
                 } else if let Err(e) = manager.save_registry() {
                     warn!("Failed to save device registry: {}", e);
                 }
@@ -389,10 +396,7 @@ impl Daemon {
                 // TODO: Notify UI of timeout
             }
             PairingEvent::Error { device_id, message } => {
-                error!(
-                    "Pairing error for device {:?}: {}",
-                    device_id, message
-                );
+                error!("Pairing error for device {:?}: {}", device_id, message);
                 // TODO: Notify UI of error
             }
         }
@@ -439,8 +443,13 @@ impl Daemon {
         let dbus_server = self.dbus_server.clone();
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
-                if let Err(e) =
-                    Self::handle_connection_event(event, &device_manager, &plugin_manager, &dbus_server).await
+                if let Err(e) = Self::handle_connection_event(
+                    event,
+                    &device_manager,
+                    &plugin_manager,
+                    &dbus_server,
+                )
+                .await
                 {
                     error!("Error handling connection event: {}", e);
                 }
@@ -457,12 +466,10 @@ impl Daemon {
     async fn start_dbus(&mut self) -> Result<()> {
         info!("Starting DBus server...");
 
-        let dbus_server = DbusServer::start(
-            self.device_manager.clone(),
-            self.plugin_manager.clone(),
-        )
-        .await
-        .context("Failed to start DBus server")?;
+        let dbus_server =
+            DbusServer::start(self.device_manager.clone(), self.plugin_manager.clone())
+                .await
+                .context("Failed to start DBus server")?;
 
         info!("DBus server started on {}", dbus::SERVICE_NAME);
 
@@ -487,16 +494,16 @@ impl Daemon {
 
                 // Emit DBus signal for device state changed
                 if let Some(dbus) = dbus_server {
-                    if let Err(e) = dbus.emit_device_state_changed(&device_id, "connected").await {
+                    if let Err(e) = dbus
+                        .emit_device_state_changed(&device_id, "connected")
+                        .await
+                    {
                         warn!("Failed to emit DeviceStateChanged signal: {}", e);
                     }
                 }
             }
             ConnectionEvent::Disconnected { device_id, reason } => {
-                info!(
-                    "Device {} disconnected (reason: {:?})",
-                    device_id, reason
-                );
+                info!("Device {} disconnected (reason: {:?})", device_id, reason);
 
                 // Emit DBus signal for device state changed
                 if let Some(dbus) = dbus_server {
@@ -516,21 +523,18 @@ impl Daemon {
                 if let Some(device) = dev_manager.get_device_mut(&device_id) {
                     // Route packet to plugin manager
                     let mut plug_manager = plugin_manager.write().await;
-                    if let Err(e) = plug_manager.handle_packet(&packet, device).await {
-                        error!(
-                            "Error handling packet from device {}: {}",
-                            device_id, e
-                        );
+                    if let Err(e) = plug_manager
+                        .handle_packet(&device_id, &packet, device)
+                        .await
+                    {
+                        error!("Error handling packet from device {}: {}", device_id, e);
                     }
                 } else {
                     warn!("Received packet from unknown device: {}", device_id);
                 }
             }
             ConnectionEvent::ConnectionError { device_id, message } => {
-                error!(
-                    "Connection error for device {:?}: {}",
-                    device_id, message
-                );
+                error!("Connection error for device {:?}: {}", device_id, message);
             }
             ConnectionEvent::ManagerStarted { port } => {
                 info!("Connection manager started on port {}", port);
@@ -572,10 +576,7 @@ impl Daemon {
                 }
             }
             DiscoveryEvent::DeviceUpdated { info, address } => {
-                debug!(
-                    "Device updated: {} at {}",
-                    info.device_name, address
-                );
+                debug!("Device updated: {} at {}", info.device_name, address);
                 let mut manager = device_manager.write().await;
                 manager.update_from_discovery(info);
             }
@@ -635,9 +636,15 @@ impl Daemon {
 
         // Display device manager status
         let device_manager = self.device_manager.read().await;
-        info!("Device registry: {} devices loaded", device_manager.device_count());
+        info!(
+            "Device registry: {} devices loaded",
+            device_manager.device_count()
+        );
         info!("  - Paired devices: {}", device_manager.paired_count());
-        info!("  - Connected devices: {}", device_manager.connected_count());
+        info!(
+            "  - Connected devices: {}",
+            device_manager.connected_count()
+        );
         drop(device_manager);
 
         info!("Daemon initialized successfully");
@@ -679,7 +686,7 @@ impl Daemon {
 
         // Stop all plugins
         let mut manager = self.plugin_manager.write().await;
-        if let Err(e) = manager.stop_all().await {
+        if let Err(e) = manager.shutdown_all().await {
             error!("Error stopping plugins: {}", e);
         }
 

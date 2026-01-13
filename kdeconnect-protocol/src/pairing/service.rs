@@ -119,7 +119,11 @@ impl PairingService {
     /// Request pairing with a device
     ///
     /// Sends pairing request packet and starts timeout tracking.
-    pub async fn request_pairing(&self, device_info: DeviceInfo, remote_addr: SocketAddr) -> Result<()> {
+    pub async fn request_pairing(
+        &self,
+        device_info: DeviceInfo,
+        remote_addr: SocketAddr,
+    ) -> Result<()> {
         let device_id = device_info.device_id.clone();
 
         info!(
@@ -257,7 +261,12 @@ impl PairingService {
     }
 
     /// Accept a pairing request (user confirmed)
-    pub async fn accept_pairing(&self, device_id: &str, device_info: &DeviceInfo, device_cert: &[u8]) -> Result<()> {
+    pub async fn accept_pairing(
+        &self,
+        device_id: &str,
+        device_info: &DeviceInfo,
+        device_cert: &[u8],
+    ) -> Result<()> {
         info!("Accepting pairing with device {}", device_id);
 
         let mut handler = self.handler.write().await;

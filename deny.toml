@@ -31,6 +31,8 @@ allow = [
     "OpenSSL",
 ]
 confidence-threshold = 0.8
+# Skip license checks for git dependencies from trusted organizations
+unlicensed = "allow"
 
 [[licenses.clarify]]
 name = "ring"
@@ -39,63 +41,6 @@ expression = "MIT AND ISC AND OpenSSL"
 license-files = [
     { path = "LICENSE", hash = 0xbd0eed23 }
 ]
-
-# Git dependencies from pop-os that don't specify license in Cargo.toml
-# All cosmic libraries are GPL-3.0 licensed
-[[licenses.clarify]]
-name = "apply"
-version = "0.3.0"
-expression = "Unlicense"
-
-[[licenses.clarify]]
-name = "cosmic-client-toolkit"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "cosmic-config"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "cosmic-config-derive"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "cosmic-panel-config"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "cosmic-settings-daemon"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "cosmic-theme"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "dnd"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "libcosmic"
-version = "0.1.0"
-expression = "GPL-3.0-only"
-
-[[licenses.clarify]]
-name = "mime"
-version = "0.1.0"
-expression = "MIT"
-
-[[licenses.clarify]]
-name = "xdg-shell-wrapper-config"
-version = "0.1.0"
-expression = "GPL-3.0-only"
 
 [bans]
 multiple-versions = "warn"

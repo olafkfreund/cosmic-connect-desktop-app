@@ -487,12 +487,18 @@ impl Daemon {
                     if let Some(device) = dev_manager.get_device(&device_id) {
                         let mut plug_manager = plugin_manager.write().await;
                         if let Err(e) = plug_manager.init_device_plugins(&device_id, device).await {
-                            error!("Failed to initialize plugins for device {}: {}", device_id, e);
+                            error!(
+                                "Failed to initialize plugins for device {}: {}",
+                                device_id, e
+                            );
                         } else {
                             info!("Initialized plugins for device {}", device_id);
                         }
                     } else {
-                        warn!("Cannot initialize plugins - device {} not found in device manager", device_id);
+                        warn!(
+                            "Cannot initialize plugins - device {} not found in device manager",
+                            device_id
+                        );
                     }
                 }
 

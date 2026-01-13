@@ -99,6 +99,8 @@
 //! - [KDE Connect Community Wiki](https://community.kde.org/KDEConnect)
 //! - [KDE Connect GitHub](https://github.com/KDE/kdeconnect-kde)
 
+pub mod ping;
+
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;

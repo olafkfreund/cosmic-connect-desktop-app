@@ -12,6 +12,7 @@ pub mod transport;
 
 mod error;
 pub use error::{ProtocolError, Result};
+pub use packet::{current_timestamp, Packet};
 
 /// Protocol version we implement
 pub const PROTOCOL_VERSION: u32 = 7;

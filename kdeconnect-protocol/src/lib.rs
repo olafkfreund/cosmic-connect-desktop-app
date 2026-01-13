@@ -3,10 +3,10 @@
 //! This library provides a pure Rust implementation of the KDE Connect protocol,
 //! enabling device synchronization and communication between computers and mobile devices.
 
-pub mod discovery;
-pub mod pairing;
-pub mod packet;
 pub mod device;
+pub mod discovery;
+pub mod packet;
+pub mod pairing;
 pub mod plugins;
 pub mod transport;
 

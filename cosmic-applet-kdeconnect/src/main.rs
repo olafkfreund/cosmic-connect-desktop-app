@@ -1,9 +1,4 @@
-use cosmic::{
-    app::Core,
-    applet,
-    iced::window,
-    Application, Element,
-};
+use cosmic::{app::Core, applet, iced::window, Application, Element};
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt::init();
@@ -40,9 +35,6 @@ impl Application for KdeConnectApplet {
     }
 
     fn view(&self) -> Element<Self::Message> {
-        self.core
-            .applet
-            .icon_button("phone-symbolic")
-            .into()
+        self.core.applet.icon_button("phone-symbolic").into()
     }
 }

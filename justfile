@@ -251,37 +251,39 @@ validate-desktop:
 
 # Generate a new plugin template
 new-plugin NAME:
-    @echo "Generating new plugin: {{NAME}}"
-    @mkdir -p kdeconnect-protocol/src/plugins
-    @cat > kdeconnect-protocol/src/plugins/{{NAME}}.rs << 'EOF'
-use crate::{Packet, Plugin, ProtocolError};
-use async_trait::async_trait;
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Generating new plugin: {{NAME}}"
+    mkdir -p kdeconnect-protocol/src/plugins
+    cat > kdeconnect-protocol/src/plugins/{{NAME}}.rs << 'TEMPLATE_EOF'
+    use crate::{Packet, Plugin, ProtocolError};
+    use async_trait::async_trait;
 
-pub struct {{NAME}}Plugin {
-    // Add fields here
-}
-
-#[async_trait]
-impl Plugin for {{NAME}}Plugin {
-    fn id(&self) -> &str {
-        "{{NAME}}"
+    pub struct {{NAME}}Plugin {
+        // Add fields here
     }
 
-    fn incoming_capabilities(&self) -> Vec<String> {
-        vec!["kdeconnect.{{NAME}}".to_string()]
-    }
+    #[async_trait]
+    impl Plugin for {{NAME}}Plugin {
+        fn id(&self) -> &str {
+            "{{NAME}}"
+        }
 
-    fn outgoing_capabilities(&self) -> Vec<String> {
-        vec!["kdeconnect.{{NAME}}".to_string()]
-    }
+        fn incoming_capabilities(&self) -> Vec<String> {
+            vec!["kdeconnect.{{NAME}}".to_string()]
+        }
 
-    async fn handle_packet(&mut self, packet: Packet) -> Result<(), ProtocolError> {
-        // Handle packet
-        Ok(())
+        fn outgoing_capabilities(&self) -> Vec<String> {
+            vec!["kdeconnect.{{NAME}}".to_string()]
+        }
+
+        async fn handle_packet(&mut self, packet: Packet) -> Result<(), ProtocolError> {
+            // Handle packet
+            Ok(())
+        }
     }
-}
-EOF
-    @echo "✅ Plugin template created at kdeconnect-protocol/src/plugins/{{NAME}}.rs"
+    TEMPLATE_EOF
+    echo "✅ Plugin template created at kdeconnect-protocol/src/plugins/{{NAME}}.rs"
 
 # List all plugins
 list-plugins:

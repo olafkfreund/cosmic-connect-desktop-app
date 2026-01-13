@@ -4,7 +4,7 @@
 //! Exposes device management, pairing, and plugin actions via DBus.
 
 use anyhow::{Context, Result};
-use kdeconnect_protocol::{Device, DeviceManager, PluginManager};
+use kdeconnect_protocol::{ConnectionManager, Device, DeviceManager, PluginManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -75,6 +75,8 @@ pub struct KdeConnectInterface {
     device_manager: Arc<RwLock<DeviceManager>>,
     /// Plugin manager
     plugin_manager: Arc<RwLock<PluginManager>>,
+    /// Connection manager
+    connection_manager: Arc<RwLock<ConnectionManager>>,
 }
 
 impl KdeConnectInterface {
@@ -82,10 +84,12 @@ impl KdeConnectInterface {
     pub fn new(
         device_manager: Arc<RwLock<DeviceManager>>,
         plugin_manager: Arc<RwLock<PluginManager>>,
+        connection_manager: Arc<RwLock<ConnectionManager>>,
     ) -> Self {
         Self {
             device_manager,
             plugin_manager,
+            connection_manager,
         }
     }
 }
@@ -242,8 +246,26 @@ impl KdeConnectInterface {
 
         drop(device_manager);
 
-        // TODO: Implement ping plugin packet sending
-        warn!("DBus: SendPing not fully implemented yet");
+        // Create ping packet
+        use kdeconnect_protocol::Packet;
+        use serde_json::json;
+
+        let body = if !message.is_empty() {
+            json!({ "message": message })
+        } else {
+            json!({})
+        };
+
+        let packet = Packet::new("kdeconnect.ping", body);
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send ping: {}", e)))?;
+
+        info!("DBus: Ping sent successfully to {}", device_id);
         Ok(())
     }
 
@@ -296,8 +318,20 @@ impl KdeConnectInterface {
 
         drop(device_manager);
 
-        // TODO: Implement text sharing plugin packet sending
-        warn!("DBus: ShareText not fully implemented yet");
+        // Create share text packet
+        use kdeconnect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("kdeconnect.share.request", json!({ "text": text }));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to share text: {}", e)))?;
+
+        info!("DBus: Text shared successfully to {}", device_id);
         Ok(())
     }
 
@@ -463,16 +497,19 @@ impl DbusServer {
     /// # Arguments
     /// * `device_manager` - Device manager reference
     /// * `plugin_manager` - Plugin manager reference
+    /// * `connection_manager` - Connection manager reference
     ///
     /// # Returns
     /// DBus server instance with active connection
     pub async fn start(
         device_manager: Arc<RwLock<DeviceManager>>,
         plugin_manager: Arc<RwLock<PluginManager>>,
+        connection_manager: Arc<RwLock<ConnectionManager>>,
     ) -> Result<Self> {
         info!("Starting DBus server on {}", SERVICE_NAME);
 
-        let interface = KdeConnectInterface::new(device_manager, plugin_manager);
+        let interface =
+            KdeConnectInterface::new(device_manager, plugin_manager, connection_manager);
 
         let connection = connection::Builder::session()?
             .name(SERVICE_NAME)?

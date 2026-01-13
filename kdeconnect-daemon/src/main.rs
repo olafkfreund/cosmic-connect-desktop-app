@@ -45,8 +45,8 @@ struct Daemon {
     /// Pairing service
     pairing_service: Option<PairingService>,
 
-    /// Connection manager
-    connection_manager: Option<ConnectionManager>,
+    /// Connection manager (wrapped for shared access)
+    connection_manager: Arc<RwLock<ConnectionManager>>,
 
     /// DBus server
     dbus_server: Option<Arc<DbusServer>>,
@@ -99,6 +99,22 @@ impl Daemon {
                 .context("Failed to create device manager")?,
         ));
 
+        // Create connection config
+        let connection_config = ConnectionConfig {
+            listen_addr: format!("0.0.0.0:{}", config.network.discovery_port)
+                .parse()
+                .context("Invalid listen address")?,
+            keep_alive_interval: Duration::from_secs(30),
+            connection_timeout: Duration::from_secs(60),
+        };
+
+        // Create connection manager (not started yet)
+        let connection_manager = Arc::new(RwLock::new(ConnectionManager::new(
+            certificate.clone(),
+            device_manager.clone(),
+            connection_config,
+        )));
+
         Ok(Self {
             config,
             certificate,
@@ -107,7 +123,7 @@ impl Daemon {
             device_manager,
             discovery_service: None,
             pairing_service: None,
-            connection_manager: None,
+            connection_manager,
             dbus_server: None,
         })
     }
@@ -396,35 +412,22 @@ impl Daemon {
     async fn start_connections(&mut self) -> Result<()> {
         info!("Starting connection manager...");
 
-        // Create connection config
-        let connection_config = ConnectionConfig {
-            listen_addr: format!("0.0.0.0:{}", self.config.network.discovery_port)
-                .parse()
-                .context("Invalid listen address")?,
-            keep_alive_interval: Duration::from_secs(30),
-            connection_timeout: Duration::from_secs(60),
-        };
-
-        // Create connection manager
-        let connection_manager = ConnectionManager::new(
-            self.certificate.clone(),
-            self.device_manager.clone(),
-            connection_config,
-        );
-
         // Start the manager (starts TLS server)
-        let port = connection_manager
-            .start()
-            .await
-            .context("Failed to start connection manager")?;
+        let port = {
+            let manager = self.connection_manager.write().await;
+            manager
+                .start()
+                .await
+                .context("Failed to start connection manager")?
+        };
 
         info!("Connection manager started on port {}", port);
 
         // Subscribe to connection events
-        let mut event_rx = connection_manager.subscribe().await;
-
-        // Store connection manager
-        self.connection_manager = Some(connection_manager);
+        let mut event_rx = {
+            let manager = self.connection_manager.read().await;
+            manager.subscribe().await
+        };
 
         // Spawn task to handle connection events
         let device_manager = self.device_manager.clone();
@@ -455,10 +458,13 @@ impl Daemon {
     async fn start_dbus(&mut self) -> Result<()> {
         info!("Starting DBus server...");
 
-        let dbus_server =
-            DbusServer::start(self.device_manager.clone(), self.plugin_manager.clone())
-                .await
-                .context("Failed to start DBus server")?;
+        let dbus_server = DbusServer::start(
+            self.device_manager.clone(),
+            self.plugin_manager.clone(),
+            self.connection_manager.clone(),
+        )
+        .await
+        .context("Failed to start DBus server")?;
 
         info!("DBus server started on {}", dbus::SERVICE_NAME);
 
@@ -688,7 +694,8 @@ impl Daemon {
         }
 
         // Stop connection manager
-        if let Some(connection_manager) = self.connection_manager.take() {
+        {
+            let mut connection_manager = self.connection_manager.write().await;
             connection_manager.stop().await;
         }
 

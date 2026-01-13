@@ -99,6 +99,7 @@
 //! - [KDE Connect Community Wiki](https://community.kde.org/KDEConnect)
 //! - [KDE Connect GitHub](https://github.com/KDE/kdeconnect-kde)
 
+pub mod battery;
 pub mod ping;
 
 use crate::{Device, Packet, ProtocolError, Result};

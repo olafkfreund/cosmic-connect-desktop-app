@@ -42,7 +42,7 @@ jobs:
           sudo apt-get install -y \
             libxkbcommon-dev \
             libwayland-dev \
-            libwayland-protocols \
+            wayland-protocols \
             libgl1-mesa-dev \
             libglvnd-dev \
             libpixman-1-dev \
@@ -98,7 +98,7 @@ jobs:
           sudo apt-get install -y \
             libxkbcommon-dev \
             libwayland-dev \
-            libwayland-protocols \
+            wayland-protocols \
             libgl1-mesa-dev \
             libglvnd-dev \
             libpixman-1-dev \
@@ -152,7 +152,7 @@ jobs:
           sudo apt-get install -y \
             libxkbcommon-dev \
             libwayland-dev \
-            libwayland-protocols \
+            wayland-protocols \
             libgl1-mesa-dev \
             libglvnd-dev \
             libpixman-1-dev \
@@ -213,7 +213,7 @@ jobs:
           sudo apt-get install -y \
             libxkbcommon-dev \
             libwayland-dev \
-            libwayland-protocols \
+            wayland-protocols \
             libgl1-mesa-dev \
             libglvnd-dev \
             libpixman-1-dev \
@@ -291,7 +291,7 @@ jobs:
           sudo apt-get install -y \
             libxkbcommon-dev \
             libwayland-dev \
-            libwayland-protocols \
+            wayland-protocols \
             libgl1-mesa-dev \
             libglvnd-dev \
             libpixman-1-dev \

@@ -109,7 +109,42 @@ pub mod share;
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use std::sync::Arc;
+use tracing::{debug, error, info, warn};
+
+/// Factory trait for creating plugin instances
+///
+/// Plugins must implement this trait to support per-device instances.
+/// The factory creates new plugin instances for each device connection.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// struct PingPluginFactory;
+///
+/// impl PluginFactory for PingPluginFactory {
+///     fn name(&self) -> &str {
+///         "ping"
+///     }
+///
+///     fn create(&self) -> Box<dyn Plugin> {
+///         Box::new(PingPlugin::new())
+///     }
+/// }
+/// ```
+pub trait PluginFactory: Send + Sync {
+    /// Get the plugin name this factory creates
+    fn name(&self) -> &str;
+
+    /// Get incoming capabilities for this plugin type
+    fn incoming_capabilities(&self) -> Vec<String>;
+
+    /// Get outgoing capabilities for this plugin type
+    fn outgoing_capabilities(&self) -> Vec<String>;
+
+    /// Create a new plugin instance
+    fn create(&self) -> Box<dyn Plugin>;
+}
 
 /// Plugin trait for extending KDE Connect functionality
 ///
@@ -226,9 +261,14 @@ pub trait Plugin: Send + Sync {
 
 /// Plugin registry and packet router
 ///
-/// Manages multiple plugins and routes incoming packets to the appropriate plugin
-/// based on packet type. Handles plugin lifecycle (init, start, stop) and maintains
-/// capability-to-plugin mappings.
+/// Manages plugin factories and per-device plugin instances. Routes incoming packets
+/// to the appropriate plugin based on packet type and device.
+///
+/// ## Per-Device Architecture
+///
+/// Each device gets its own set of plugin instances, allowing plugins to maintain
+/// independent state per device. Plugin factories are registered once, and instances
+/// are created on-demand when devices connect.
 ///
 /// ## Example
 ///
@@ -238,27 +278,30 @@ pub trait Plugin: Send + Sync {
 /// # async fn example() -> Result<()> {
 /// let mut manager = PluginManager::new();
 ///
-/// // Register plugins
-/// manager.register(Box::new(PingPlugin))?;
-/// manager.register(Box::new(BatteryPlugin))?;
+/// // Register plugin factories
+/// manager.register_factory(Arc::new(PingPluginFactory))?;
+/// manager.register_factory(Arc::new(BatteryPluginFactory))?;
 ///
-/// // Initialize and start all plugins
-/// manager.init_all(&device).await?;
-/// manager.start_all().await?;
+/// // Create and initialize plugins for a specific device
+/// manager.init_device_plugins(&device_id, &device).await?;
 ///
-/// // Route packet to appropriate plugin
+/// // Route packet to appropriate plugin for this device
 /// if let Some(packet) = receive_packet().await {
-///     manager.handle_packet(&packet, &mut device).await?;
+///     manager.handle_packet(&device_id, &packet, &mut device).await?;
 /// }
 ///
-/// // Shutdown
-/// manager.stop_all().await?;
+/// // Cleanup when device disconnects
+/// manager.cleanup_device_plugins(&device_id).await?;
 /// # Ok(())
 /// # }
 /// ```
 pub struct PluginManager {
-    /// Registered plugins by name
-    plugins: HashMap<String, Box<dyn Plugin>>,
+    /// Registered plugin factories by name
+    factories: HashMap<String, Arc<dyn PluginFactory>>,
+
+    /// Per-device plugin instances
+    /// Outer key: device_id, Inner key: plugin_name
+    device_plugins: HashMap<String, HashMap<String, Box<dyn Plugin>>>,
 
     /// Mapping from incoming capability to plugin name
     capability_map: HashMap<String, String>,
@@ -268,33 +311,35 @@ impl PluginManager {
     /// Create a new empty plugin manager
     pub fn new() -> Self {
         Self {
-            plugins: HashMap::new(),
+            factories: HashMap::new(),
+            device_plugins: HashMap::new(),
             capability_map: HashMap::new(),
         }
     }
 
-    /// Register a new plugin
+    /// Register a plugin factory
     ///
-    /// Adds the plugin to the registry and builds capability mappings.
+    /// Adds the plugin factory to the registry and builds capability mappings.
+    /// The factory will be used to create plugin instances for each device.
     ///
     /// # Errors
     ///
     /// Returns error if:
-    /// - A plugin with the same name is already registered
+    /// - A plugin factory with the same name is already registered
     /// - A capability is already handled by another plugin
-    pub fn register(&mut self, plugin: Box<dyn Plugin>) -> Result<()> {
-        let name = plugin.name().to_string();
+    pub fn register_factory(&mut self, factory: Arc<dyn PluginFactory>) -> Result<()> {
+        let name = factory.name().to_string();
 
         // Check for duplicate plugin name
-        if self.plugins.contains_key(&name) {
+        if self.factories.contains_key(&name) {
             return Err(ProtocolError::Plugin(format!(
-                "Plugin '{}' is already registered",
+                "Plugin factory '{}' is already registered",
                 name
             )));
         }
 
         // Build capability mappings
-        for capability in plugin.incoming_capabilities() {
+        for capability in factory.incoming_capabilities() {
             if let Some(existing) = self.capability_map.get(&capability) {
                 return Err(ProtocolError::Plugin(format!(
                     "Capability '{}' already handled by plugin '{}'",
@@ -304,145 +349,285 @@ impl PluginManager {
             self.capability_map.insert(capability, name.clone());
         }
 
-        info!("Registered plugin: {}", name);
-        self.plugins.insert(name, plugin);
+        info!("Registered plugin factory: {}", name);
+        self.factories.insert(name, factory);
         Ok(())
     }
 
-    /// Unregister a plugin by name
+    /// Register a new plugin (legacy API for backward compatibility)
     ///
-    /// Removes the plugin and clears its capability mappings.
-    /// The plugin should be stopped before unregistering.
-    pub fn unregister(&mut self, name: &str) -> Option<Box<dyn Plugin>> {
+    /// This method exists for backward compatibility but is deprecated.
+    /// Use `register_factory` instead for per-device plugin instances.
+    ///
+    /// # Errors
+    ///
+    /// Returns error indicating this API is deprecated
+    #[deprecated(note = "Use register_factory instead for per-device plugin support")]
+    pub fn register(&mut self, _plugin: Box<dyn Plugin>) -> Result<()> {
+        Err(ProtocolError::Plugin(
+            "register() is deprecated - use register_factory() instead".to_string(),
+        ))
+    }
+
+    /// Initialize plugins for a specific device
+    ///
+    /// Creates plugin instances from registered factories and initializes them
+    /// for the given device. Each device gets its own set of plugin instances.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if plugin creation or initialization fails
+    pub async fn init_device_plugins(&mut self, device_id: &str, device: &Device) -> Result<()> {
+        info!(
+            "Initializing {} plugins for device {}",
+            self.factories.len(),
+            device_id
+        );
+
+        let mut device_plugins = HashMap::new();
+
+        for (name, factory) in &self.factories {
+            debug!("Creating plugin {} for device {}", name, device_id);
+
+            // Create plugin instance
+            let mut plugin = factory.create();
+
+            // Initialize plugin
+            if let Err(e) = plugin.init(device).await {
+                error!(
+                    "Failed to initialize plugin {} for device {}: {}",
+                    name, device_id, e
+                );
+                // Continue with other plugins rather than failing completely
+                continue;
+            }
+
+            // Start plugin
+            if let Err(e) = plugin.start().await {
+                error!(
+                    "Failed to start plugin {} for device {}: {}",
+                    name, device_id, e
+                );
+                // Continue with other plugins
+                continue;
+            }
+
+            device_plugins.insert(name.clone(), plugin);
+        }
+
+        info!(
+            "Initialized {} plugins for device {}",
+            device_plugins.len(),
+            device_id
+        );
+
+        self.device_plugins
+            .insert(device_id.to_string(), device_plugins);
+
+        Ok(())
+    }
+
+    /// Cleanup plugins for a specific device
+    ///
+    /// Stops and removes all plugin instances for the given device.
+    /// Called when a device disconnects.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if plugin cleanup fails, but attempts to cleanup all plugins
+    pub async fn cleanup_device_plugins(&mut self, device_id: &str) -> Result<()> {
+        if let Some(mut plugins) = self.device_plugins.remove(device_id) {
+            info!("Cleaning up {} plugins for device {}", plugins.len(), device_id);
+
+            let mut errors = Vec::new();
+
+            for (name, mut plugin) in plugins.drain() {
+                debug!("Stopping plugin {} for device {}", name, device_id);
+                if let Err(e) = plugin.stop().await {
+                    warn!(
+                        "Failed to stop plugin {} for device {}: {}",
+                        name, device_id, e
+                    );
+                    errors.push((name, e));
+                }
+            }
+
+            if !errors.is_empty() {
+                return Err(ProtocolError::Plugin(format!(
+                    "Failed to stop {} plugins for device {}: {:?}",
+                    errors.len(),
+                    device_id,
+                    errors.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get reference to a plugin for a specific device
+    pub fn get_device_plugin(&self, device_id: &str, plugin_name: &str) -> Option<&dyn Plugin> {
+        self.device_plugins
+            .get(device_id)
+            .and_then(|plugins| plugins.get(plugin_name))
+            .map(|p| p.as_ref())
+    }
+
+    /// Unregister a plugin factory by name
+    ///
+    /// Removes the plugin factory and clears its capability mappings.
+    /// Device plugin instances should be cleaned up before unregistering.
+    pub fn unregister_factory(&mut self, name: &str) -> Option<Arc<dyn PluginFactory>> {
         // Remove capability mappings
         self.capability_map
             .retain(|_, plugin_name| plugin_name != name);
 
-        // Remove plugin
-        let plugin = self.plugins.remove(name);
-        if plugin.is_some() {
-            info!("Unregistered plugin: {}", name);
+        // Remove factory
+        let factory = self.factories.remove(name);
+        if factory.is_some() {
+            info!("Unregistered plugin factory: {}", name);
         }
-        plugin
+        factory
     }
 
-    /// Get a reference to a plugin by name
-    pub fn get(&self, name: &str) -> Option<&dyn Plugin> {
-        self.plugins.get(name).map(|p| p.as_ref())
+    /// Get a reference to a plugin by name (deprecated)
+    ///
+    /// Use `get_device_plugin(device_id, plugin_name)` instead for per-device instances.
+    #[deprecated(note = "Use get_device_plugin instead for per-device plugin support")]
+    pub fn get(&self, _name: &str) -> Option<&dyn Plugin> {
+        None
     }
 
-    /// Get list of all registered plugin names
+    /// Get list of all registered plugin factory names
     pub fn list_plugins(&self) -> Vec<String> {
-        self.plugins.keys().cloned().collect()
+        self.factories.keys().cloned().collect()
     }
 
-    /// Get all incoming capabilities from all plugins
+    /// Get all incoming capabilities from registered factories
     pub fn get_all_incoming_capabilities(&self) -> Vec<String> {
         self.capability_map.keys().cloned().collect()
     }
 
-    /// Get all outgoing capabilities from all plugins
+    /// Get all outgoing capabilities from registered factories
     pub fn get_all_outgoing_capabilities(&self) -> Vec<String> {
         let mut capabilities = Vec::new();
-        for plugin in self.plugins.values() {
-            capabilities.extend(plugin.outgoing_capabilities());
+        for factory in self.factories.values() {
+            capabilities.extend(factory.outgoing_capabilities());
         }
         capabilities.sort();
         capabilities.dedup();
         capabilities
     }
 
-    /// Initialize all plugins with device context
+    /// Initialize all plugins with device context (deprecated)
     ///
-    /// Calls `init()` on each registered plugin in arbitrary order.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if any plugin initialization fails. Already-initialized
-    /// plugins are not rolled back.
-    pub async fn init_all(&mut self, device: &Device) -> Result<()> {
-        info!("Initializing {} plugins", self.plugins.len());
-        for (name, plugin) in &mut self.plugins {
-            debug!("Initializing plugin: {}", name);
-            plugin.init(device).await?;
-        }
-        Ok(())
+    /// Use `init_device_plugins(device_id, device)` instead for per-device plugin instances.
+    #[deprecated(note = "Use init_device_plugins instead for per-device plugin support")]
+    pub async fn init_all(&mut self, _device: &Device) -> Result<()> {
+        Err(ProtocolError::Plugin(
+            "init_all() is deprecated - use init_device_plugins() instead".to_string(),
+        ))
     }
 
-    /// Start all plugins
+    /// Start all plugins (deprecated)
     ///
-    /// Calls `start()` on each registered plugin in arbitrary order.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if any plugin fails to start. Already-started plugins
-    /// are not stopped.
+    /// Use `init_device_plugins(device_id, device)` instead, which both initializes and starts plugins.
+    #[deprecated(note = "Use init_device_plugins instead for per-device plugin support")]
     pub async fn start_all(&mut self) -> Result<()> {
-        info!("Starting {} plugins", self.plugins.len());
-        for (name, plugin) in &mut self.plugins {
-            debug!("Starting plugin: {}", name);
-            plugin.start().await?;
-        }
-        Ok(())
+        Err(ProtocolError::Plugin(
+            "start_all() is deprecated - use init_device_plugins() instead".to_string(),
+        ))
     }
 
-    /// Stop all plugins
+    /// Stop all plugins (deprecated)
     ///
-    /// Calls `stop()` on each registered plugin in arbitrary order.
-    /// Continues stopping remaining plugins even if some fail.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if any plugin fails to stop, but all plugins are attempted.
+    /// Use `cleanup_device_plugins(device_id)` instead for per-device plugin instances.
+    #[deprecated(note = "Use cleanup_device_plugins instead for per-device plugin support")]
     pub async fn stop_all(&mut self) -> Result<()> {
-        info!("Stopping {} plugins", self.plugins.len());
-        let mut errors = Vec::new();
+        Err(ProtocolError::Plugin(
+            "stop_all() is deprecated - use cleanup_device_plugins() instead".to_string(),
+        ))
+    }
 
-        for (name, plugin) in &mut self.plugins {
-            debug!("Stopping plugin: {}", name);
-            if let Err(e) = plugin.stop().await {
-                warn!("Failed to stop plugin {}: {}", name, e);
-                errors.push((name.clone(), e));
+    /// Stop all device plugins (for daemon shutdown)
+    ///
+    /// Cleans up all plugin instances for all devices. Used during daemon shutdown.
+    pub async fn shutdown_all(&mut self) -> Result<()> {
+        info!("Shutting down all device plugins");
+        let device_ids: Vec<String> = self.device_plugins.keys().cloned().collect();
+
+        let mut errors = Vec::new();
+        for device_id in device_ids {
+            if let Err(e) = self.cleanup_device_plugins(&device_id).await {
+                warn!("Failed to cleanup plugins for device {}: {}", device_id, e);
+                errors.push((device_id, e));
             }
         }
 
         if !errors.is_empty() {
             return Err(ProtocolError::Plugin(format!(
-                "Failed to stop {} plugins: {:?}",
-                errors.len(),
-                errors.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+                "Failed to shutdown plugins for {} devices",
+                errors.len()
             )));
         }
 
         Ok(())
     }
 
-    /// Handle an incoming packet by routing to appropriate plugin
+    /// Handle an incoming packet by routing to appropriate device-specific plugin
     ///
-    /// Looks up the plugin that handles the packet's type and delegates
-    /// packet processing to that plugin.
+    /// Looks up the plugin that handles the packet's type for the given device
+    /// and delegates packet processing to that plugin instance.
     ///
     /// # Errors
     ///
     /// Returns error if:
     /// - No plugin handles the packet type
+    /// - Device has no initialized plugins
     /// - Plugin packet handling fails critically
-    pub async fn handle_packet(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
+    pub async fn handle_packet(
+        &mut self,
+        device_id: &str,
+        packet: &Packet,
+        device: &mut Device,
+    ) -> Result<()> {
         let packet_type = &packet.packet_type;
 
-        // Find plugin for this packet type
+        // Find plugin name for this packet type
         let plugin_name = self.capability_map.get(packet_type).ok_or_else(|| {
             ProtocolError::Plugin(format!("No plugin handles packet type: {}", packet_type))
         })?;
 
-        // Get plugin and handle packet
-        let plugin = self
-            .plugins
-            .get_mut(plugin_name)
-            .ok_or_else(|| ProtocolError::Plugin(format!("Plugin '{}' not found", plugin_name)))?;
+        // Get device plugins
+        let device_plugins = self.device_plugins.get_mut(device_id).ok_or_else(|| {
+            ProtocolError::Plugin(format!("No plugins initialized for device {}", device_id))
+        })?;
 
-        debug!("Routing packet {} to plugin {}", packet_type, plugin_name);
-        plugin.handle_packet(packet, device).await
+        // Get plugin instance for this device
+        let plugin = device_plugins.get_mut(plugin_name).ok_or_else(|| {
+            ProtocolError::Plugin(format!(
+                "Plugin '{}' not found for device {}",
+                plugin_name, device_id
+            ))
+        })?;
+
+        debug!(
+            "Routing packet {} to plugin {} for device {}",
+            packet_type, plugin_name, device_id
+        );
+
+        // Handle packet with error isolation
+        match plugin.handle_packet(packet, device).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                error!(
+                    "Plugin {} failed to handle packet {} for device {}: {}",
+                    plugin_name, packet_type, device_id, e
+                );
+                // Return error for critical failures, but plugin continues to exist
+                Err(e)
+            }
+        }
     }
 
     /// Check if a packet type is supported
@@ -455,9 +640,22 @@ impl PluginManager {
         self.capability_map.get(packet_type).map(|s| s.as_str())
     }
 
-    /// Get number of registered plugins
+    /// Get number of registered plugin factories
+    pub fn factory_count(&self) -> usize {
+        self.factories.len()
+    }
+
+    /// Get number of devices with initialized plugins
+    pub fn device_count(&self) -> usize {
+        self.device_plugins.len()
+    }
+
+    /// Get number of registered plugins (deprecated)
+    ///
+    /// Use `factory_count()` to get number of registered factories.
+    #[deprecated(note = "Use factory_count() instead")]
     pub fn plugin_count(&self) -> usize {
-        self.plugins.len()
+        self.factories.len()
     }
 }
 

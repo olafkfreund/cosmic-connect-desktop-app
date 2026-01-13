@@ -70,7 +70,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use super::Plugin;
+use super::{Plugin, PluginFactory};
 
 /// Ping plugin for connectivity testing
 ///
@@ -269,6 +269,43 @@ impl Plugin for PingPlugin {
             self.handle_ping(packet, device);
         }
         Ok(())
+    }
+}
+
+/// Factory for creating PingPlugin instances
+///
+/// Creates a new PingPlugin for each device connection, allowing
+/// independent ping tracking per device.
+///
+/// # Example
+///
+/// ```rust
+/// use kdeconnect_protocol::plugins::ping::PingPluginFactory;
+/// use kdeconnect_protocol::plugins::PluginFactory;
+/// use std::sync::Arc;
+///
+/// let factory: Arc<dyn PluginFactory> = Arc::new(PingPluginFactory);
+/// let plugin = factory.create();
+/// assert_eq!(plugin.name(), "ping");
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct PingPluginFactory;
+
+impl PluginFactory for PingPluginFactory {
+    fn name(&self) -> &str {
+        "ping"
+    }
+
+    fn incoming_capabilities(&self) -> Vec<String> {
+        vec!["kdeconnect.ping".to_string()]
+    }
+
+    fn outgoing_capabilities(&self) -> Vec<String> {
+        vec!["kdeconnect.ping".to_string()]
+    }
+
+    fn create(&self) -> Box<dyn Plugin> {
+        Box::new(PingPlugin::new())
     }
 }
 

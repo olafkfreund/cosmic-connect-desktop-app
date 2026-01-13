@@ -3,6 +3,7 @@
 //! This library provides a pure Rust implementation of the KDE Connect protocol,
 //! enabling device synchronization and communication between computers and mobile devices.
 
+pub mod connection;
 pub mod device;
 pub mod discovery;
 pub mod packet;
@@ -11,6 +12,7 @@ pub mod plugins;
 pub mod transport;
 
 mod error;
+pub use connection::{ConnectionConfig, ConnectionEvent, ConnectionManager};
 pub use device::{ConnectionState, Device, DeviceManager};
 pub use discovery::{
     DeviceInfo, DeviceType, Discovery, DiscoveryConfig, DiscoveryEvent, DiscoveryService,
@@ -23,7 +25,7 @@ pub use pairing::{
     PairingStatus, PAIRING_TIMEOUT,
 };
 pub use plugins::{Plugin, PluginManager};
-pub use transport::TcpConnection;
+pub use transport::{TcpConnection, TlsConnection, TlsServer};
 
 /// Protocol version we implement
 pub const PROTOCOL_VERSION: u32 = 7;

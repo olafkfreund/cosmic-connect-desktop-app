@@ -254,6 +254,12 @@ pub enum ProtocolError {
     #[error("Certificate error: {0}")]
     Certificate(#[from] rcgen::Error),
 
+    /// Certificate validation error
+    ///
+    /// This error occurs during TLS certificate validation.
+    #[error("Certificate validation error: {0}")]
+    CertificateValidation(String),
+
     /// Device not found in registry
     ///
     /// This error occurs when attempting to access a device that doesn't

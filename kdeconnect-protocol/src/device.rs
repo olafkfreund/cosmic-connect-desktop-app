@@ -87,6 +87,10 @@ pub struct Device {
 
     /// Certificate fingerprint (SHA256)
     pub certificate_fingerprint: Option<String>,
+
+    /// Certificate data (DER-encoded, for TLS validation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_data: Option<Vec<u8>>,
 }
 
 impl Device {
@@ -102,6 +106,7 @@ impl Device {
             host: None,
             port: None,
             certificate_fingerprint: None,
+            certificate_data: None,
         }
     }
 
@@ -121,6 +126,7 @@ impl Device {
             host: None,
             port: None,
             certificate_fingerprint: None,
+            certificate_data: None,
         }
     }
 

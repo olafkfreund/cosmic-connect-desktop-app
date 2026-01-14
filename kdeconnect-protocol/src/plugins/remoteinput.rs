@@ -21,9 +21,11 @@
 
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
+use mouse_keyboard_input::VirtualDevice;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use tracing::{debug, info, warn};
+use std::sync::{Arc, Mutex};
+use tracing::{debug, error, info, warn};
 
 use super::{Plugin, PluginFactory};
 
@@ -138,12 +140,16 @@ pub struct RemoteInputRequest {
 /// Remote Input plugin for pointer and keyboard control
 pub struct RemoteInputPlugin {
     device_id: Option<String>,
+    virtual_device: Arc<Mutex<Option<VirtualDevice>>>,
 }
 
 impl RemoteInputPlugin {
     /// Create a new Remote Input plugin
     pub fn new() -> Self {
-        Self { device_id: None }
+        Self {
+            device_id: None,
+            virtual_device: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Handle a remote input request packet
@@ -151,58 +157,211 @@ impl RemoteInputPlugin {
         let request: RemoteInputRequest = serde_json::from_value(packet.body.clone())
             .map_err(|e| ProtocolError::InvalidPacket(format!("Failed to parse request: {}", e)))?;
 
-        // Handle mouse movement
+        // Get or create virtual device
+        let device = {
+            let mut device_guard = self.virtual_device.lock().unwrap();
+            if device_guard.is_none() {
+                match VirtualDevice::default() {
+                    Ok(dev) => {
+                        info!("Created virtual input device");
+                        *device_guard = Some(dev);
+                    }
+                    Err(e) => {
+                        error!("Failed to create virtual input device: {}", e);
+                        return Err(ProtocolError::Plugin(format!(
+                            "Failed to create virtual input device: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+            Arc::clone(&self.virtual_device)
+        };
+
+        // Handle mouse movement and scrolling
         if request.dx.is_some() || request.dy.is_some() {
-            let dx = request.dx.unwrap_or(0.0);
-            let dy = request.dy.unwrap_or(0.0);
+            let dx = request.dx.unwrap_or(0.0) as i32;
+            let dy = request.dy.unwrap_or(0.0) as i32;
             let is_scroll = request.scroll.unwrap_or(false);
 
-            if is_scroll {
-                debug!("Remote input: Scroll dx={}, dy={}", dx, dy);
-                // TODO: Implement scroll via COSMIC APIs
-            } else {
-                debug!("Remote input: Move pointer dx={}, dy={}", dx, dy);
-                // TODO: Implement pointer movement via COSMIC APIs
+            let mut device_guard = device.lock().unwrap();
+            if let Some(dev) = device_guard.as_mut() {
+                if is_scroll {
+                    debug!("Remote input: Scroll dx={}, dy={}", dx, dy);
+                    if let Err(e) = dev.smooth_scroll(dx, dy) {
+                        warn!("Failed to scroll: {}", e);
+                    }
+                } else {
+                    debug!("Remote input: Move pointer dx={}, dy={}", dx, dy);
+                    if let Err(e) = dev.smooth_move_mouse(dx, dy) {
+                        warn!("Failed to move mouse: {}", e);
+                    }
+                }
             }
         }
 
         // Handle mouse clicks
-        if request.singleclick.unwrap_or(false) {
-            debug!("Remote input: Single click");
-            // TODO: Implement click via COSMIC APIs
-        }
-        if request.doubleclick.unwrap_or(false) {
-            debug!("Remote input: Double click");
-            // TODO: Implement double click via COSMIC APIs
-        }
-        if request.middleclick.unwrap_or(false) {
-            debug!("Remote input: Middle click");
-            // TODO: Implement middle click via COSMIC APIs
-        }
-        if request.rightclick.unwrap_or(false) {
-            debug!("Remote input: Right click");
-            // TODO: Implement right click via COSMIC APIs
-        }
-        if request.singlehold.unwrap_or(false) {
-            debug!("Remote input: Single hold");
-            // TODO: Implement button press via COSMIC APIs
-        }
-        if request.singlerelease.unwrap_or(false) {
-            debug!("Remote input: Single release");
-            // TODO: Implement button release via COSMIC APIs
+        use mouse_keyboard_input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
+
+        let mut device_guard = device.lock().unwrap();
+        if let Some(dev) = device_guard.as_mut() {
+            if request.singleclick.unwrap_or(false) {
+                debug!("Remote input: Single click");
+                if let Err(e) = dev.click(BTN_LEFT) {
+                    warn!("Failed to click: {}", e);
+                }
+            }
+            if request.doubleclick.unwrap_or(false) {
+                debug!("Remote input: Double click");
+                if let Err(e) = dev.click(BTN_LEFT).and_then(|_| dev.click(BTN_LEFT)) {
+                    warn!("Failed to double click: {}", e);
+                }
+            }
+            if request.middleclick.unwrap_or(false) {
+                debug!("Remote input: Middle click");
+                if let Err(e) = dev.click(BTN_MIDDLE) {
+                    warn!("Failed to middle click: {}", e);
+                }
+            }
+            if request.rightclick.unwrap_or(false) {
+                debug!("Remote input: Right click");
+                if let Err(e) = dev.click(BTN_RIGHT) {
+                    warn!("Failed to right click: {}", e);
+                }
+            }
+            if request.singlehold.unwrap_or(false) {
+                debug!("Remote input: Single hold");
+                if let Err(e) = dev.press(BTN_LEFT) {
+                    warn!("Failed to press button: {}", e);
+                }
+            }
+            if request.singlerelease.unwrap_or(false) {
+                debug!("Remote input: Single release");
+                if let Err(e) = dev.release(BTN_LEFT) {
+                    warn!("Failed to release button: {}", e);
+                }
+            }
         }
 
         // Handle keyboard input
         if let Some(key) = &request.key {
             debug!("Remote input: Key '{}'", key);
-            // TODO: Implement keyboard input via COSMIC APIs
+            let mut device_guard = device.lock().unwrap();
+            if let Some(dev) = device_guard.as_mut() {
+                // Convert string to key codes and send
+                for ch in key.chars() {
+                    if let Some(key_code) = Self::char_to_keycode(ch) {
+                        if let Err(e) = dev.click(key_code) {
+                            warn!("Failed to send key '{}': {}", ch, e);
+                        }
+                    }
+                }
+            }
         }
         if let Some(special_key) = request.special_key {
             debug!("Remote input: Special key {}", special_key);
-            // TODO: Implement special key via COSMIC APIs
+            let mut device_guard = device.lock().unwrap();
+            if let Some(dev) = device_guard.as_mut() {
+                if let Some(key_code) = Self::special_key_to_keycode(special_key) {
+                    if let Err(e) = dev.click(key_code) {
+                        warn!("Failed to send special key {}: {}", special_key, e);
+                    }
+                }
+            }
         }
 
         Ok(())
+    }
+
+    /// Convert character to Linux key code
+    fn char_to_keycode(ch: char) -> Option<u16> {
+        use mouse_keyboard_input::*;
+        match ch {
+            'a' | 'A' => Some(KEY_A),
+            'b' | 'B' => Some(KEY_B),
+            'c' | 'C' => Some(KEY_C),
+            'd' | 'D' => Some(KEY_D),
+            'e' | 'E' => Some(KEY_E),
+            'f' | 'F' => Some(KEY_F),
+            'g' | 'G' => Some(KEY_G),
+            'h' | 'H' => Some(KEY_H),
+            'i' | 'I' => Some(KEY_I),
+            'j' | 'J' => Some(KEY_J),
+            'k' | 'K' => Some(KEY_K),
+            'l' | 'L' => Some(KEY_L),
+            'm' | 'M' => Some(KEY_M),
+            'n' | 'N' => Some(KEY_N),
+            'o' | 'O' => Some(KEY_O),
+            'p' | 'P' => Some(KEY_P),
+            'q' | 'Q' => Some(KEY_Q),
+            'r' | 'R' => Some(KEY_R),
+            's' | 'S' => Some(KEY_S),
+            't' | 'T' => Some(KEY_T),
+            'u' | 'U' => Some(KEY_U),
+            'v' | 'V' => Some(KEY_V),
+            'w' | 'W' => Some(KEY_W),
+            'x' | 'X' => Some(KEY_X),
+            'y' | 'Y' => Some(KEY_Y),
+            'z' | 'Z' => Some(KEY_Z),
+            '0' => Some(11), // KEY_0 (between KEY_9=10 and KEY_MINUS=12)
+            '1' => Some(KEY_1),
+            '2' => Some(KEY_2),
+            '3' => Some(KEY_3),
+            '4' => Some(KEY_4),
+            '5' => Some(KEY_5),
+            '6' => Some(KEY_6),
+            '7' => Some(KEY_7),
+            '8' => Some(KEY_8),
+            '9' => Some(KEY_9),
+            ' ' => Some(KEY_SPACE),
+            '\n' => Some(KEY_ENTER),
+            '\t' => Some(KEY_TAB),
+            '.' => Some(KEY_DOT),
+            ',' => Some(KEY_COMMA),
+            '/' => Some(KEY_SLASH),
+            '-' => Some(KEY_MINUS),
+            '=' => Some(KEY_EQUAL),
+            '[' => Some(KEY_LEFTBRACE),
+            ']' => Some(KEY_RIGHTBRACE),
+            ';' => Some(KEY_SEMICOLON),
+            '\'' => Some(KEY_APOSTROPHE),
+            '`' => Some(KEY_GRAVE),
+            '\\' => Some(KEY_BACKSLASH),
+            _ => None,
+        }
+    }
+
+    /// Convert special key code to Linux key code
+    fn special_key_to_keycode(special: i32) -> Option<u16> {
+        use mouse_keyboard_input::*;
+        match special {
+            1 => Some(KEY_BACKSPACE),    // Backspace
+            2 => Some(KEY_TAB),           // Tab
+            12 => Some(KEY_ENTER),        // Enter
+            27 => Some(KEY_ESC),          // Escape
+            21 => Some(KEY_LEFT),         // Left
+            22 => Some(KEY_UP),           // Up
+            23 => Some(KEY_RIGHT),        // Right
+            24 => Some(KEY_DOWN),         // Down
+            25 => Some(KEY_PAGEUP),       // PageUp
+            26 => Some(KEY_PAGEDOWN),     // PageDown
+            28 => Some(KEY_HOME),         // Home
+            29 => Some(KEY_END),          // End
+            30 => Some(KEY_DELETE),       // Delete
+            31 => Some(KEY_F1),           // F1
+            32 => Some(KEY_F2),           // F2
+            33 => Some(KEY_F3),           // F3
+            34 => Some(KEY_F4),           // F4
+            35 => Some(KEY_F5),           // F5
+            36 => Some(KEY_F6),           // F6
+            37 => Some(KEY_F7),           // F7
+            38 => Some(KEY_F8),           // F8
+            39 => Some(KEY_F9),           // F9
+            40 => Some(KEY_F10),          // F10
+            41 => Some(KEY_F11),          // F11
+            42 => Some(KEY_F12),          // F12
+            _ => None,
+        }
     }
 }
 

@@ -68,6 +68,9 @@ keyring = "3.0"
 # Configuration
 toml = "0.9"
 
+# Input Control (for Remote Input plugin)
+mouse-keyboard-input = "0.9"
+
 [profile.dev]
 opt-level = 0
 debug = true

@@ -24,6 +24,7 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 pem = "3.0"
+mouse-keyboard-input = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

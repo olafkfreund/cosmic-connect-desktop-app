@@ -14,7 +14,7 @@ This project consists of:
 
 ## Features
 
-### Current Status: 🚧 In Development (~88% Complete)
+### Current Status: 🚧 In Development (~90% Complete)
 
 #### Completed ✅
 - [x] Core Protocol Library (v7/8)
@@ -42,6 +42,8 @@ This project consists of:
 - [x] **Automatic File Reception** (downloads to ~/Downloads)
 - [x] **File Transfer Notifications** (COSMIC Desktop integration)
 - [x] **Clipboard System Integration** (automatic sync with system clipboard)
+- [x] **URL Opening** (automatic browser launch for shared URLs)
+- [x] **Text Sharing** (automatic clipboard copy for shared text)
 - [x] COSMIC Panel Applet with Device List UI (mock data)
 - [x] Comprehensive Test Suite (103 tests, 12 integration tests)
 - [x] CI/CD Pipeline with GitHub Actions
@@ -71,6 +73,14 @@ This project consists of:
   - COSMIC Desktop notifications for received files
   - Port range: 1739-1764 (KDE Connect standard)
   - Compatible with Android/iOS KDE Connect apps
+- ✅ **URL Sharing** - Share links between devices
+  - Automatically opens received URLs in default browser
+  - Uses xdg-open for cross-desktop compatibility
+  - Non-blocking background processing
+- ✅ **Text Sharing** - Share text snippets between devices
+  - Automatically copies received text to system clipboard
+  - Instant availability for pasting
+  - Works with clipboard sync for seamless experience
 - ✅ **Clipboard Sync** - Automatic bidirectional clipboard synchronization
   - Monitors local clipboard changes (500ms polling)
   - Automatically syncs to all connected devices

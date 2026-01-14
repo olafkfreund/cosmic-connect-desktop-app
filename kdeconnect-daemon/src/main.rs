@@ -476,11 +476,15 @@ impl Daemon {
 
                 // Get device name for notification
                 let device_name = {
-                    let manager = device_manager.read().await;
-                    manager
-                        .get_device(&device_id)
-                        .map(|d| d.name().to_string())
-                        .unwrap_or_else(|| device_id.clone().unwrap_or_else(|| "Unknown".to_string()))
+                    if let Some(ref id) = device_id {
+                        let manager = device_manager.read().await;
+                        manager
+                            .get_device(id)
+                            .map(|d| d.name().to_string())
+                            .unwrap_or_else(|| id.clone())
+                    } else {
+                        "Unknown".to_string()
+                    }
                 };
 
                 // Send notification
@@ -613,8 +617,7 @@ impl Daemon {
                     // Update local clipboard plugin state for all connected devices
                     let dev_manager = device_manager.read().await;
                     let connected_devices: Vec<String> = dev_manager
-                        .get_all_devices()
-                        .iter()
+                        .devices()
                         .filter(|d| d.is_connected())
                         .map(|d| d.id().to_string())
                         .collect();
@@ -624,16 +627,20 @@ impl Daemon {
                         let plug_manager = plugin_manager.read().await;
 
                         for device_id in &connected_devices {
-                            if let Some(plugin) = plug_manager.get_device_plugin::<kdeconnect_protocol::plugins::clipboard::ClipboardPlugin>(device_id, "clipboard") {
-                                // Create clipboard packet
-                                let packet = plugin.create_clipboard_packet(current_content.clone()).await;
+                            if let Some(plugin) = plug_manager.get_device_plugin(device_id, "clipboard") {
+                                // Downcast to ClipboardPlugin
+                                use kdeconnect_protocol::plugins::clipboard::ClipboardPlugin;
+                                if let Some(clipboard_plugin) = plugin.as_any().downcast_ref::<ClipboardPlugin>() {
+                                    // Create clipboard packet
+                                    let packet = clipboard_plugin.create_clipboard_packet(current_content.clone()).await;
 
-                                // Send packet via connection manager
-                                let conn_manager = connection_manager.read().await;
-                                if let Err(e) = conn_manager.send_packet(device_id, &packet).await {
-                                    warn!("Failed to send clipboard update to {}: {}", device_id, e);
-                                } else {
-                                    debug!("Sent clipboard update to {} ({} chars)", device_id, current_content.len());
+                                    // Send packet via connection manager
+                                    let conn_manager = connection_manager.read().await;
+                                    if let Err(e) = conn_manager.send_packet(device_id, &packet).await {
+                                        warn!("Failed to send clipboard update to {}: {}", device_id, e);
+                                    } else {
+                                        debug!("Sent clipboard update to {} ({} chars)", device_id, current_content.len());
+                                    }
                                 }
                             }
                         }

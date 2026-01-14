@@ -14,7 +14,7 @@ This project consists of:
 
 ## Features
 
-### Current Status: 🚧 In Development (~90% Complete)
+### Current Status: 🚧 In Development (~92% Complete)
 
 #### Completed ✅
 - [x] Core Protocol Library (v7/8)
@@ -27,7 +27,7 @@ This project consists of:
 - [x] **Plugin Packet Routing** (PluginManager with factories)
 - [x] Plugin Architecture with 6 plugins:
   - [x] Ping Plugin (send/receive pings)
-  - [x] Battery Plugin (status queries)
+  - [x] **Battery Plugin** (status queries + **low battery alerts**)
   - [x] Notification Plugin (forwarding)
   - [x] **Share Plugin** (file/text/URL - **full TCP transfer**)
   - [x] **Clipboard Plugin** (bidirectional sync with **system integration**)
@@ -44,6 +44,7 @@ This project consists of:
 - [x] **Clipboard System Integration** (automatic sync with system clipboard)
 - [x] **URL Opening** (automatic browser launch for shared URLs)
 - [x] **Text Sharing** (automatic clipboard copy for shared text)
+- [x] **Low Battery Notifications** (alerts for connected devices)
 - [x] COSMIC Panel Applet with Device List UI (mock data)
 - [x] Comprehensive Test Suite (103 tests, 12 integration tests)
 - [x] CI/CD Pipeline with GitHub Actions
@@ -58,7 +59,6 @@ This project consists of:
 - [ ] File Transfer UI (file picker integration)
 - [ ] Transfer progress tracking and cancellation
 - [ ] MPRIS DBus integration (player discovery and control)
-- [ ] Battery threshold alerts
 - [ ] Remote Input
 - [ ] SMS Messaging
 - [ ] Run Commands
@@ -87,12 +87,62 @@ This project consists of:
   - Applies remote clipboard changes to system clipboard
   - Loop prevention with timestamp validation
   - Works with all text clipboard content
-- ✅ **COSMIC Notifications** - Desktop notifications for pings, pairing requests, device events, file transfers
+- ✅ **Battery Monitoring** - Track power status of connected devices
+  - Receive battery level updates from devices
+  - Automatic low battery notifications
+  - Shows charging status
+  - Threshold-based alerts (configurable on device)
+- ✅ **COSMIC Notifications** - Desktop notifications for pings, pairing requests, device events, file transfers, low battery
 - ✅ **Per-device Configuration** - Custom settings per device (nicknames, plugin overrides)
 - ✅ **Plugin Management** - Enable/disable plugins globally and per-device
 - ✅ **Device Pairing** - Full pairing flow with fingerprint verification
 - ✅ **Connection Management** - Automatic reconnection, connection state tracking
 - ✅ **Configuration Persistence** - Device registry, pairing data, preferences
+
+### DBus API
+
+The daemon exposes a comprehensive DBus interface at `com.system76.CosmicKdeConnect` for UI integration:
+
+**Device Management:**
+- `GetDevices() -> Vec<DeviceInfo>` - List all known devices
+- `GetDevice(device_id: String) -> DeviceInfo` - Get specific device details
+- `GetConnectedDevices() -> Vec<DeviceInfo>` - List connected devices only
+
+**Pairing:**
+- `RequestPairing(device_id: String)` - Initiate pairing with a device
+- `AcceptPairing(device_id: String)` - Accept incoming pairing request
+- `RejectPairing(device_id: String)` - Reject incoming pairing request
+- `UnpairDevice(device_id: String)` - Remove device pairing
+
+**Communication:**
+- `SendPing(device_id: String, message: String)` - Send ping to device
+- `ShareFile(device_id: String, path: String)` - Send file to device
+- `ShareText(device_id: String, text: String)` - Send text to device
+- `ShareUrl(device_id: String, url: String)` - Send URL to device (opens in browser)
+- `SendNotification(device_id: String, title: String, body: String)` - Send notification
+
+**Configuration:**
+- `GetDeviceConfig(device_id: String) -> DeviceConfig` - Get device-specific settings
+- `SetDeviceNickname(device_id: String, nickname: String)` - Set custom device name
+- `SetPluginEnabled(device_id: String, plugin: String, enabled: bool)` - Toggle plugin
+- `ResetDeviceConfig(device_id: String)` - Reset to global defaults
+
+**Signals:**
+- `DeviceDiscovered(device_id: String)` - New device found on network
+- `DeviceStateChanged(device_id: String, state: String)` - Connection state updated
+- `PairingStatusChanged(device_id: String, status: String)` - Pairing status updated
+
+**Example Usage:**
+```bash
+# List all devices
+busctl call com.system76.CosmicKdeConnect /com/system76/CosmicKdeConnect com.system76.CosmicKdeConnect GetDevices
+
+# Share a file
+busctl call com.system76.CosmicKdeConnect /com/system76/CosmicKdeConnect com.system76.CosmicKdeConnect ShareFile ss "device-id" "/path/to/file.pdf"
+
+# Send a ping
+busctl call com.system76.CosmicKdeConnect /com/system76/CosmicKdeConnect com.system76.CosmicKdeConnect SendPing ss "device-id" "Hello!"
+```
 
 ## Architecture
 

@@ -104,6 +104,7 @@ pub mod clipboard;
 pub mod mpris;
 pub mod notification;
 pub mod ping;
+pub mod runcommand;
 pub mod share;
 
 use crate::{Device, Packet, ProtocolError, Result};
@@ -744,6 +745,10 @@ mod tests {
     impl Plugin for MockPlugin {
         fn name(&self) -> &str {
             &self.name
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
         }
 
         fn incoming_capabilities(&self) -> Vec<String> {

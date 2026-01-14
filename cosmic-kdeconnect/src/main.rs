@@ -49,6 +49,7 @@ struct KdeConnectApp {
     current_page: Page,
     devices: HashMap<String, dbus_client::DeviceInfo>,
     dbus_client: Option<DbusClient>,
+    selected_device_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,8 @@ enum Message {
     RefreshDevices,
     PairDevice(String),
     UnpairDevice(String),
+    SelectDevice(String),
+    BackToDeviceList,
 }
 
 impl Application for KdeConnectApp {
@@ -92,6 +95,7 @@ impl Application for KdeConnectApp {
             current_page,
             devices: HashMap::new(),
             dbus_client: None,
+            selected_device_id: None,
         };
 
         // Load devices on startup
@@ -142,6 +146,16 @@ impl Application for KdeConnectApp {
                     cosmic::Action::App(Message::RefreshDevices)
                 })
             }
+            Message::SelectDevice(device_id) => {
+                tracing::info!("Selected device: {}", device_id);
+                self.selected_device_id = Some(device_id);
+                Task::none()
+            }
+            Message::BackToDeviceList => {
+                tracing::info!("Returning to device list");
+                self.selected_device_id = None;
+                Task::none()
+            }
         }
     }
 
@@ -164,6 +178,14 @@ impl Application for KdeConnectApp {
 impl KdeConnectApp {
     /// View for the Devices page
     fn devices_view(&self) -> Element<Message> {
+        // If a device is selected, show details view instead
+        if let Some(device_id) = &self.selected_device_id {
+            if let Some(device) = self.devices.get(device_id) {
+                return self.device_details_view(device);
+            }
+        }
+
+        // Otherwise show device list
         let header = row![
             widget::text::title3("Devices"),
             widget::horizontal_space(),
@@ -216,21 +238,79 @@ impl KdeConnectApp {
         };
 
         let device_icon = format!("{}-symbolic", device.device_type);
+        let device_id_for_click = device.id.clone();
 
-        widget::container(
-            column![row![
-                widget::icon::from_name(device_icon.as_str()).size(32),
-                column![
-                    widget::text(&device.name).size(16),
-                    widget::text(status).size(12),
+        widget::button::custom(
+            widget::container(
+                column![row![
+                    widget::icon::from_name(device_icon.as_str()).size(32),
+                    column![
+                        widget::text(&device.name).size(16),
+                        widget::text(status).size(12),
+                    ]
+                    .spacing(4),
+                    widget::horizontal_space(),
+                    pair_button,
                 ]
-                .spacing(4),
-                widget::horizontal_space(),
-                pair_button,
+                .spacing(12)
+                .align_y(Alignment::Center),]
+                .padding(16)
+            )
+            .style(|_theme| cosmic::iced::widget::container::Style {
+                background: Some(cosmic::iced::Background::Color(Color::from_rgb(
+                    0.1, 0.1, 0.1
+                ))),
+                border: cosmic::iced::Border {
+                    radius: 8.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+        )
+        .on_press(Message::SelectDevice(device_id_for_click))
+        .width(Length::Fill)
+        .into()
+    }
+
+    /// Detailed view for a selected device
+    fn device_details_view<'a>(&self, device: &'a dbus_client::DeviceInfo) -> Element<'a, Message> {
+        let status = if device.is_connected {
+            ("Connected", Color::from_rgb(0.2, 0.8, 0.4))
+        } else if device.is_paired {
+            ("Paired (Disconnected)", Color::from_rgb(0.5, 0.5, 0.5))
+        } else {
+            ("Available", Color::from_rgb(0.8, 0.6, 0.2))
+        };
+
+        let device_icon = format!("{}-symbolic", device.device_type);
+
+        // Header with back button
+        let header = row![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic"))
+                .on_press(Message::BackToDeviceList),
+            widget::horizontal_space(),
+            widget::button::standard("Refresh")
+                .on_press(Message::RefreshDevices)
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center)
+        .padding(24);
+
+        // Device info section
+        let device_info = widget::container(
+            column![
+                row![
+                    widget::icon::from_name(device_icon.as_str()).size(64),
+                    widget::horizontal_space(),
+                ]
+                .spacing(16)
+                .align_y(Alignment::Center),
+                widget::text(&device.name).size(24),
+                widget::text(status.0).size(14),
             ]
             .spacing(12)
-            .align_y(Alignment::Center),]
-            .padding(16)
+            .padding(24)
         )
         .style(|_theme| cosmic::iced::widget::container::Style {
             background: Some(cosmic::iced::Background::Color(Color::from_rgb(
@@ -241,9 +321,131 @@ impl KdeConnectApp {
                 ..Default::default()
             },
             ..Default::default()
-        })
-        .width(Length::Fill)
-        .into()
+        });
+
+        // Device details section
+        let mut details_col = column![
+            widget::text("Device Information").size(18),
+            widget::divider::horizontal::default(),
+        ]
+        .spacing(8);
+
+        details_col = details_col.push(
+            row![
+                widget::text("Type:").size(14),
+                widget::horizontal_space(),
+                widget::text(&device.device_type).size(14),
+            ]
+            .spacing(8),
+        );
+
+        details_col = details_col.push(
+            row![
+                widget::text("ID:").size(14),
+                widget::horizontal_space(),
+                widget::text(&device.id).size(12),
+            ]
+            .spacing(8),
+        );
+
+        details_col = details_col.push(
+            row![
+                widget::text("Status:").size(14),
+                widget::horizontal_space(),
+                widget::text(if device.is_connected {
+                    "Online"
+                } else {
+                    "Offline"
+                })
+                .size(14),
+            ]
+            .spacing(8),
+        );
+
+        details_col = details_col.push(
+            row![
+                widget::text("Paired:").size(14),
+                widget::horizontal_space(),
+                widget::text(if device.is_paired { "Yes" } else { "No" }).size(14),
+            ]
+            .spacing(8),
+        );
+
+        details_col = details_col.push(
+            row![
+                widget::text("Reachable:").size(14),
+                widget::horizontal_space(),
+                widget::text(if device.is_reachable { "Yes" } else { "No" }).size(14),
+            ]
+            .spacing(8),
+        );
+
+        let details = widget::container(details_col.padding(16))
+            .style(|_theme| cosmic::iced::widget::container::Style {
+                background: Some(cosmic::iced::Background::Color(Color::from_rgb(
+                    0.1, 0.1, 0.1
+                ))),
+                border: cosmic::iced::Border {
+                    radius: 8.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+        // Actions section (if device is paired and connected)
+        let actions: Element<Message> = if device.is_paired && device.is_connected {
+            widget::container(
+                column![
+                    widget::text("Actions").size(18),
+                    widget::divider::horizontal::default(),
+                    row![
+                        widget::button::standard("Send Ping"),
+                        widget::button::standard("Send File"),
+                    ]
+                    .spacing(8),
+                    row![
+                        widget::button::standard("Find Phone"),
+                        widget::button::standard("Share Text"),
+                    ]
+                    .spacing(8),
+                ]
+                .spacing(12)
+                .padding(16)
+            )
+            .style(|_theme| cosmic::iced::widget::container::Style {
+                background: Some(cosmic::iced::Background::Color(Color::from_rgb(
+                    0.1, 0.1, 0.1
+                ))),
+                border: cosmic::iced::Border {
+                    radius: 8.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+        } else {
+            widget::container(
+                column![
+                    widget::text("Actions unavailable").size(14),
+                    widget::text("Device must be paired and connected").size(12),
+                ]
+                .spacing(4)
+                .padding(16)
+            )
+            .into()
+        };
+
+        // Main content
+        let content = widget::scrollable(
+            column![device_info, details, actions]
+                .spacing(16)
+                .padding(24)
+        );
+
+        column![header, widget::divider::horizontal::default(), content]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// View for the Transfers page

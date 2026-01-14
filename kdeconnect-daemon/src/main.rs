@@ -555,6 +555,7 @@ impl Daemon {
         let plugin_manager = self.plugin_manager.clone();
         let dbus_server = self.dbus_server.clone();
         let cosmic_notifier = self.cosmic_notifier.clone();
+        let mpris_manager = self.mpris_manager.clone();
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
                 if let Err(e) = Self::handle_connection_event(
@@ -563,6 +564,7 @@ impl Daemon {
                     &plugin_manager,
                     &dbus_server,
                     &cosmic_notifier,
+                    &mpris_manager,
                 )
                 .await
                 {
@@ -721,6 +723,7 @@ impl Daemon {
         plugin_manager: &Arc<RwLock<PluginManager>>,
         dbus_server: &Option<Arc<DbusServer>>,
         cosmic_notifier: &Option<Arc<cosmic_notifications::CosmicNotifier>>,
+        mpris_manager: &Option<Arc<mpris_manager::MprisManager>>,
     ) -> Result<()> {
         match event {
             ConnectionEvent::Connected {
@@ -1000,6 +1003,15 @@ impl Daemon {
                                     }
                                 }
                             }
+                            "kdeconnect.mpris.request" => {
+                                if let Some(mpris_mgr) = &mpris_manager {
+                                    Self::handle_mpris_request(
+                                        &packet.body,
+                                        mpris_mgr,
+                                        &device_name,
+                                    ).await;
+                                }
+                            }
                             _ => {
                                 // Other packet types don't trigger notifications
                             }
@@ -1020,6 +1032,109 @@ impl Daemon {
             }
         }
         Ok(())
+    }
+
+    /// Handle MPRIS control requests from a remote device
+    ///
+    /// Processes various MPRIS commands including playback control, seek operations,
+    /// volume/loop/shuffle settings, and player list/now playing queries.
+    async fn handle_mpris_request(
+        body: &serde_json::Value,
+        mpris_manager: &Arc<mpris_manager::MprisManager>,
+        device_name: &str,
+    ) {
+        let player = body.get("player")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Handle player list request (doesn't require a player name)
+        if body.get("requestPlayerList").is_some() {
+            info!("Received player list request from {}", device_name);
+            match mpris_manager.discover_players().await {
+                Ok(players) => {
+                    info!("Sending player list to {}: {:?}", device_name, players);
+                    // TODO: Send player list packet to remote device
+                }
+                Err(e) => warn!("Failed to discover players for {}: {}", device_name, e),
+            }
+            return;
+        }
+
+        if player.is_empty() {
+            debug!("Received MPRIS request without player name");
+            return;
+        }
+
+        // Playback control action (Play, Pause, PlayPause, Stop, Next, Previous)
+        if let Some(action) = body.get("action").and_then(|v| v.as_str()) {
+            match mpris_manager.call_player_method(player, action).await {
+                Ok(()) => info!("Executed MPRIS action '{}' on player {} from {}", action, player, device_name),
+                Err(e) => warn!("Failed to execute MPRIS action '{}' on player {}: {}", action, player, e),
+            }
+            return;
+        }
+
+        // Seek operation (offset in microseconds)
+        if let Some(offset) = body.get("Seek").and_then(|v| v.as_i64()) {
+            match mpris_manager.seek(player, offset).await {
+                Ok(()) => info!("Seeked {} microseconds on player {} from {}", offset, player, device_name),
+                Err(e) => warn!("Failed to seek {} microseconds on player {}: {}", offset, player, e),
+            }
+            return;
+        }
+
+        // Set absolute position (milliseconds from protocol, convert to microseconds)
+        if let Some(position) = body.get("SetPosition").and_then(|v| v.as_i64()) {
+            let position_us = position * 1000;
+            // TODO: Get track ID from current player state
+            let track_id = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
+            match mpris_manager.set_position(player, track_id, position_us).await {
+                Ok(()) => info!("Set position to {} ms on player {} from {}", position, player, device_name),
+                Err(e) => warn!("Failed to set position to {} on player {}: {}", position, player, e),
+            }
+            return;
+        }
+
+        // Set volume (0-100 from protocol, convert to 0.0-1.0 for MPRIS)
+        if let Some(volume) = body.get("setVolume").and_then(|v| v.as_i64()) {
+            let volume_f = (volume as f64) / 100.0;
+            match mpris_manager.set_volume(player, volume_f).await {
+                Ok(()) => info!("Set volume to {}% on player {} from {}", volume, player, device_name),
+                Err(e) => warn!("Failed to set volume to {} on player {}: {}", volume, player, e),
+            }
+            return;
+        }
+
+        // Set loop status
+        if let Some(loop_str) = body.get("setLoopStatus").and_then(|v| v.as_str()) {
+            let loop_status = mpris_manager::LoopStatus::from_str(loop_str);
+            match mpris_manager.set_loop_status(player, loop_status).await {
+                Ok(()) => info!("Set loop status to {} on player {} from {}", loop_str, player, device_name),
+                Err(e) => warn!("Failed to set loop status to {} on player {}: {}", loop_str, player, e),
+            }
+            return;
+        }
+
+        // Set shuffle
+        if let Some(shuffle) = body.get("setShuffle").and_then(|v| v.as_bool()) {
+            match mpris_manager.set_shuffle(player, shuffle).await {
+                Ok(()) => info!("Set shuffle to {} on player {} from {}", shuffle, player, device_name),
+                Err(e) => warn!("Failed to set shuffle to {} on player {}: {}", shuffle, player, e),
+            }
+            return;
+        }
+
+        // Request for now playing state
+        if body.get("requestNowPlaying").is_some() {
+            info!("Received now playing request for player {} from {}", player, device_name);
+            match mpris_manager.query_player_state(player).await {
+                Ok(_state) => {
+                    info!("Sending player state for {} to {}", player, device_name);
+                    // TODO: Send player state packet to remote device
+                }
+                Err(e) => warn!("Failed to query player {} state: {}", player, e),
+            }
+        }
     }
 
     /// Handle a discovery event

@@ -247,11 +247,37 @@ impl DiscoveryService {
         }
     }
 
+    /// Send directed identity packet to a specific device
+    /// This is sent in response to discovering a device, matching official KDE Connect behavior
+    fn send_directed_identity(
+        socket: &UdpSocket,
+        device_info: &DeviceInfo,
+        target_addr: SocketAddr,
+    ) -> Result<()> {
+        let packet = device_info.to_identity_packet();
+        let bytes = packet.to_bytes()?;
+
+        match socket.send_to(&bytes, target_addr) {
+            Ok(sent) => {
+                debug!(
+                    "Sent directed identity packet ({} bytes) to {}",
+                    sent, target_addr
+                );
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Failed to send directed identity to {}: {}", target_addr, e);
+                Err(ProtocolError::Io(e))
+            }
+        }
+    }
+
     /// Spawn listener task
     fn spawn_listener(&self) {
         let socket = self.socket.clone();
         let event_tx = self.event_tx.clone();
         let own_device_id = self.device_info.device_id.clone();
+        let own_device_info = self.device_info.clone();
         let last_seen = self.last_seen.clone();
 
         tokio::spawn(async move {
@@ -264,6 +290,8 @@ impl DiscoveryService {
                             &buf[..size],
                             src_addr,
                             &own_device_id,
+                            &own_device_info,
+                            &socket,
                             &event_tx,
                             &last_seen,
                         )
@@ -290,6 +318,8 @@ impl DiscoveryService {
         data: &[u8],
         src_addr: SocketAddr,
         own_device_id: &str,
+        own_device_info: &DeviceInfo,
+        socket: &UdpSocket,
         event_tx: &mpsc::UnboundedSender<DiscoveryEvent>,
         last_seen: &Arc<RwLock<HashMap<String, u64>>>,
     ) -> Result<()> {
@@ -317,6 +347,13 @@ impl DiscoveryService {
         let is_new = !last_seen_map.contains_key(&device_info.device_id);
         last_seen_map.insert(device_info.device_id.clone(), current_time);
         drop(last_seen_map);
+
+        // Send directed identity packet back to discovered device
+        // This matches official KDE Connect behavior - devices send both broadcasts
+        // AND directed packets to each discovered device
+        if let Err(e) = Self::send_directed_identity(socket, own_device_info, src_addr) {
+            warn!("Failed to send directed identity to {}: {}", src_addr, e);
+        }
 
         // Emit appropriate event
         let event = if is_new {

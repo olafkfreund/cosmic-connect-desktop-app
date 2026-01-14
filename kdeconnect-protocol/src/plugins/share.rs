@@ -583,7 +583,6 @@ impl SharePlugin {
                                                 "Successfully downloaded file '{}' from {}",
                                                 filename_clone, device_name
                                             );
-                                            // TODO: Emit event/signal for COSMIC notification
                                         }
                                         Err(e) => {
                                             warn!(

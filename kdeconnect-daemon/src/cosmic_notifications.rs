@@ -321,6 +321,28 @@ impl CosmicNotifier {
         .await
     }
 
+    /// Send a pairing timeout notification
+    pub async fn notify_pairing_timeout(&self, device_name: &str) -> Result<u32> {
+        self.send(
+            NotificationBuilder::new("Pairing Timeout")
+                .body(format!("Pairing request to {} timed out", device_name))
+                .icon("dialog-warning-symbolic")
+                .timeout(5000),
+        )
+        .await
+    }
+
+    /// Send a pairing error notification
+    pub async fn notify_pairing_error(&self, device_name: &str, error: &str) -> Result<u32> {
+        self.send(
+            NotificationBuilder::new("Pairing Failed")
+                .body(format!("Failed to pair with {}: {}", device_name, error))
+                .icon("dialog-error-symbolic")
+                .timeout(7000),
+        )
+        .await
+    }
+
     /// Close a notification by ID
     pub async fn close(&self, notification_id: u32) -> Result<()> {
         let proxy = zbus::Proxy::new(

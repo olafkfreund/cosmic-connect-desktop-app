@@ -444,11 +444,45 @@ impl Daemon {
             }
             PairingEvent::PairingTimeout { device_id } => {
                 warn!("Pairing request timed out for device {}", device_id);
-                // TODO: Notify UI of timeout
+
+                // Get device name for notification
+                let device_name = {
+                    let manager = device_manager.read().await;
+                    manager
+                        .get_device(&device_id)
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_else(|| device_id.clone())
+                };
+
+                // Send notification
+                if let Some(notifier) = cosmic_notifier {
+                    if let Err(e) = notifier.notify_pairing_timeout(&device_name).await {
+                        warn!("Failed to send pairing timeout notification: {}", e);
+                    } else {
+                        info!("Sent pairing timeout notification for {}", device_name);
+                    }
+                }
             }
             PairingEvent::Error { device_id, message } => {
                 error!("Pairing error for device {:?}: {}", device_id, message);
-                // TODO: Notify UI of error
+
+                // Get device name for notification
+                let device_name = {
+                    let manager = device_manager.read().await;
+                    manager
+                        .get_device(&device_id)
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_else(|| device_id.clone().unwrap_or_else(|| "Unknown".to_string()))
+                };
+
+                // Send notification
+                if let Some(notifier) = cosmic_notifier {
+                    if let Err(e) = notifier.notify_pairing_error(&device_name, &message).await {
+                        warn!("Failed to send pairing error notification: {}", e);
+                    } else {
+                        info!("Sent pairing error notification for {}", device_name);
+                    }
+                }
             }
         }
         Ok(())

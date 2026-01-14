@@ -777,7 +777,7 @@ impl Daemon {
                                 }
                             }
                             "kdeconnect.share.request" => {
-                                // Check if it's a file share (has filename and payload)
+                                // Handle different share types: file, URL, or text
                                 if let Some(filename) = packet.body.get("filename").and_then(|v| v.as_str()) {
                                     if packet.payload_size.is_some() {
                                         // This is a file transfer, show notification
@@ -800,6 +800,46 @@ impl Daemon {
                                                 "Sent file received notification for '{}' ({} bytes) from {}",
                                                 filename, file_size, device_name
                                             );
+                                        }
+                                    }
+                                } else if let Some(url) = packet.body.get("url").and_then(|v| v.as_str()) {
+                                    // URL share - open in default browser
+                                    info!("Received URL share from {}: {}", device_name, url);
+
+                                    // Spawn xdg-open to open URL in default browser
+                                    let url_clone = url.to_string();
+                                    let device_name_clone = device_name.clone();
+                                    tokio::spawn(async move {
+                                        match tokio::process::Command::new("xdg-open")
+                                            .arg(&url_clone)
+                                            .spawn()
+                                        {
+                                            Ok(_) => {
+                                                info!("Opened URL from {} in default browser: {}",
+                                                    device_name_clone, url_clone);
+                                            }
+                                            Err(e) => {
+                                                warn!("Failed to open URL from {}: {}",
+                                                    device_name_clone, e);
+                                            }
+                                        }
+                                    });
+                                } else if let Some(text) = packet.body.get("text").and_then(|v| v.as_str()) {
+                                    // Text share - copy to clipboard
+                                    info!("Received text share from {} ({} chars)", device_name, text.len());
+
+                                    use arboard::Clipboard;
+                                    match Clipboard::new() {
+                                        Ok(mut clipboard) => {
+                                            if let Err(e) = clipboard.set_text(text) {
+                                                warn!("Failed to copy shared text to clipboard: {}", e);
+                                            } else {
+                                                info!("Copied shared text from {} to clipboard ({} chars)",
+                                                    device_name, text.len());
+                                            }
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to initialize clipboard for text share: {}", e);
                                         }
                                     }
                                 }

@@ -1069,6 +1069,48 @@ impl KdeConnectInterface {
         plugin: &str,
         data: &str,
     ) -> zbus::Result<()>;
+
+    /// Signal: File transfer progress
+    ///
+    /// Emitted during file transfers to report progress.
+    ///
+    /// # Arguments
+    /// * `transfer_id` - Unique transfer ID
+    /// * `device_id` - The device ID
+    /// * `filename` - Name of the file being transferred
+    /// * `bytes_transferred` - Bytes transferred so far
+    /// * `total_bytes` - Total file size in bytes
+    /// * `direction` - "sending" or "receiving"
+    #[zbus(signal)]
+    async fn transfer_progress(
+        signal_context: &SignalContext<'_>,
+        transfer_id: &str,
+        device_id: &str,
+        filename: &str,
+        bytes_transferred: u64,
+        total_bytes: u64,
+        direction: &str,
+    ) -> zbus::Result<()>;
+
+    /// Signal: Transfer complete or cancelled
+    ///
+    /// Emitted when a file transfer finishes (successfully or not).
+    ///
+    /// # Arguments
+    /// * `transfer_id` - Unique transfer ID
+    /// * `device_id` - The device ID
+    /// * `filename` - Name of the file
+    /// * `success` - Whether transfer completed successfully
+    /// * `error_message` - Error message if failed (empty if successful)
+    #[zbus(signal)]
+    async fn transfer_complete(
+        signal_context: &SignalContext<'_>,
+        transfer_id: &str,
+        device_id: &str,
+        filename: &str,
+        success: bool,
+        error_message: &str,
+    ) -> zbus::Result<()>;
 }
 
 /// DBus server for the daemon
@@ -1212,6 +1254,70 @@ impl DbusServer {
             .await?;
 
         debug!("Emitted PluginEvent signal for {} ({})", device_id, plugin);
+        Ok(())
+    }
+
+    /// Emit a transfer_progress signal
+    pub async fn emit_transfer_progress(
+        &self,
+        transfer_id: &str,
+        device_id: &str,
+        filename: &str,
+        bytes_transferred: u64,
+        total_bytes: u64,
+        direction: &str,
+    ) -> Result<()> {
+        let object_server = self.connection.object_server();
+        let iface_ref = object_server
+            .interface::<_, KdeConnectInterface>(OBJECT_PATH)
+            .await?;
+
+        KdeConnectInterface::transfer_progress(
+            iface_ref.signal_context(),
+            transfer_id,
+            device_id,
+            filename,
+            bytes_transferred,
+            total_bytes,
+            direction,
+        )
+        .await?;
+
+        debug!(
+            "Emitted TransferProgress signal: {} - {}/{} bytes",
+            transfer_id, bytes_transferred, total_bytes
+        );
+        Ok(())
+    }
+
+    /// Emit a transfer_complete signal
+    pub async fn emit_transfer_complete(
+        &self,
+        transfer_id: &str,
+        device_id: &str,
+        filename: &str,
+        success: bool,
+        error_message: &str,
+    ) -> Result<()> {
+        let object_server = self.connection.object_server();
+        let iface_ref = object_server
+            .interface::<_, KdeConnectInterface>(OBJECT_PATH)
+            .await?;
+
+        KdeConnectInterface::transfer_complete(
+            iface_ref.signal_context(),
+            transfer_id,
+            device_id,
+            filename,
+            success,
+            error_message,
+        )
+        .await?;
+
+        debug!(
+            "Emitted TransferComplete signal: {} - success: {}",
+            transfer_id, success
+        );
         Ok(())
     }
 }

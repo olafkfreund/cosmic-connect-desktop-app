@@ -150,6 +150,12 @@ impl From<FileTransferInfo> for crate::plugins::share::FileShareInfo {
     }
 }
 
+/// Progress callback for file transfers
+///
+/// Reports transferred bytes and total expected size.
+/// Return `false` to cancel the transfer.
+pub type ProgressCallback = Box<dyn Fn(u64, u64) -> bool + Send + Sync>;
+
 /// TCP server for sending file payloads
 ///
 /// Listens on an available port and accepts a single connection
@@ -157,6 +163,7 @@ impl From<FileTransferInfo> for crate::plugins::share::FileShareInfo {
 pub struct PayloadServer {
     listener: TcpListener,
     port: u16,
+    progress_callback: Option<ProgressCallback>,
 }
 
 impl PayloadServer {
@@ -173,7 +180,11 @@ impl PayloadServer {
             let addr = format!("0.0.0.0:{}", port);
             if let Ok(listener) = TcpListener::bind(&addr).await {
                 info!("Payload server listening on port {}", port);
-                return Ok(Self { listener, port });
+                return Ok(Self {
+                    listener,
+                    port,
+                    progress_callback: None,
+                });
             }
         }
 
@@ -184,6 +195,25 @@ impl PayloadServer {
                 PORT_RANGE_START, PORT_RANGE_END
             ),
         )))
+    }
+
+    /// Set a progress callback for transfer updates
+    ///
+    /// The callback receives (bytes_transferred, total_bytes) and returns
+    /// `true` to continue or `false` to cancel the transfer.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let server = PayloadServer::new().await?;
+    /// server.with_progress(Box::new(|transferred, total| {
+    ///     println!("Progress: {}/{} bytes", transferred, total);
+    ///     true // continue transfer
+    /// }));
+    /// ```
+    pub fn with_progress(mut self, callback: ProgressCallback) -> Self {
+        self.progress_callback = Some(callback);
+        self
     }
 
     /// Get the port this server is listening on
@@ -213,6 +243,7 @@ impl PayloadServer {
     /// - Connection times out
     /// - File cannot be opened
     /// - Transfer fails or is interrupted
+    /// - Transfer is cancelled via progress callback
     ///
     /// # Example
     ///
@@ -223,6 +254,12 @@ impl PayloadServer {
     pub async fn send_file(self, file_path: impl AsRef<Path>) -> Result<()> {
         let file_path = file_path.as_ref();
         info!("Waiting for connection to send file: {:?}", file_path);
+
+        // Get file size for progress tracking
+        let file_size = tokio::fs::metadata(file_path)
+            .await
+            .map_err(|e| ProtocolError::Io(e))?
+            .len();
 
         // Accept connection with timeout
         let (mut stream, remote_addr) = timeout(CONNECTION_TIMEOUT, self.listener.accept())
@@ -279,9 +316,20 @@ impl PayloadServer {
             total_bytes += bytes_read as u64;
 
             debug!(
-                "Transferred {} bytes ({} total)",
-                bytes_read, total_bytes
+                "Transferred {} bytes ({}/{} total)",
+                bytes_read, total_bytes, file_size
             );
+
+            // Call progress callback if set
+            if let Some(ref callback) = self.progress_callback {
+                if !callback(total_bytes, file_size) {
+                    info!("Transfer cancelled by progress callback");
+                    return Err(ProtocolError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "Transfer cancelled",
+                    )));
+                }
+            }
         }
 
         // Flush stream
@@ -301,6 +349,7 @@ impl PayloadServer {
 /// Connects to a remote payload server and downloads file data.
 pub struct PayloadClient {
     stream: TcpStream,
+    progress_callback: Option<ProgressCallback>,
 }
 
 impl PayloadClient {
@@ -343,7 +392,29 @@ impl PayloadClient {
 
         info!("Connected to payload server at {}", addr);
 
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            progress_callback: None,
+        })
+    }
+
+    /// Set a progress callback for transfer updates
+    ///
+    /// The callback receives (bytes_transferred, total_bytes) and returns
+    /// `true` to continue or `false` to cancel the transfer.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let client = PayloadClient::new("192.168.1.100", 1739).await?;
+    /// client.with_progress(Box::new(|transferred, total| {
+    ///     println!("Progress: {}/{} bytes", transferred, total);
+    ///     true // continue transfer
+    /// }));
+    /// ```
+    pub fn with_progress(mut self, callback: ProgressCallback) -> Self {
+        self.progress_callback = Some(callback);
+        self
     }
 
     /// Receive a file from the connected server
@@ -361,6 +432,7 @@ impl PayloadClient {
     /// - File cannot be created
     /// - Transfer fails or times out
     /// - Size mismatch (received != expected)
+    /// - Transfer is cancelled via progress callback
     ///
     /// # Example
     ///
@@ -424,6 +496,17 @@ impl PayloadClient {
                 "Received {} bytes ({}/{} total)",
                 bytes_read, total_bytes, expected_size
             );
+
+            // Call progress callback if set
+            if let Some(ref callback) = self.progress_callback {
+                if !callback(total_bytes, expected_size) {
+                    info!("Transfer cancelled by progress callback");
+                    return Err(ProtocolError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "Transfer cancelled",
+                    )));
+                }
+            }
         }
 
         // Flush file

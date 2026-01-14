@@ -83,6 +83,8 @@ pub struct KdeConnectInterface {
     pairing_service: Option<Arc<RwLock<kdeconnect_protocol::pairing::PairingService>>>,
     /// MPRIS manager for local media player control (optional)
     mpris_manager: Option<Arc<crate::mpris_manager::MprisManager>>,
+    /// DBus connection for emitting signals
+    dbus_connection: Connection,
 }
 
 impl KdeConnectInterface {
@@ -94,6 +96,7 @@ impl KdeConnectInterface {
         device_config_registry: Arc<RwLock<crate::device_config::DeviceConfigRegistry>>,
         pairing_service: Option<Arc<RwLock<kdeconnect_protocol::pairing::PairingService>>>,
         mpris_manager: Option<Arc<crate::mpris_manager::MprisManager>>,
+        dbus_connection: Connection,
     ) -> Self {
         Self {
             device_manager,
@@ -102,6 +105,7 @@ impl KdeConnectInterface {
             device_config_registry,
             pairing_service,
             mpris_manager,
+            dbus_connection,
         }
     }
 }
@@ -410,21 +414,77 @@ impl KdeConnectInterface {
 
         info!("DBus: Share packet sent to {}, waiting for connection", device_id);
 
-        // Spawn background task to handle file transfer
+        // Generate unique transfer ID
+        let transfer_id = format!("{}_{}", device_id, std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis());
+
+        // Spawn background task to handle file transfer with progress tracking
         let file_path = path.clone();
         let device_id_clone = device_id.clone();
+        let filename = file_info.filename.clone();
+        let transfer_id_clone = transfer_id.clone();
+        let dbus_conn = self.dbus_connection.clone();
+
         tokio::spawn(async move {
-            match server.send_file(&file_path).await {
-                Ok(()) => {
-                    info!("File transfer completed successfully for device {}", device_id_clone);
-                }
-                Err(e) => {
-                    warn!("File transfer failed for device {}: {}", device_id_clone, e);
-                }
+            // Create progress callback that emits DBus signals
+            let conn = dbus_conn.clone();
+            let tid = transfer_id_clone.clone();
+            let did = device_id_clone.clone();
+            let fname = filename.clone();
+
+            let progress_callback = Box::new(move |bytes_transferred: u64, total_bytes: u64| -> bool {
+                let conn_clone = conn.clone();
+                let tid_clone = tid.clone();
+                let did_clone = did.clone();
+                let fname_clone = fname.clone();
+
+                // Emit progress signal (non-blocking)
+                tokio::spawn(async move {
+                    if let Ok(object_server) = conn_clone.object_server().interface::<_, KdeConnectInterface>(OBJECT_PATH).await {
+                        let _ = KdeConnectInterface::transfer_progress(
+                            object_server.signal_context(),
+                            &tid_clone,
+                            &did_clone,
+                            &fname_clone,
+                            bytes_transferred,
+                            total_bytes,
+                            "sending",
+                        ).await;
+                    }
+                });
+
+                true // Continue transfer
+            });
+
+            // Attach progress callback and start transfer
+            let server_with_progress = server.with_progress(progress_callback);
+            let result = server_with_progress.send_file(&file_path).await;
+
+            // Emit completion signal
+            let success = result.is_ok();
+            let error_msg = result.as_ref().err().map(|e| e.to_string()).unwrap_or_default();
+
+            if let Ok(object_server) = dbus_conn.object_server().interface::<_, KdeConnectInterface>(OBJECT_PATH).await {
+                let _ = KdeConnectInterface::transfer_complete(
+                    object_server.signal_context(),
+                    &transfer_id_clone,
+                    &device_id_clone,
+                    &filename,
+                    success,
+                    &error_msg,
+                ).await;
+            }
+
+            if success {
+                info!("File transfer completed successfully for device {}", device_id_clone);
+            } else {
+                warn!("File transfer failed for device {}: {}", device_id_clone, error_msg);
             }
         });
 
-        info!("DBus: File sharing initiated for {}", device_id);
+        info!("DBus: File sharing initiated for {} (transfer_id: {})", device_id, transfer_id);
         Ok(())
     }
 
@@ -1142,6 +1202,14 @@ impl DbusServer {
     ) -> Result<Self> {
         info!("Starting DBus server on {}", SERVICE_NAME);
 
+        // Create connection first
+        let connection = connection::Builder::session()?
+            .name(SERVICE_NAME)?
+            .build()
+            .await
+            .context("Failed to build DBus connection")?;
+
+        // Create interface with connection reference
         let interface = KdeConnectInterface::new(
             device_manager,
             plugin_manager,
@@ -1149,14 +1217,15 @@ impl DbusServer {
             device_config_registry,
             pairing_service,
             mpris_manager,
+            connection.clone(),
         );
 
-        let connection = connection::Builder::session()?
-            .name(SERVICE_NAME)?
-            .serve_at(OBJECT_PATH, interface)?
-            .build()
+        // Serve the interface
+        connection
+            .object_server()
+            .at(OBJECT_PATH, interface)
             .await
-            .context("Failed to build DBus connection")?;
+            .context("Failed to serve interface")?;
 
         info!("DBus server started successfully");
 

@@ -12,9 +12,10 @@ use kdeconnect_protocol::{
     pairing::{PairingConfig, PairingEvent, PairingService, PairingStatus},
     plugins::{
         battery::BatteryPluginFactory, clipboard::ClipboardPluginFactory,
-        mpris::MprisPluginFactory, notification::NotificationPluginFactory,
-        ping::PingPluginFactory, remoteinput::RemoteInputPluginFactory,
-        runcommand::RunCommandPluginFactory, share::SharePluginFactory, PluginManager,
+        findmyphone::FindMyPhonePluginFactory, mpris::MprisPluginFactory,
+        notification::NotificationPluginFactory, ping::PingPluginFactory,
+        remoteinput::RemoteInputPluginFactory, runcommand::RunCommandPluginFactory,
+        share::SharePluginFactory, PluginManager,
     },
     CertificateInfo, DeviceInfo, DeviceManager, DeviceType,
 };
@@ -272,6 +273,13 @@ impl Daemon {
             manager
                 .register_factory(Arc::new(RemoteInputPluginFactory))
                 .context("Failed to register Remote Input plugin factory")?;
+        }
+
+        if self.config.plugins.enable_findmyphone {
+            info!("Registering Find My Phone plugin factory");
+            manager
+                .register_factory(Arc::new(FindMyPhonePluginFactory))
+                .context("Failed to register Find My Phone plugin factory")?;
         }
 
         info!(

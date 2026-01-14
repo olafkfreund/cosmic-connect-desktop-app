@@ -95,6 +95,10 @@ pub struct PluginConfig {
     /// Enable Remote Input plugin
     #[serde(default = "default_true")]
     pub enable_remoteinput: bool,
+
+    /// Enable Find My Phone plugin
+    #[serde(default = "default_true")]
+    pub enable_findmyphone: bool,
 }
 
 /// Storage paths configuration
@@ -157,6 +161,7 @@ impl Default for PluginConfig {
             enable_mpris: true,
             enable_runcommand: true,
             enable_remoteinput: true,
+            enable_findmyphone: true,
         }
     }
 }

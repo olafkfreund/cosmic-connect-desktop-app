@@ -20,6 +20,7 @@ fn main() -> cosmic::iced::Result {
 struct DeviceState {
     device: Device,
     battery_level: Option<u8>,
+    is_charging: bool,
 }
 
 struct KdeConnectApplet {
@@ -34,6 +35,9 @@ enum Message {
     PairDevice(String),
     UnpairDevice(String),
     RefreshDevices,
+    SendPing(String),
+    SendFile(String),
+    FindPhone(String),
     Surface(cosmic::surface::Action),
 }
 
@@ -60,6 +64,7 @@ impl cosmic::Application for KdeConnectApplet {
                     certificate_data: None,
                 },
                 battery_level: Some(85),
+                is_charging: true,
             },
             DeviceState {
                 device: Device {
@@ -74,7 +79,8 @@ impl cosmic::Application for KdeConnectApplet {
                     certificate_fingerprint: None,
                     certificate_data: None,
                 },
-                battery_level: None,
+                battery_level: Some(45),
+                is_charging: false,
             },
             DeviceState {
                 device: Device {
@@ -90,6 +96,7 @@ impl cosmic::Application for KdeConnectApplet {
                     certificate_data: None,
                 },
                 battery_level: None,
+                is_charging: false,
             },
         ];
 
@@ -144,6 +151,18 @@ impl cosmic::Application for KdeConnectApplet {
             Message::RefreshDevices => {
                 tracing::info!("Refreshing device list");
                 // TODO: Connect to daemon and fetch device list
+            }
+            Message::SendPing(device_id) => {
+                tracing::info!("Sending ping to device: {}", device_id);
+                // TODO: Connect to daemon and send ping
+            }
+            Message::SendFile(device_id) => {
+                tracing::info!("Opening file picker for device: {}", device_id);
+                // TODO: Open file picker and send file via daemon
+            }
+            Message::FindPhone(device_id) => {
+                tracing::info!("Finding phone: {}", device_id);
+                // TODO: Connect to daemon and trigger find phone
             }
             Message::Surface(action) => {
                 return cosmic::task::message(cosmic::Action::Cosmic(
@@ -257,12 +276,7 @@ impl KdeConnectApplet {
 
         let popup_content = column![
             container(header)
-                .padding(Padding {
-                    top: 8.0,
-                    bottom: 8.0,
-                    left: 12.0,
-                    right: 12.0,
-                })
+                .padding(Padding::from([8.0, 12.0]))
                 .width(Length::Fill),
             divider::horizontal::default(),
             scrollable(content).height(Length::Fill),
@@ -286,7 +300,6 @@ impl KdeConnectApplet {
             DeviceType::Desktop => "computer-symbolic",
             DeviceType::Laptop => "laptop-symbolic",
             DeviceType::Tv => "tv-symbolic",
-            _ => "question-symbolic",
         };
 
         // Status indicator icon
@@ -300,60 +313,116 @@ impl KdeConnectApplet {
         };
 
         // Device name and status text
-        let mut info_col = column![text(&device.info.device_name).size(14),].spacing(2);
+        let mut info_row = row![].spacing(8).align_y(cosmic::iced::Alignment::Center);
+
+        // Device name and status column
+        let mut name_status_col = column![text(&device.info.device_name).size(14)].spacing(2);
 
         // Add connection status
-        let status_text = match device.connection_state {
-            ConnectionState::Connected => "Connected",
-            ConnectionState::Connecting => "Connecting...",
-            ConnectionState::Disconnected => {
-                if device.pairing_status == PairingStatus::Paired {
-                    "Disconnected"
-                } else {
-                    "Not paired"
-                }
-            }
-            ConnectionState::Failed => "Connection failed",
+        let status_text = match (device.connection_state, device.pairing_status) {
+            (ConnectionState::Connected, _) => "Connected",
+            (ConnectionState::Connecting, _) => "Connecting...",
+            (ConnectionState::Failed, _) => "Connection failed",
+            (ConnectionState::Disconnected, PairingStatus::Paired) => "Disconnected",
+            (ConnectionState::Disconnected, _) => "Not paired",
         };
-        info_col = info_col.push(text(status_text).size(11));
+        name_status_col = name_status_col.push(text(status_text).size(11));
 
-        // Add battery level if available
-        if let Some(battery) = device_state.battery_level {
-            let battery_text = format!("Battery: {}%", battery);
-            info_col = info_col.push(text(battery_text).size(11));
+        info_row = info_row.push(name_status_col);
+
+        // Add battery level with icon if available
+        if let Some(level) = device_state.battery_level {
+            let icon_name = battery_icon_name(level, device_state.is_charging);
+            info_row = info_row.push(
+                row![
+                    icon::from_name(icon_name).size(14),
+                    text(format!("{}%", level)).size(11),
+                ]
+                .spacing(4)
+                .align_y(cosmic::iced::Alignment::Center),
+            );
         }
 
-        // Action button
-        let action_button = if device.pairing_status == PairingStatus::Paired {
-            button::text("Unpair")
-                .on_press(Message::UnpairDevice(device.info.device_id.clone()))
-                .padding(4)
-        } else {
-            button::text("Pair")
-                .on_press(Message::PairDevice(device.info.device_id.clone()))
-                .padding(4)
-        };
+        // Quick actions for connected & paired devices
+        let mut actions_row = row![].spacing(4);
+        let device_id = &device.info.device_id;
 
-        let content = row![
-            container(icon::from_name(device_icon).size(24))
-                .width(Length::Fixed(40.0))
-                .padding(8),
-            container(icon::from_name(status_icon).size(12)).width(Length::Fixed(20.0)),
-            container(info_col)
+        if device.is_connected() && device.is_paired() {
+            actions_row = actions_row
+                .push(action_button(
+                    "user-available-symbolic",
+                    Message::SendPing(device_id.clone()),
+                ))
+                .push(action_button(
+                    "document-send-symbolic",
+                    Message::SendFile(device_id.clone()),
+                ));
+
+            if matches!(device.info.device_type, DeviceType::Phone) {
+                actions_row = actions_row.push(action_button(
+                    "find-location-symbolic",
+                    Message::FindPhone(device_id.clone()),
+                ));
+            }
+        }
+
+        // Pair/Unpair button
+        let (label, message) = if device.is_paired() {
+            ("Unpair", Message::UnpairDevice(device_id.clone()))
+        } else {
+            ("Pair", Message::PairDevice(device_id.clone()))
+        };
+        actions_row = actions_row.push(button::text(label).on_press(message).padding(6));
+
+        // Main device row
+        let content = column![
+            row![
+                container(icon::from_name(device_icon).size(28))
+                    .width(Length::Fixed(44.0))
+                    .padding(8),
+                container(icon::from_name(status_icon).size(14))
+                    .width(Length::Fixed(22.0))
+                    .padding(Padding::new(0.0).right(4.0)),
+                container(info_row)
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Left)
+                    .padding(Padding::from([4.0, 0.0])),
+            ]
+            .spacing(4)
+            .align_y(cosmic::iced::Alignment::Center)
+            .width(Length::Fill),
+            // Actions row (indented to align with device name)
+            container(actions_row)
                 .width(Length::Fill)
+                .padding(Padding::new(0.0).bottom(4.0).left(66.0).right(12.0))
                 .align_x(Horizontal::Left),
-            action_button,
         ]
-        .spacing(8)
-        .padding(Padding {
-            top: 8.0,
-            bottom: 8.0,
-            left: 12.0,
-            right: 12.0,
-        })
-        .align_y(cosmic::iced::Alignment::Center)
+        .spacing(0)
+        .padding(Padding::from([8.0, 4.0]))
         .width(Length::Fill);
 
         container(content).width(Length::Fill).into()
+    }
+}
+
+/// Creates a small icon button for device quick actions (ping, send file, etc.)
+fn action_button(icon_name: &str, message: Message) -> Element<'static, Message> {
+    button::icon(icon::from_name(icon_name).size(16))
+        .on_press(message)
+        .padding(6)
+        .into()
+}
+
+/// Returns the appropriate battery icon name based on charge level and charging state
+fn battery_icon_name(level: u8, is_charging: bool) -> &'static str {
+    if is_charging {
+        "battery-good-charging-symbolic"
+    } else {
+        match level {
+            80..=100 => "battery-full-symbolic",
+            50..=79 => "battery-good-symbolic",
+            20..=49 => "battery-low-symbolic",
+            _ => "battery-caution-symbolic",
+        }
     }
 }

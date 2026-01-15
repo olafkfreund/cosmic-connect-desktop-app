@@ -91,7 +91,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use kdeconnect_protocol::plugins::notification::{
+//! use cosmic_connect_core::plugins::notification::{
 //!     NotificationPlugin, Notification
 //! };
 //!
@@ -129,7 +129,7 @@ use super::{Plugin, PluginFactory};
 /// ## Example
 ///
 /// ```rust
-/// use kdeconnect_protocol::plugins::notification::Notification;
+/// use cosmic_connect_core::plugins::notification::Notification;
 ///
 /// let notif = Notification {
 ///     id: "notif-123".to_string(),
@@ -203,7 +203,7 @@ impl Notification {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::Notification;
+    /// use cosmic_connect_core::plugins::notification::Notification;
     ///
     /// let notif = Notification::new(
     ///     "notif-123",
@@ -244,7 +244,7 @@ impl Notification {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::Notification;
+    /// use cosmic_connect_core::plugins::notification::Notification;
     ///
     /// let mut notif = Notification::new("1", "App", "Title", "Text", true);
     /// notif.silent = Some("true".to_string());
@@ -259,7 +259,7 @@ impl Notification {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::Notification;
+    /// use cosmic_connect_core::plugins::notification::Notification;
     ///
     /// let mut notif = Notification::new("1", "App", "Title", "Text", true);
     /// notif.request_reply_id = Some("reply-uuid".to_string());
@@ -274,7 +274,7 @@ impl Notification {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::Notification;
+    /// use cosmic_connect_core::plugins::notification::Notification;
     ///
     /// let mut notif = Notification::new("1", "App", "Title", "Text", true);
     /// notif.actions = Some(vec!["Reply".to_string(), "Mark Read".to_string()]);
@@ -304,8 +304,8 @@ impl Notification {
 /// ## Example
 ///
 /// ```rust
-/// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
-/// use kdeconnect_protocol::Plugin;
+/// use cosmic_connect_core::plugins::notification::NotificationPlugin;
+/// use cosmic_connect_core::Plugin;
 ///
 /// let plugin = NotificationPlugin::new();
 /// assert_eq!(plugin.name(), "notification");
@@ -328,7 +328,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// assert_eq!(plugin.notification_count(), 0);
@@ -345,7 +345,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// assert_eq!(plugin.notification_count(), 0);
@@ -359,7 +359,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// assert!(plugin.get_notification("notif-123").is_none());
@@ -373,7 +373,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// let notifications = plugin.get_all_notifications();
@@ -392,7 +392,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::{NotificationPlugin, Notification};
+    /// use cosmic_connect_core::plugins::notification::{NotificationPlugin, Notification};
     ///
     /// let plugin = NotificationPlugin::new();
     /// let notif = Notification::new("123", "App", "Title", "Text", true);
@@ -410,7 +410,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// let packet = plugin.create_cancel_packet("notif-123");
@@ -430,7 +430,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// let packet = plugin.create_request_packet();
@@ -447,7 +447,7 @@ impl NotificationPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::notification::NotificationPlugin;
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
     ///
     /// let plugin = NotificationPlugin::new();
     /// let packet = plugin.create_dismiss_packet("notif-123");

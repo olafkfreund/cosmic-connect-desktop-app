@@ -1,4 +1,4 @@
-# CLAUDE.md - COSMIC KDE Connect Development Guidelines
+# CLAUDE.md - COSMIC Connect Development Guidelines
 
 ## Pre-Commit Workflow
 
@@ -45,10 +45,10 @@ This ensures:
 ## Project Architecture
 
 ### Plugin Development
-- Each plugin in `kdeconnect-protocol/src/plugins/`
+- Each plugin in `cosmic-connect-core/src/plugins/`
 - Implement both `Plugin` and `PluginFactory` traits
-- Add config flag in `kdeconnect-daemon/src/config.rs`
-- Register factory in `kdeconnect-daemon/src/main.rs`
+- Add config flag in `cosmic-connect-daemon/src/config.rs`
+- Register factory in `cosmic-connect-daemon/src/main.rs`
 - Follow existing plugin patterns (ping, battery, etc.)
 
 ### Testing Strategy
@@ -65,4 +65,4 @@ This ensures:
 
 ---
 
-*This project implements KDE Connect protocol for COSMIC Desktop on NixOS*
+*This project implements COSMIC Connect - a device connectivity solution for COSMIC Desktop*

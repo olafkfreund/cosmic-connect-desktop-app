@@ -230,7 +230,7 @@ impl TelephonyPlugin {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::telephony::TelephonyPlugin;
+    /// use cosmic_connect_core::plugins::telephony::TelephonyPlugin;
     ///
     /// let plugin = TelephonyPlugin::new();
     /// let packet = plugin.create_mute_request();

@@ -82,8 +82,8 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
-//! use kdeconnect_protocol::Plugin;
+//! use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
+//! use cosmic_connect_core::Plugin;
 //!
 //! // Create plugin
 //! let mut plugin = RunCommandPlugin::new();
@@ -163,7 +163,7 @@ struct RunCommandConfig {
 /// ## Example
 ///
 /// ```rust
-/// use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+/// use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
 ///
 /// let plugin = RunCommandPlugin::new();
 /// assert_eq!(plugin.name(), "runcommand");
@@ -189,7 +189,7 @@ impl RunCommandPlugin {
     /// # Example
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+    /// use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
     ///
     /// let plugin = RunCommandPlugin::new();
     /// assert_eq!(plugin.name(), "runcommand");
@@ -553,8 +553,8 @@ impl Plugin for RunCommandPlugin {
 /// # Example
 ///
 /// ```rust
-/// use kdeconnect_protocol::plugins::runcommand::RunCommandPluginFactory;
-/// use kdeconnect_protocol::plugins::PluginFactory;
+/// use cosmic_connect_core::plugins::runcommand::RunCommandPluginFactory;
+/// use cosmic_connect_core::plugins::PluginFactory;
 /// use std::sync::Arc;
 ///
 /// let factory: Arc<dyn PluginFactory> = Arc::new(RunCommandPluginFactory);

@@ -9,7 +9,7 @@ description = "COSMIC Connect - Device connectivity application for COSMIC Deskt
 
 [dependencies]
 libcosmic = { workspace = true, features = ["winit", "tokio"] }
-kdeconnect-protocol = { path = "../kdeconnect-protocol" }
+cosmic-connect-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

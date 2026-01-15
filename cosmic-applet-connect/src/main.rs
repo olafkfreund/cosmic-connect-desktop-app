@@ -14,7 +14,7 @@ use cosmic::{
     widget::{button, divider, icon},
     Element,
 };
-use kdeconnect_protocol::{ConnectionState, Device, DeviceInfo as ProtocolDeviceInfo, DeviceType, PairingStatus};
+use cosmic_connect_core::{ConnectionState, Device, DeviceInfo as ProtocolDeviceInfo, DeviceType, PairingStatus};
 
 use dbus_client::DbusClient;
 

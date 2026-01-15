@@ -50,7 +50,7 @@ impl FindMyPhonePlugin {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::plugins::findmyphone::FindMyPhonePlugin;
+    /// use cosmic_connect_core::plugins::findmyphone::FindMyPhonePlugin;
     ///
     /// let plugin = FindMyPhonePlugin::new();
     /// let packet = plugin.create_ring_request();

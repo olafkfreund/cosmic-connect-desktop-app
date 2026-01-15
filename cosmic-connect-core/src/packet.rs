@@ -27,7 +27,7 @@ use std::collections::HashMap;
 /// # Examples
 ///
 /// ```
-/// use kdeconnect_protocol::Packet;
+/// use cosmic_connect_core::Packet;
 /// use serde_json::json;
 ///
 /// // Create identity packet
@@ -112,7 +112,7 @@ impl Packet {
     /// # Examples
     ///
     /// ```
-    /// use kdeconnect_protocol::Packet;
+    /// use cosmic_connect_core::Packet;
     /// use serde_json::json;
     ///
     /// let packet = Packet::new("kdeconnect.ping", json!({}));
@@ -153,7 +153,7 @@ impl Packet {
     /// # Examples
     ///
     /// ```
-    /// use kdeconnect_protocol::Packet;
+    /// use cosmic_connect_core::Packet;
     /// use serde_json::json;
     ///
     /// let packet = Packet::new("kdeconnect.ping", json!({}));
@@ -183,7 +183,7 @@ impl Packet {
     /// # Examples
     ///
     /// ```
-    /// use kdeconnect_protocol::Packet;
+    /// use cosmic_connect_core::Packet;
     ///
     /// let json_data = r#"{"id":123456789,"type":"kdeconnect.ping","body":{}}"#;
     /// let packet = Packet::from_bytes(json_data.as_bytes()).unwrap();

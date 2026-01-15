@@ -101,7 +101,7 @@ impl LegacyCertificateInfo {
     /// # Examples
     ///
     /// ```
-    /// use kdeconnect_protocol::pairing::CertificateInfo;
+    /// use cosmic_connect_core::pairing::CertificateInfo;
     ///
     /// let cert_info = LegacyCertificateInfo::generate("test_device_id").unwrap();
     /// println!("Fingerprint: {}", cert_info.fingerprint);

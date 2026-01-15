@@ -1,15 +1,13 @@
 [package]
-name = "kdeconnect-protocol"
+name = "cosmic-connect-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "KDE Connect protocol implementation in Rust"
+description = "Cosmic Connect protocol implementation in Rust"
 
 [dependencies]
-# Shared KDE Connect Core (provides TLS, certificates, protocol)
-cosmic-connect-core = { workspace = true }
 
 tokio = { workspace = true }
 async-trait = { workspace = true }

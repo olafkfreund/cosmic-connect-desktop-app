@@ -13,7 +13,7 @@
 //! ### Async Service (Recommended)
 //!
 //! ```no_run
-//! use kdeconnect_protocol::discovery::{DiscoveryService, DeviceInfo, DeviceType};
+//! use cosmic_connect_core::discovery::{DiscoveryService, DeviceInfo, DeviceType};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -36,7 +36,7 @@
 //! ### Synchronous Discovery (For Testing)
 //!
 //! ```no_run
-//! use kdeconnect_protocol::discovery::{Discovery, DeviceInfo, DeviceType};
+//! use cosmic_connect_core::discovery::{Discovery, DeviceInfo, DeviceType};
 //!
 //! let device_info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
 //! let discovery = Discovery::new(device_info).unwrap();
@@ -135,7 +135,7 @@ impl DeviceInfo {
     /// # Examples
     ///
     /// ```
-    /// use kdeconnect_protocol::discovery::{DeviceInfo, DeviceType};
+    /// use cosmic_connect_core::discovery::{DeviceInfo, DeviceType};
     ///
     /// let info = DeviceInfo::new("My Computer", DeviceType::Desktop, 1716);
     /// ```

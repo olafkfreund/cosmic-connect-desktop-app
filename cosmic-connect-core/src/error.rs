@@ -8,7 +8,7 @@
 //! ### Basic Usage
 //!
 //! ```rust,no_run
-//! use kdeconnect_protocol::{Packet, Result};
+//! use cosmic_connect_core::{Packet, Result};
 //!
 //! fn process_packet(data: &[u8]) -> Result<Packet> {
 //!     // Errors are automatically converted using From trait
@@ -22,7 +22,7 @@
 //! Use `?` operator for automatic error propagation:
 //!
 //! ```rust,no_run
-//! use kdeconnect_protocol::{Device, DeviceManager, Result};
+//! use cosmic_connect_core::{Device, DeviceManager, Result};
 //!
 //! fn save_device(manager: &mut DeviceManager, device: Device) -> Result<()> {
 //!     manager.add_device(device);
@@ -36,7 +36,7 @@
 //! Match on specific error variants for custom handling:
 //!
 //! ```rust,no_run
-//! use kdeconnect_protocol::{ProtocolError, Result};
+//! use cosmic_connect_core::{ProtocolError, Result};
 //!
 //! # async fn example(device_id: &str) -> Result<()> {
 //! match get_device(device_id).await {
@@ -51,7 +51,7 @@
 //! }
 //! # Ok(())
 //! # }
-//! # async fn get_device(id: &str) -> Result<kdeconnect_protocol::Device> {
+//! # async fn get_device(id: &str) -> Result<cosmic_connect_core::Device> {
 //! #     Err(ProtocolError::DeviceNotFound(id.to_string()))
 //! # }
 //! ```
@@ -61,7 +61,7 @@
 //! Use error constructors for domain-specific errors:
 //!
 //! ```rust
-//! use kdeconnect_protocol::ProtocolError;
+//! use cosmic_connect_core::ProtocolError;
 //!
 //! // Device-specific errors
 //! let error = ProtocolError::DeviceNotFound("unknown-device-id".to_string());
@@ -135,7 +135,7 @@ use thiserror::Error;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use kdeconnect_protocol::Result;
+/// use cosmic_connect_core::Result;
 ///
 /// fn example() -> Result<()> {
 ///     // Your code here
@@ -161,7 +161,7 @@ pub type Result<T> = std::result::Result<T, ProtocolError>;
 /// # Examples
 ///
 /// ```rust
-/// use kdeconnect_protocol::ProtocolError;
+/// use cosmic_connect_core::ProtocolError;
 ///
 /// // Create device-specific errors
 /// let error = ProtocolError::DeviceNotFound("device-123".to_string());
@@ -187,7 +187,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use kdeconnect_protocol::Result;
+    /// use cosmic_connect_core::Result;
     /// use std::fs::File;
     ///
     /// fn read_config() -> Result<()> {
@@ -206,7 +206,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use kdeconnect_protocol::{Packet, Result};
+    /// use cosmic_connect_core::{Packet, Result};
     ///
     /// fn parse_packet(json: &str) -> Result<Packet> {
     ///     // JSON error automatically converts to ProtocolError::Json
@@ -224,7 +224,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use kdeconnect_protocol::Result;
+    /// use cosmic_connect_core::Result;
     ///
     /// fn establish_secure_connection() -> Result<()> {
     ///     // TLS error automatically converts to ProtocolError::Tls
@@ -241,7 +241,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use kdeconnect_protocol::{CertificateInfo, Result};
+    /// use cosmic_connect_core::{CertificateInfo, Result};
     ///
     /// fn generate_certificate() -> Result<CertificateInfo> {
     ///     // Certificate error automatically converts to ProtocolError::Certificate
@@ -273,7 +273,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::DeviceNotFound("unknown-device".to_string());
     /// assert_eq!(error.to_string(), "Device not found: unknown-device");
@@ -289,7 +289,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::NotPaired;
     /// assert_eq!(error.to_string(), "Not paired");
@@ -305,7 +305,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::InvalidPacket("missing type field".to_string());
     /// assert_eq!(error.to_string(), "Invalid packet: missing type field");
@@ -321,7 +321,7 @@ pub enum ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::Plugin("failed to initialize plugin".to_string());
     /// assert_eq!(error.to_string(), "Plugin error: failed to initialize plugin");
@@ -399,7 +399,7 @@ impl ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     /// use std::io::{Error, ErrorKind};
     ///
     /// let io_error = Error::new(ErrorKind::TimedOut, "connection timeout");
@@ -437,7 +437,7 @@ impl ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::Timeout("connection timeout".to_string());
     /// assert!(error.is_recoverable()); // Timeout can be retried
@@ -464,7 +464,7 @@ impl ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::NotPaired;
     /// assert!(error.requires_user_action()); // User needs to pair device
@@ -492,7 +492,7 @@ impl ProtocolError {
     /// # Examples
     ///
     /// ```rust
-    /// use kdeconnect_protocol::ProtocolError;
+    /// use cosmic_connect_core::ProtocolError;
     ///
     /// let error = ProtocolError::NotPaired;
     /// assert_eq!(

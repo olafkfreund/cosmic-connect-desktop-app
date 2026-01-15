@@ -17,7 +17,7 @@
 //! ### Sending a File
 //!
 //! ```rust,ignore
-//! use kdeconnect_protocol::payload::{PayloadServer, FileTransferInfo};
+//! use cosmic_connect_core::payload::{PayloadServer, FileTransferInfo};
 //!
 //! // Create file info
 //! let file_info = FileTransferInfo::from_path("/path/to/file.pdf").await?;
@@ -37,7 +37,7 @@
 //! ### Receiving a File
 //!
 //! ```rust,ignore
-//! use kdeconnect_protocol::payload::PayloadClient;
+//! use cosmic_connect_core::payload::PayloadClient;
 //!
 //! // Extract info from received packet
 //! let filename = packet.body["filename"].as_str().unwrap();

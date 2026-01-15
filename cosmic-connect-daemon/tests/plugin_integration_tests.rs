@@ -4,8 +4,8 @@
 //! ensuring plugin actions work correctly end-to-end.
 
 use anyhow::Result;
-use kdeconnect_protocol::plugins::{battery, notification, ping, Plugin, PluginFactory};
-use kdeconnect_protocol::{Device, DeviceInfo, DeviceType};
+use cosmic_connect_core::plugins::{battery, notification, ping, Plugin, PluginFactory};
+use cosmic_connect_core::{Device, DeviceInfo, DeviceType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +15,8 @@ use tokio::time::timeout;
 fn create_mock_device() -> Device {
     Device {
         info: DeviceInfo::new("Test Device", DeviceType::Phone, 1716),
-        connection_state: kdeconnect_protocol::ConnectionState::Connected,
-        pairing_status: kdeconnect_protocol::PairingStatus::Paired,
+        connection_state: cosmic_connect_core::ConnectionState::Connected,
+        pairing_status: cosmic_connect_core::PairingStatus::Paired,
         is_trusted: true,
         last_seen: 0,
         last_connected: Some(0),
@@ -140,7 +140,7 @@ async fn test_ping_packet_creation() {
 
 #[tokio::test]
 async fn test_plugin_trait_downcast() {
-    use kdeconnect_protocol::plugins::Plugin;
+    use cosmic_connect_core::plugins::Plugin;
     use std::any::Any;
 
     // Test that we can downcast from trait object
@@ -156,7 +156,7 @@ async fn test_plugin_trait_downcast() {
 
 #[tokio::test]
 async fn test_plugin_manager_battery_query() {
-    use kdeconnect_protocol::plugins::PluginManager;
+    use cosmic_connect_core::plugins::PluginManager;
 
     let mut manager = PluginManager::new();
 
@@ -203,7 +203,7 @@ async fn test_plugin_factories() {
 /// Test multiple plugins can coexist
 #[tokio::test]
 async fn test_multiple_plugins() -> Result<()> {
-    use kdeconnect_protocol::plugins::PluginManager;
+    use cosmic_connect_core::plugins::PluginManager;
 
     let mut manager = PluginManager::new();
 

@@ -50,7 +50,7 @@
 //! ## Example Plugin
 //!
 //! ```rust,ignore
-//! use kdeconnect_protocol::plugins::*;
+//! use cosmic_connect_core::plugins::*;
 //! use async_trait::async_trait;
 //!
 //! struct PingPlugin;
@@ -285,7 +285,7 @@ pub trait Plugin: Send + Sync + Any {
 /// ## Example
 ///
 /// ```rust,ignore
-/// use kdeconnect_protocol::plugins::*;
+/// use cosmic_connect_core::plugins::*;
 ///
 /// # async fn example() -> Result<()> {
 /// let mut manager = PluginManager::new();

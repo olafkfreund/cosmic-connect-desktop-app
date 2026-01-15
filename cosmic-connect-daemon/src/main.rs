@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use dbus::DbusServer;
 use diagnostics::{BuildInfo, Cli, DiagnosticCommand, Metrics};
-use kdeconnect_protocol::{
+use cosmic_connect_core::{
     connection::{ConnectionConfig, ConnectionEvent, ConnectionManager},
     discovery::{DiscoveryConfig, DiscoveryEvent, DiscoveryService},
     pairing::{PairingConfig, PairingEvent, PairingService, PairingStatus},
@@ -795,7 +795,7 @@ impl Daemon {
                         for device_id in &connected_devices {
                             if let Some(plugin) = plug_manager.get_device_plugin(device_id, "clipboard") {
                                 // Downcast to ClipboardPlugin
-                                use kdeconnect_protocol::plugins::clipboard::ClipboardPlugin;
+                                use cosmic_connect_core::plugins::clipboard::ClipboardPlugin;
                                 if let Some(clipboard_plugin) = plugin.as_any().downcast_ref::<ClipboardPlugin>() {
                                     // Create clipboard packet
                                     let packet = clipboard_plugin.create_clipboard_packet(current_content.clone()).await;
@@ -1276,10 +1276,10 @@ impl Daemon {
     fn convert_player_state(
         state: &mpris_manager::PlayerState,
     ) -> (
-        kdeconnect_protocol::plugins::mpris::PlayerStatus,
-        kdeconnect_protocol::plugins::mpris::PlayerMetadata,
+        cosmic_connect_core::plugins::mpris::PlayerStatus,
+        cosmic_connect_core::plugins::mpris::PlayerMetadata,
     ) {
-        use kdeconnect_protocol::plugins::mpris::{
+        use cosmic_connect_core::plugins::mpris::{
             LoopStatus, PlayerCapabilities, PlayerMetadata, PlayerStatus,
         };
 
@@ -1330,7 +1330,7 @@ impl Daemon {
         connection_mgr: &Arc<RwLock<ConnectionManager>>,
         plugin_manager: &Arc<RwLock<PluginManager>>,
     ) {
-        use kdeconnect_protocol::plugins::mpris::MprisPlugin;
+        use cosmic_connect_core::plugins::mpris::MprisPlugin;
 
         let player = body
             .get("player")
@@ -1338,7 +1338,7 @@ impl Daemon {
             .unwrap_or("");
 
         // Helper to send MPRIS packets via the plugin
-        let send_mpris_packet = |packet: kdeconnect_protocol::Packet| async move {
+        let send_mpris_packet = |packet: cosmic_connect_core::Packet| async move {
             let conn_manager = connection_mgr.read().await;
             if let Err(e) = conn_manager.send_packet(device_id, &packet).await {
                 warn!("Failed to send MPRIS packet to {}: {}", device_name, e);

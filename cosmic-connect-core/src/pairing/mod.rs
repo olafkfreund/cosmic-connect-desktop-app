@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use kdeconnect_protocol::pairing::{PairingService, PairingEvent};
+//! use cosmic_connect_core::pairing::{PairingService, PairingEvent};
 //!
 //! #[tokio::main]
 //! async fn main() {

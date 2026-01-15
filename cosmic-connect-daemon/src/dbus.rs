@@ -4,7 +4,7 @@
 //! Exposes device management, pairing, and plugin actions via DBus.
 
 use anyhow::{Context, Result};
-use kdeconnect_protocol::{ConnectionManager, Device, DeviceManager, PluginManager};
+use cosmic_connect_core::{ConnectionManager, Device, DeviceManager, PluginManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -83,7 +83,7 @@ pub struct KdeConnectInterface {
     /// Device configuration registry
     device_config_registry: Arc<RwLock<crate::device_config::DeviceConfigRegistry>>,
     /// Pairing service (optional - may not be started yet)
-    pairing_service: Option<Arc<RwLock<kdeconnect_protocol::pairing::PairingService>>>,
+    pairing_service: Option<Arc<RwLock<cosmic_connect_core::pairing::PairingService>>>,
     /// MPRIS manager for local media player control (optional)
     mpris_manager: Option<Arc<crate::mpris_manager::MprisManager>>,
     /// Pending pairing requests (device_id -> has_pending_request)
@@ -99,7 +99,7 @@ impl KdeConnectInterface {
         plugin_manager: Arc<RwLock<PluginManager>>,
         connection_manager: Arc<RwLock<ConnectionManager>>,
         device_config_registry: Arc<RwLock<crate::device_config::DeviceConfigRegistry>>,
-        pairing_service: Option<Arc<RwLock<kdeconnect_protocol::pairing::PairingService>>>,
+        pairing_service: Option<Arc<RwLock<cosmic_connect_core::pairing::PairingService>>>,
         mpris_manager: Option<Arc<crate::mpris_manager::MprisManager>>,
         pending_pairing_requests: Arc<RwLock<HashMap<String, bool>>>,
         dbus_connection: Connection,
@@ -370,7 +370,7 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Create ping packet
-        use kdeconnect_protocol::Packet;
+        use cosmic_connect_core::Packet;
         use serde_json::json;
 
         let body = if !message.is_empty() {
@@ -411,7 +411,7 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Create findmyphone packet
-        use kdeconnect_protocol::Packet;
+        use cosmic_connect_core::Packet;
         use serde_json::json;
 
         let packet = Packet::new("kdeconnect.findmyphone.request", json!({}));
@@ -450,7 +450,7 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Extract file metadata
-        use kdeconnect_protocol::{FileTransferInfo, PayloadServer};
+        use cosmic_connect_core::{FileTransferInfo, PayloadServer};
         let file_info = FileTransferInfo::from_path(&path)
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to read file metadata: {}", e)))?;
@@ -469,7 +469,7 @@ impl KdeConnectInterface {
         info!("DBus: Payload server listening on port {}", port);
 
         // Create share packet with file info and payload transfer port
-        use kdeconnect_protocol::plugins::share::{FileShareInfo, SharePlugin};
+        use cosmic_connect_core::plugins::share::{FileShareInfo, SharePlugin};
         let share_info: FileShareInfo = file_info.clone().into();
         let plugin = SharePlugin::new();
         let packet = plugin.create_file_packet(share_info, port);
@@ -580,7 +580,7 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Create share text packet
-        use kdeconnect_protocol::Packet;
+        use cosmic_connect_core::Packet;
         use serde_json::json;
 
         let packet = Packet::new("kdeconnect.share.request", json!({ "text": text }));
@@ -619,7 +619,7 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Create share URL packet
-        use kdeconnect_protocol::Packet;
+        use cosmic_connect_core::Packet;
         use serde_json::json;
 
         let packet = Packet::new("kdeconnect.share.request", json!({ "url": url }));
@@ -664,8 +664,8 @@ impl KdeConnectInterface {
         drop(device_manager);
 
         // Create notification using NotificationPlugin's helper
-        use kdeconnect_protocol::plugins::notification::Notification;
-        use kdeconnect_protocol::Packet;
+        use cosmic_connect_core::plugins::notification::Notification;
+        use cosmic_connect_core::Packet;
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // Generate a unique notification ID based on timestamp
@@ -893,7 +893,7 @@ impl KdeConnectInterface {
             })?;
 
         // Downcast to RunCommandPlugin
-        use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+        use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
         let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
             zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
         })?;
@@ -937,7 +937,7 @@ impl KdeConnectInterface {
             })?;
 
         // Downcast to RunCommandPlugin
-        use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+        use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
         let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
             zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
         })?;
@@ -976,7 +976,7 @@ impl KdeConnectInterface {
             })?;
 
         // Downcast to RunCommandPlugin
-        use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+        use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
         let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
             zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
         })?;
@@ -1010,7 +1010,7 @@ impl KdeConnectInterface {
             })?;
 
         // Downcast to RunCommandPlugin
-        use kdeconnect_protocol::plugins::runcommand::RunCommandPlugin;
+        use cosmic_connect_core::plugins::runcommand::RunCommandPlugin;
         let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
             zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
         })?;
@@ -1266,7 +1266,7 @@ impl DbusServer {
         plugin_manager: Arc<RwLock<PluginManager>>,
         connection_manager: Arc<RwLock<ConnectionManager>>,
         device_config_registry: Arc<RwLock<crate::device_config::DeviceConfigRegistry>>,
-        pairing_service: Option<Arc<RwLock<kdeconnect_protocol::pairing::PairingService>>>,
+        pairing_service: Option<Arc<RwLock<cosmic_connect_core::pairing::PairingService>>>,
         mpris_manager: Option<Arc<crate::mpris_manager::MprisManager>>,
         pending_pairing_requests: Arc<RwLock<std::collections::HashMap<String, bool>>>,
     ) -> Result<Self> {

@@ -178,7 +178,7 @@ impl Default for PluginConfig {
             enable_runcommand: false,     // Security: command execution should be opt-in
             enable_remoteinput: true,     // Keep enabled - useful for presentations
             enable_findmyphone: true,     // Keep enabled - emergency feature
-            enable_telephony: false,      // Reduce packet size - can be enabled if needed
+            enable_telephony: true,       // Enabled - SMS and call notifications
             enable_presenter: false,      // Specialized use case - reduce packet size
             enable_contacts: false,       // Reduce packet size - can be enabled if needed
         }
@@ -190,12 +190,12 @@ impl Default for Config {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from(".config"))
             .join("cosmic")
-            .join("kdeconnect");
+            .join("cosmic-connect");
 
         let data_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from(".local/share"))
             .join("cosmic")
-            .join("kdeconnect");
+            .join("cosmic-connect");
 
         let cert_dir = config_dir.join("certs");
 
@@ -228,7 +228,7 @@ impl Config {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from(".config"))
             .join("cosmic")
-            .join("kdeconnect");
+            .join("cosmic-connect");
 
         let config_path = config_dir.join("daemon.toml");
 

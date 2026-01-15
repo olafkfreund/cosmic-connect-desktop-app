@@ -2,6 +2,20 @@
 //!
 //! Manages TLS connections to multiple devices, handles connection lifecycle,
 //! and routes packets between devices and the application.
+//!
+//! ## Connection Stability (Issue #52)
+//!
+//! This implementation uses socket replacement rather than connection rejection
+//! when a device attempts to reconnect while already connected. This matches
+//! the official KDE Connect behavior and prevents cascade connection failures
+//! that can occur with aggressive Android clients.
+//!
+//! When a duplicate connection is detected:
+//! 1. The old connection task is gracefully closed
+//! 2. The old socket is replaced with the new one
+//! 3. A disconnected event is emitted for the old connection
+//! 4. A connected event is emitted for the new connection
+//! 5. No rejection is sent to the client, preventing cascade failures
 
 use super::events::ConnectionEvent;
 use crate::transport::{TlsConnection, TlsServer};
@@ -20,7 +34,9 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
 /// Connection timeout (consider disconnected after 60 seconds of no activity)
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Minimum delay between connection attempts from the same device (to prevent connection storms)
+/// Minimum delay between connection attempts from the same device
+/// Issue #52: This is now used for logging warnings, not rejection
+/// Socket replacement prevents connection storms while maintaining stability
 const MIN_CONNECTION_DELAY: Duration = Duration::from_millis(1000);
 
 /// Commands that can be sent to a connection task
@@ -449,16 +465,16 @@ impl ConnectionManager {
                 drop(dm);
 
                 // Rate limiting: Check if device is connecting too frequently
+                // Issue #52: With socket replacement, we no longer reject rapid reconnections
+                // Instead, we log a warning to help diagnose client-side issues
                 let now = Instant::now();
                 let mut last_times = last_connection_time.write().await;
                 if let Some(&last_time) = last_times.get(id) {
                     let elapsed = now.duration_since(last_time);
                     if elapsed < MIN_CONNECTION_DELAY {
-                        info!("Rate limiting: Device {} tried to connect too soon ({}ms < {}ms) - rejecting",
-                              id, elapsed.as_millis(), MIN_CONNECTION_DELAY.as_millis());
-                        drop(last_times);
-                        let _ = connection.close().await;
-                        return;
+                        warn!("Device {} reconnecting rapidly ({}ms since last connection) - \
+                               this may indicate client-side connection cycling issues",
+                              id, elapsed.as_millis());
                     }
                 }
                 last_times.insert(id.to_string(), now);
@@ -474,15 +490,24 @@ impl ConnectionManager {
                 debug!("Looking for device {} in connections HashMap", id);
 
                 // Handle existing connection if device reconnects
-                if let Some(old_conn) = conns.get(id) {
+                // Issue #52: Instead of rejecting, replace the socket (like official KDE Connect)
+                if let Some(old_conn) = conns.remove(id) {
                     // Device trying to reconnect while already connected
-                    // Keep the existing stable connection and reject the new attempt
-                    info!("Device {} already connected at {} - rejecting reconnection from {}",
-                          id, old_conn.remote_addr, remote_addr);
-                    drop(conns);
-                    // Close the new connection gracefully
-                    let _ = connection.close().await;
-                    return;
+                    // Replace the old connection with the new one
+                    info!("Device {} reconnecting from {} (old: {}) - replacing socket",
+                          id, remote_addr, old_conn.remote_addr);
+
+                    // Send close command to old connection task to clean up gracefully
+                    let _ = old_conn.command_tx.send(ConnectionCommand::Close);
+
+                    // Emit disconnected event for old connection
+                    let _ = event_tx.send(ConnectionEvent::Disconnected {
+                        device_id: id.to_string(),
+                        reason: "Socket replaced with new connection".to_string(),
+                    });
+
+                    // Old connection will be replaced below with new one
+                    // This prevents cascade closure on Android client
                 }
 
                 conns.insert(

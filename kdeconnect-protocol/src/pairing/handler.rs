@@ -441,11 +441,11 @@ impl PairingHandler {
                     Ok((false, None))
                 }
                 PairingStatus::Requested => {
-                    // Received pairing accept
+                    // Received pairing accept - send confirmation response
                     self.store_device_certificate(device_id, device_cert)?;
                     self.status = PairingStatus::Paired;
-                    info!("Pairing accepted by device {}", device_id);
-                    Ok((false, None))
+                    info!("Pairing accepted by device {} - sending confirmation", device_id);
+                    Ok((true, Some(PairingPacket::accept())))
                 }
                 PairingStatus::RequestedByPeer => {
                     // Already have a pending request from this device

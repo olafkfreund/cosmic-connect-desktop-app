@@ -440,6 +440,16 @@ impl ConnectionManager {
                 // This must happen before emitting PacketReceived to avoid race condition
                 // where a pairing response is attempted before the connection is registered
                 let mut conns = connections.write().await;
+
+                // Close existing connection if device reconnects (handles race conditions)
+                if let Some(old_conn) = conns.remove(id) {
+                    warn!("Device {} reconnected - closing old connection", id);
+                    let _ = old_conn.command_tx.send(ConnectionCommand::Close);
+                    drop(conns);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    conns = connections.write().await;
+                }
+
                 conns.insert(
                     id.to_string(),
                     ActiveConnection {

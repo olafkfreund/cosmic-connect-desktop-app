@@ -199,6 +199,10 @@ pub struct PluginConfig {
     /// Enable Wake-on-LAN plugin
     #[serde(default = "default_true")]
     pub enable_wol: bool,
+
+    /// Enable Screenshot plugin
+    #[serde(default = "default_true")]
+    pub enable_screenshot: bool,
 }
 
 /// Storage paths configuration
@@ -329,6 +333,7 @@ impl Default for PluginConfig {
             enable_contacts: false,       // Reduce packet size - can be enabled if needed
             enable_systemmonitor: true,   // Desktop-to-desktop system monitoring
             enable_wol: true,             // Desktop-to-desktop Wake-on-LAN
+            enable_screenshot: true,      // Desktop-to-desktop screenshot capture
         }
     }
 }

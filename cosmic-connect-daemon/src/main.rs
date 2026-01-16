@@ -20,8 +20,9 @@ use cosmic_connect_protocol::{
         mpris::MprisPluginFactory, notification::NotificationPluginFactory,
         ping::PingPluginFactory, presenter::PresenterPluginFactory,
         remoteinput::RemoteInputPluginFactory, runcommand::RunCommandPluginFactory,
-        share::SharePluginFactory, systemmonitor::SystemMonitorPluginFactory,
-        telephony::TelephonyPluginFactory, wol::WolPluginFactory, PluginManager,
+        screenshot::ScreenshotPluginFactory, share::SharePluginFactory,
+        systemmonitor::SystemMonitorPluginFactory, telephony::TelephonyPluginFactory,
+        wol::WolPluginFactory, PluginManager,
     },
     transport::{TransportPreference, TransportType},
     CertificateInfo, DeviceInfo, DeviceManager, DeviceType, TransportManager,
@@ -379,6 +380,13 @@ impl Daemon {
             manager
                 .register_factory(Arc::new(WolPluginFactory))
                 .context("Failed to register WOL plugin factory")?;
+        }
+
+        if config.plugins.enable_screenshot {
+            info!("Registering Screenshot plugin factory");
+            manager
+                .register_factory(Arc::new(ScreenshotPluginFactory))
+                .context("Failed to register Screenshot plugin factory")?;
         }
 
         info!(

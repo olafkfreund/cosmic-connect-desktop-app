@@ -253,13 +253,118 @@ cargo build -p cosmic-connect-protocol
 
 ## Installation
 
-### NixOS
+### NixOS (Flake)
 
-Add to your `configuration.nix`:
+Add COSMIC Connect to your NixOS configuration using flakes:
+
+#### 1. Add as a Flake Input
+
+In your `flake.nix`, add cosmic-connect-desktop-app as an input:
 
 ```nix
-# TODO: Package will be published to nixpkgs
-environment.systemPackages = [ pkgs.cosmic-connect ];
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    cosmic-connect = {
+      url = "github:olafkfreund/cosmic-connect-desktop-app";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, cosmic-connect, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        ./configuration.nix
+        cosmic-connect.nixosModules.default
+      ];
+    };
+  };
+}
+```
+
+#### 2. Enable the Service
+
+In your `configuration.nix`:
+
+```nix
+{
+  services.cosmic-kdeconnect = {
+    enable = true;
+
+    # Open firewall ports (required for device discovery)
+    openFirewall = true;
+
+    # Daemon configuration
+    daemon = {
+      enable = true;
+      autoStart = true;
+      logLevel = "info";  # Options: error, warn, info, debug, trace
+    };
+
+    # Enable COSMIC panel applet
+    applet.enable = true;
+
+    # Plugin configuration
+    plugins = {
+      battery = true;
+      clipboard = true;
+      notification = true;
+      share = true;
+      mpris = true;
+      ping = true;
+    };
+  };
+}
+```
+
+#### 3. Alternative: Overlay Method
+
+If you prefer using overlays instead of the module:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
+  };
+
+  outputs = { self, nixpkgs, cosmic-connect, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        {
+          nixpkgs.overlays = [ cosmic-connect.overlays.default ];
+          environment.systemPackages = [ pkgs.cosmic-applet-kdeconnect ];
+
+          # Manual firewall configuration
+          networking.firewall = {
+            allowedTCPPortRanges = [
+              { from = 1814; to = 1864; }  # Discovery
+              { from = 1739; to = 1764; }  # File transfer
+            ];
+            allowedUDPPortRanges = [
+              { from = 1814; to = 1864; }  # Discovery
+            ];
+          };
+        }
+        ./configuration.nix
+      ];
+    };
+  };
+}
+```
+
+#### 4. Rebuild and Activate
+
+```bash
+# Rebuild NixOS configuration
+sudo nixos-rebuild switch --flake .#your-hostname
+
+# The daemon will start automatically if daemon.autoStart = true
+# Otherwise, start it manually:
+systemctl --user start kdeconnect-daemon
 ```
 
 ### Manual Installation
@@ -294,18 +399,23 @@ systemctl --user start cosmic-connect-daemon
    ```bash
    # For NixOS (add to configuration.nix)
    networking.firewall = {
-     allowedTCPPortRanges = [{ from = 1714; to = 1764; }];
-     allowedUDPPortRanges = [{ from = 1714; to = 1764; }];
+     allowedTCPPortRanges = [
+       { from = 1814; to = 1864; }  # Discovery (CConnect)
+       { from = 1739; to = 1764; }  # File transfer
+     ];
+     allowedUDPPortRanges = [{ from = 1814; to = 1864; }];  # Discovery (CConnect)
    };
 
    # For firewalld
-   sudo firewall-cmd --zone=public --permanent --add-port=1714-1764/tcp
-   sudo firewall-cmd --zone=public --permanent --add-port=1714-1764/udp
+   sudo firewall-cmd --zone=public --permanent --add-port=1814-1864/tcp  # Discovery
+   sudo firewall-cmd --zone=public --permanent --add-port=1739-1764/tcp  # Transfer
+   sudo firewall-cmd --zone=public --permanent --add-port=1814-1864/udp  # Discovery
    sudo firewall-cmd --reload
 
    # For ufw
-   sudo ufw allow 1714:1764/tcp
-   sudo ufw allow 1714:1764/udp
+   sudo ufw allow 1814:1864/tcp   # Discovery
+   sudo ufw allow 1739:1764/tcp   # Transfer
+   sudo ufw allow 1814:1864/udp   # Discovery
    ```
 
 3. **Start the daemon**:

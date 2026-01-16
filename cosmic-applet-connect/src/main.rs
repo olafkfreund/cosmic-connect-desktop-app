@@ -180,6 +180,13 @@ async fn open_file_picker(device_id: String) -> Option<(String, String)> {
         .map(|uri| (device_id, uri.path().to_string()))
 }
 
+/// Gets text from the system clipboard
+fn get_clipboard_text() -> Option<String> {
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut clipboard| clipboard.get_text().ok())
+}
+
 /// Creates a task that executes a device operation then refreshes the device list
 fn device_operation_task<F, Fut>(
     device_id: String,
@@ -367,78 +374,37 @@ impl cosmic::Application for KdeConnectApplet {
             }
             Message::ShareText(device_id) => {
                 tracing::info!("Share text to device: {}", device_id);
-                // Get clipboard text and share it
-                Task::perform(
-                    async move {
-                        match arboard::Clipboard::new() {
-                            Ok(mut clipboard) => match clipboard.get_text() {
-                                Ok(text) => Some((device_id, text)),
-                                Err(e) => {
-                                    tracing::error!("Failed to get clipboard text: {}", e);
-                                    None
-                                }
-                            },
-                            Err(e) => {
-                                tracing::error!("Failed to create clipboard: {}", e);
-                                None
-                            }
-                        }
-                    },
-                    |result| match result {
-                        Some((device_id, text)) => {
-                            // Share text via DBus
-                            cosmic::Action::Task(device_operation_task(
-                                device_id,
-                                "share text",
-                                move |client, id| async move { client.share_text(&id, &text).await },
-                            ))
-                        }
-                        None => cosmic::Action::App(Message::RefreshDevices),
-                    },
-                )
+                match get_clipboard_text() {
+                    Some(text) => device_operation_task(device_id, "share text", move |client, id| {
+                        async move { client.share_text(&id, &text).await }
+                    }),
+                    None => {
+                        tracing::warn!("No text in clipboard to share");
+                        Task::none()
+                    }
+                }
             }
             Message::ShareUrl(device_id) => {
                 tracing::info!("Share URL to device: {}", device_id);
-                // Get clipboard text and treat as URL
-                Task::perform(
-                    async move {
-                        match arboard::Clipboard::new() {
-                            Ok(mut clipboard) => match clipboard.get_text() {
-                                Ok(text) => {
-                                    // Basic URL validation
-                                    if text.starts_with("http://")
-                                        || text.starts_with("https://")
-                                        || text.starts_with("www.")
-                                    {
-                                        Some((device_id, text))
-                                    } else {
-                                        tracing::warn!("Clipboard text is not a valid URL");
-                                        None
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!("Failed to get clipboard text: {}", e);
-                                    None
-                                }
-                            },
-                            Err(e) => {
-                                tracing::error!("Failed to create clipboard: {}", e);
-                                None
-                            }
-                        }
-                    },
-                    |result| match result {
-                        Some((device_id, url)) => {
-                            // Share URL via DBus
-                            cosmic::Action::Task(device_operation_task(
-                                device_id,
-                                "share URL",
-                                move |client, id| async move { client.share_url(&id, &url).await },
-                            ))
-                        }
-                        None => cosmic::Action::App(Message::RefreshDevices),
-                    },
-                )
+                match get_clipboard_text() {
+                    Some(text)
+                        if text.starts_with("http://")
+                            || text.starts_with("https://")
+                            || text.starts_with("www.") =>
+                    {
+                        device_operation_task(device_id, "share URL", move |client, id| {
+                            async move { client.share_url(&id, &text).await }
+                        })
+                    }
+                    Some(_) => {
+                        tracing::warn!("Clipboard text is not a valid URL");
+                        Task::none()
+                    }
+                    None => {
+                        tracing::warn!("No text in clipboard to share as URL");
+                        Task::none()
+                    }
+                }
             }
             Message::RequestBatteryUpdate(device_id) => {
                 tracing::info!("Requesting battery update for device: {}", device_id);

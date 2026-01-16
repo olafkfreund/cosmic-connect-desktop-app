@@ -372,13 +372,13 @@ impl TransportManager {
             return None;
         }
 
-        match &self.config.preference {
+        match (&self.config.preference, address) {
             // "Only" preferences have no fallback
-            TransportPreference::Only(_) => None,
+            (TransportPreference::Only(_), _) => None,
 
             // TcpFirst/BluetoothFirst always have a fallback
-            TransportPreference::TcpFirst => Some(TransportType::Bluetooth),
-            TransportPreference::BluetoothFirst => Some(TransportType::Tcp),
+            (TransportPreference::TcpFirst, _) => Some(TransportType::Bluetooth),
+            (TransportPreference::BluetoothFirst, _) => Some(TransportType::Tcp),
 
             // Prefer* might have fallback based on address
             (TransportPreference::PreferTcp, TransportAddress::Tcp(_)) => {

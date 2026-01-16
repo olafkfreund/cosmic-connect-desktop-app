@@ -21,6 +21,7 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_PACKET_SIZE: usize = 1024 * 1024;
 
 /// Simple TCP connection for pairing
+#[derive(Debug)]
 pub struct TcpConnection {
     stream: TcpStream,
     remote_addr: SocketAddr,

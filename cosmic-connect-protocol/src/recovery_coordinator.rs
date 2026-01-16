@@ -105,7 +105,7 @@ impl RecoveryCoordinator {
 
                                 // Get device info for connection
                                 let dm = device_manager_clone.read().await;
-                                let device_opt = dm.get_device(&device_id_clone).ok();
+                                let device_opt = dm.get_device(&device_id_clone);
                                 drop(dm);
 
                                 if let Some(device) = device_opt {

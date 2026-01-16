@@ -259,6 +259,12 @@ pub enum ProtocolError {
     #[error("Core protocol error: {0}")]
     CoreProtocol(#[from] cosmic_connect_core::ProtocolError),
 
+    /// Transport layer error
+    ///
+    /// This error occurs during transport operations (TCP, Bluetooth, etc.).
+    #[error("Transport error: {0}")]
+    Transport(String),
+
     /// Certificate validation error
     ///
     /// This error occurs during TLS certificate validation.
@@ -561,6 +567,9 @@ impl ProtocolError {
             }
             ProtocolError::CoreProtocol(e) => {
                 format!("Core protocol error: {}.", e)
+            }
+            ProtocolError::Transport(msg) => {
+                format!("Transport error: {}. Check network and Bluetooth connections.", msg)
             }
         }
     }

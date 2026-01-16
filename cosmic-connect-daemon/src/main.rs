@@ -22,7 +22,9 @@ use cosmic_connect_protocol::{
         remoteinput::RemoteInputPluginFactory, runcommand::RunCommandPluginFactory,
         share::SharePluginFactory, telephony::TelephonyPluginFactory, PluginManager,
     },
-    CertificateInfo, DeviceInfo, DeviceManager, DeviceType,
+    transport::{TransportPreference, TransportType},
+    CertificateInfo, DeviceInfo, DeviceManager, DeviceType, TransportManager,
+    TransportManagerConfig, TransportManagerEvent,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,6 +62,9 @@ struct Daemon {
 
     /// Connection manager (wrapped for shared access)
     connection_manager: Arc<RwLock<ConnectionManager>>,
+
+    /// Transport manager (optional, used when Bluetooth is enabled)
+    transport_manager: Option<Arc<TransportManager>>,
 
     /// COSMIC notifications client
     cosmic_notifier: Option<Arc<cosmic_notifications::CosmicNotifier>>,
@@ -155,6 +160,37 @@ impl Daemon {
             connection_config,
         )?));
 
+        // Create transport manager if Bluetooth is enabled
+        let transport_manager = if config.transport.enable_bluetooth {
+            info!("Bluetooth transport enabled - creating TransportManager");
+
+            // Convert daemon TransportConfig to TransportManagerConfig
+            let transport_config = TransportManagerConfig {
+                enable_tcp: config.transport.enable_tcp,
+                enable_bluetooth: config.transport.enable_bluetooth,
+                preference: config.transport.preference.clone().into(),
+                tcp_timeout: config.transport.tcp_timeout(),
+                bluetooth_timeout: config.transport.bluetooth_timeout(),
+                auto_fallback: config.transport.auto_fallback,
+                bluetooth_device_filter: config.transport.bluetooth_device_filter.clone(),
+            };
+
+            match TransportManager::new(connection_manager.clone(), transport_config) {
+                Ok(tm) => {
+                    info!("TransportManager created successfully");
+                    Some(Arc::new(tm))
+                }
+                Err(e) => {
+                    warn!("Failed to create TransportManager: {}", e);
+                    warn!("Falling back to TCP-only mode");
+                    None
+                }
+            }
+        } else {
+            debug!("Bluetooth transport disabled - using ConnectionManager directly");
+            None
+        };
+
         // Initialize COSMIC notifications client
         let cosmic_notifier = match cosmic_notifications::CosmicNotifier::new().await {
             Ok(notifier) => {
@@ -195,6 +231,7 @@ impl Daemon {
             discovery_service: None,
             pairing_service: None,
             connection_manager,
+            transport_manager,
             cosmic_notifier,
             dbus_server: None,
             mpris_manager,
@@ -643,52 +680,153 @@ impl Daemon {
     async fn start_connections(&mut self) -> Result<()> {
         info!("Starting connection manager...");
 
-        // Start the manager (starts TLS server)
-        let port = {
-            let manager = self.connection_manager.write().await;
-            manager
+        // If TransportManager is available, use it; otherwise use ConnectionManager directly
+        if let Some(transport_mgr) = &self.transport_manager {
+            info!("Using TransportManager (Bluetooth enabled)");
+
+            // Start transport manager (starts all enabled transports)
+            transport_mgr
                 .start()
                 .await
-                .context("Failed to start connection manager")?
-        };
+                .context("Failed to start transport manager")?;
 
-        info!("Connection manager started on port {}", port);
+            info!("TransportManager started successfully");
 
-        // Subscribe to connection events
-        let mut event_rx = {
-            let manager = self.connection_manager.read().await;
-            manager.subscribe().await
-        };
+            // Subscribe to transport manager events
+            let mut event_rx = transport_mgr.subscribe().await;
 
-        // Spawn task to handle connection events
-        let device_manager = self.device_manager.clone();
-        let plugin_manager = self.plugin_manager.clone();
-        let connection_mgr = self.connection_manager.clone();
-        let pairing_service = self.pairing_service.clone();
-        let dbus_server = self.dbus_server.clone();
-        let cosmic_notifier = self.cosmic_notifier.clone();
-        let mpris_manager = self.mpris_manager.clone();
-        let dump_packets = self.dump_packets;
-        tokio::spawn(async move {
-            while let Some(event) = event_rx.recv().await {
-                if let Err(e) = Self::handle_connection_event(
-                    event,
-                    &device_manager,
-                    &plugin_manager,
-                    &connection_mgr,
-                    &pairing_service,
-                    &dbus_server,
-                    &cosmic_notifier,
-                    &mpris_manager,
-                    dump_packets,
-                )
-                .await
-                {
-                    error!("Error handling connection event: {}", e);
+            // Spawn task to handle transport manager events
+            let device_manager = self.device_manager.clone();
+            let plugin_manager = self.plugin_manager.clone();
+            let connection_mgr = self.connection_manager.clone();
+            let pairing_service = self.pairing_service.clone();
+            let dbus_server = self.dbus_server.clone();
+            let cosmic_notifier = self.cosmic_notifier.clone();
+            let mpris_manager = self.mpris_manager.clone();
+            let dump_packets = self.dump_packets;
+            tokio::spawn(async move {
+                while let Some(event) = event_rx.recv().await {
+                    // Convert TransportManagerEvent to ConnectionEvent
+                    let connection_event = match event {
+                        TransportManagerEvent::Connected {
+                            device_id,
+                            transport_type,
+                        } => {
+                            info!("Device {} connected via {:?}", device_id, transport_type);
+                            // We don't have remote_addr for Bluetooth, use placeholder
+                            ConnectionEvent::Connected {
+                                device_id,
+                                remote_addr: "0.0.0.0:0".parse().unwrap(),
+                            }
+                        }
+                        TransportManagerEvent::Disconnected {
+                            device_id,
+                            transport_type,
+                            reason,
+                        } => {
+                            info!(
+                                "Device {} disconnected from {:?} (reason: {:?})",
+                                device_id, transport_type, reason
+                            );
+                            ConnectionEvent::Disconnected { device_id, reason }
+                        }
+                        TransportManagerEvent::PacketReceived {
+                            device_id,
+                            packet,
+                            transport_type,
+                        } => {
+                            debug!(
+                                "Received packet from {} via {:?}",
+                                device_id, transport_type
+                            );
+                            ConnectionEvent::PacketReceived {
+                                device_id,
+                                packet,
+                                remote_addr: "0.0.0.0:0".parse().unwrap(),
+                            }
+                        }
+                        TransportManagerEvent::Started { transport_type } => {
+                            info!("Transport {:?} started", transport_type);
+                            continue;
+                        }
+                        TransportManagerEvent::Error {
+                            transport_type,
+                            message,
+                        } => {
+                            error!("Transport {:?} error: {}", transport_type, message);
+                            continue;
+                        }
+                    };
+
+                    // Handle the converted event
+                    if let Err(e) = Self::handle_connection_event(
+                        connection_event,
+                        &device_manager,
+                        &plugin_manager,
+                        &connection_mgr,
+                        &pairing_service,
+                        &dbus_server,
+                        &cosmic_notifier,
+                        &mpris_manager,
+                        dump_packets,
+                    )
+                    .await
+                    {
+                        error!("Error handling connection event: {}", e);
+                    }
                 }
-            }
-            info!("Connection event handler stopped");
-        });
+                info!("Transport event handler stopped");
+            });
+        } else {
+            info!("Using ConnectionManager directly (Bluetooth disabled)");
+
+            // Start the manager (starts TLS server)
+            let port = {
+                let manager = self.connection_manager.write().await;
+                manager
+                    .start()
+                    .await
+                    .context("Failed to start connection manager")?
+            };
+
+            info!("Connection manager started on port {}", port);
+
+            // Subscribe to connection events
+            let mut event_rx = {
+                let manager = self.connection_manager.read().await;
+                manager.subscribe().await
+            };
+
+            // Spawn task to handle connection events
+            let device_manager = self.device_manager.clone();
+            let plugin_manager = self.plugin_manager.clone();
+            let connection_mgr = self.connection_manager.clone();
+            let pairing_service = self.pairing_service.clone();
+            let dbus_server = self.dbus_server.clone();
+            let cosmic_notifier = self.cosmic_notifier.clone();
+            let mpris_manager = self.mpris_manager.clone();
+            let dump_packets = self.dump_packets;
+            tokio::spawn(async move {
+                while let Some(event) = event_rx.recv().await {
+                    if let Err(e) = Self::handle_connection_event(
+                        event,
+                        &device_manager,
+                        &plugin_manager,
+                        &connection_mgr,
+                        &pairing_service,
+                        &dbus_server,
+                        &cosmic_notifier,
+                        &mpris_manager,
+                        dump_packets,
+                    )
+                    .await
+                    {
+                        error!("Error handling connection event: {}", e);
+                    }
+                }
+                info!("Connection event handler stopped");
+            });
+        }
 
         info!("Connection manager started successfully");
 
@@ -1633,8 +1771,12 @@ impl Daemon {
             discovery.stop().await;
         }
 
-        // Stop connection manager
-        {
+        // Stop transport manager or connection manager
+        if let Some(transport_mgr) = &self.transport_manager {
+            info!("Stopping TransportManager...");
+            transport_mgr.stop().await;
+        } else {
+            // Stop connection manager directly if no TransportManager
             let mut connection_manager = self.connection_manager.write().await;
             connection_manager.stop().await;
         }

@@ -130,6 +130,10 @@ impl BluetoothConnectionManager {
     ) {
         let (command_tx, mut command_rx) = mpsc::unbounded_channel();
 
+        // Clone for use in the update task
+        let connections_for_update = connections.clone();
+        let device_id_for_update = device_id.clone();
+
         let task = tokio::spawn(async move {
             info!("Bluetooth connection handler started for {}", device_id);
 
@@ -220,8 +224,8 @@ impl BluetoothConnectionManager {
         // Update the task handle
         // Note: This is a race condition but acceptable since we can abort via command channel
         tokio::spawn(async move {
-            let mut conns = connections.write().await;
-            if let Some(conn) = conns.get_mut(&device_id) {
+            let mut conns = connections_for_update.write().await;
+            if let Some(conn) = conns.get_mut(&device_id_for_update) {
                 conn.task = task;
             }
         });

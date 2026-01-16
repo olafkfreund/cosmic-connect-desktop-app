@@ -113,12 +113,18 @@ trait KdeConnect {
     /// Share text or URL with a device
     async fn share_text(&self, device_id: &str, text: &str) -> zbus::Result<()>;
 
+    /// Share URL with a device
+    async fn share_url(&self, device_id: &str, url: &str) -> zbus::Result<()>;
+
     /// Send a notification to a device
     async fn send_notification(&self, device_id: &str, title: &str, body: &str)
         -> zbus::Result<()>;
 
     /// Get battery status from a device
     async fn get_battery_status(&self, device_id: &str) -> zbus::Result<BatteryStatus>;
+
+    /// Request battery update from a device
+    async fn request_battery_update(&self, device_id: &str) -> zbus::Result<()>;
 
     /// Get list of available MPRIS media players
     async fn get_mpris_players(&self) -> zbus::Result<Vec<String>>;
@@ -373,6 +379,15 @@ impl DbusClient {
             .context("Failed to share text")
     }
 
+    /// Share URL with a device
+    pub async fn share_url(&self, device_id: &str, url: &str) -> Result<()> {
+        info!("Sharing URL with device {}: {}", device_id, url);
+        self.proxy
+            .share_url(device_id, url)
+            .await
+            .context("Failed to share URL")
+    }
+
     /// Send a notification to a device
     pub async fn send_notification(&self, device_id: &str, title: &str, body: &str) -> Result<()> {
         info!("Sending notification to device {}: {}", device_id, title);
@@ -389,6 +404,15 @@ impl DbusClient {
             .get_battery_status(device_id)
             .await
             .context("Failed to get battery status")
+    }
+
+    /// Request battery update from a device
+    pub async fn request_battery_update(&self, device_id: &str) -> Result<()> {
+        info!("Requesting battery update from device {}", device_id);
+        self.proxy
+            .request_battery_update(device_id)
+            .await
+            .context("Failed to request battery update")
     }
 
     /// Get list of available MPRIS media players

@@ -22,8 +22,8 @@ in {
       type = types.bool;
       default = true;
       description = ''
-        Whether to open the firewall for KDE Connect.
-        Opens TCP and UDP ports 1714-1764 for device discovery and communication.
+        Whether to open the firewall for COSMIC Connect.
+        Opens TCP and UDP ports 1814-1864 for device discovery and TCP ports 1739-1764 for file transfer.
       '';
     };
 
@@ -183,10 +183,11 @@ in {
     # Open firewall ports if requested
     networking.firewall = mkIf cfg.openFirewall {
       allowedTCPPortRanges = [
-        { from = 1714; to = 1764; }
+        { from = 1814; to = 1864; }  # Discovery (CConnect)
+        { from = 1739; to = 1764; }  # File transfer (protocol standard)
       ];
       allowedUDPPortRanges = [
-        { from = 1714; to = 1764; }
+        { from = 1814; to = 1864; }  # Discovery (CConnect)
       ];
     };
 

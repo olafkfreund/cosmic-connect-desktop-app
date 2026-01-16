@@ -778,6 +778,94 @@ impl KdeConnectInterface {
         })
     }
 
+    /// Request battery update from device
+    ///
+    /// Sends a battery request packet to the device to get fresh battery status.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to request from
+    async fn request_battery_update(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: RequestBatteryUpdate called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create battery request packet
+        use cosmic_connect_protocol::plugins::battery::BatteryPlugin;
+        let plugin = BatteryPlugin::new();
+        let packet = plugin.create_battery_request();
+
+        // Send packet
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager.send_packet(&device_id, &packet).await.map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to send battery request: {}", e))
+        })?;
+
+        info!("DBus: Battery update request sent to {}", device_id);
+        Ok(())
+    }
+
+    /// Send command list to device
+    ///
+    /// Sends the list of available commands to the remote device.
+    /// Commands are executed on THIS desktop when requested by the remote device.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID
+    async fn send_command_list(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: SendCommandList called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Get the runcommand plugin for this device
+        let plugin_manager = self.plugin_manager.read().await;
+        let plugin = plugin_manager
+            .get_device_plugin(&device_id, "runcommand")
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("RunCommand plugin not found for device".to_string())
+            })?;
+
+        // Downcast to RunCommandPlugin to access create_command_list_packet
+        use cosmic_connect_protocol::plugins::runcommand::RunCommandPlugin;
+        let runcommand_plugin = plugin
+            .as_any()
+            .downcast_ref::<RunCommandPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
+            })?;
+
+        // Create command list packet
+        let packet = runcommand_plugin.create_command_list_packet().await;
+
+        drop(plugin_manager);
+
+        // Send packet
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager.send_packet(&device_id, &packet).await.map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to send command list: {}", e))
+        })?;
+
+        info!("DBus: Command list sent to {}", device_id);
+        Ok(())
+    }
+
     /// Set device nickname
     ///
     /// # Arguments

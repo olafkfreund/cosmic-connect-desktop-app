@@ -36,7 +36,9 @@ rustPlatform.buildRustPackage rec {
   pname = "cosmic-connect";
   version = "0.1.0";
 
-  src = lib.cleanSource ../.;
+  # Use root directory directly to include submodules
+  # Don't use cleanSource as it excludes .git directories and submodules
+  src = ../.;
 
   cargoLock = {
     lockFile = ../Cargo.lock;

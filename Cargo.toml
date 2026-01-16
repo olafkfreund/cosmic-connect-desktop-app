@@ -23,7 +23,7 @@ rust-version = "1.70"
 libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false }
 
 # Shared Cosmic Connect Core (TLS and crypto layer)
-cosmic-connect-core = { path = "../cosmic-connect-core" }
+cosmic-connect-core = { path = "./cosmic-connect-core" }
 
 # Protocol implementation
 cosmic-connect-protocol = { path = "./cosmic-connect-protocol" }

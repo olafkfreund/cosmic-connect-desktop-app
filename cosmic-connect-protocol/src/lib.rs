@@ -13,6 +13,7 @@ pub mod payload;
 pub mod plugins;
 pub mod recovery;
 pub mod recovery_coordinator;
+pub mod resource_manager;
 pub mod transport;
 
 mod error;
@@ -41,6 +42,7 @@ pub use payload::{FileTransferInfo, PayloadClient, PayloadServer};
 pub use plugins::{Plugin, PluginManager};
 pub use recovery::{RecoveryManager, ReconnectionStrategy, TransferState};
 pub use recovery_coordinator::RecoveryCoordinator;
+pub use resource_manager::{MemoryStats, ResourceConfig, ResourceManager, TransferInfo};
 pub use transport::TcpConnection;
 
 /// Protocol version we implement

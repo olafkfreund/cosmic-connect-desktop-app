@@ -8,6 +8,7 @@ This document describes the comprehensive error handling and automatic recovery 
 - [Error Classification](#error-classification)
 - [User Notifications](#user-notifications)
 - [Auto-Recovery Mechanisms](#auto-recovery-mechanisms)
+- [Resource Management](#resource-management)
 - [File System Error Handling](#file-system-error-handling)
 - [Integration Guide](#integration-guide)
 - [Best Practices](#best-practices)
@@ -345,6 +346,161 @@ recovery_manager.init().await?;
 // Get restored transfers
 let active_transfers = recovery_manager.get_device_transfers(device_id).await;
 ```
+
+## Resource Management
+
+Prevents resource exhaustion and ensures system stability through limits and quotas.
+
+### Connection Limits
+
+Prevents connection flooding and DoS attacks.
+
+**Limits:**
+- Maximum connections per device: 3
+- Maximum total connections: 50
+
+**Usage:**
+```rust
+use cosmic_connect_protocol::{ResourceManager, ResourceConfig};
+
+let resource_manager = ResourceManager::new(ResourceConfig::default());
+
+// Check if connection can be accepted
+resource_manager.can_accept_connection(device_id).await?;
+
+// Register connection
+resource_manager.register_connection(
+    connection_id.to_string(),
+    device_id.to_string()
+).await?;
+
+// Update activity timestamp (keeps connection alive)
+resource_manager.update_connection_activity(&connection_id).await;
+
+// Unregister on disconnect
+resource_manager.unregister_connection(&connection_id).await;
+```
+
+**Features:**
+- Per-device connection limits (prevents single device DoS)
+- Total connection limits (prevents overall exhaustion)
+- Automatic stale connection cleanup
+- Connection activity tracking
+
+### File Transfer Limits
+
+Prevents memory exhaustion from concurrent transfers.
+
+**Limits:**
+- Maximum concurrent transfers: 10
+- Maximum transfers per device: 3
+- Maximum single file size: 100 MB
+- Maximum total transfer size: 1 GB
+
+**Usage:**
+```rust
+// Check if transfer can start
+resource_manager.can_start_transfer(device_id, file_size).await?;
+
+// Register transfer
+let transfer_info = resource_manager::TransferInfo::new(
+    transfer_id,
+    device_id,
+    file_size
+);
+resource_manager.register_transfer(transfer_info).await?;
+
+// Update progress
+resource_manager.update_transfer_progress(transfer_id, bytes).await;
+
+// Unregister on completion
+resource_manager.unregister_transfer(transfer_id).await;
+```
+
+**Features:**
+- Concurrent transfer limits
+- Per-device transfer limits
+- Single file size limits
+- Total transfer size limits
+- Progress tracking
+
+### Memory Pressure Management
+
+Monitors memory usage and warns when approaching limits.
+
+**Threshold:**
+- Memory pressure warning: 500 MB
+
+**Usage:**
+```rust
+// Get memory statistics
+let stats = resource_manager.get_memory_stats().await;
+
+println!("Transfer memory: {} MB", stats.transfer_memory / (1024 * 1024));
+println!("Queue memory: {} MB", stats.queue_memory / (1024 * 1024));
+println!("Total memory: {} MB", stats.total_memory / (1024 * 1024));
+
+// Check for pressure
+if stats.is_under_pressure(threshold) {
+    warn!("Memory pressure detected!");
+}
+```
+
+**Features:**
+- Automatic memory usage estimation
+- Transfer buffer tracking
+- Packet queue memory tracking
+- Pressure warnings in logs
+
+### Packet Queue Limits
+
+Prevents unbounded queue growth.
+
+**Limits:**
+- Maximum queue size per device: 100 packets
+
+**Usage:**
+```rust
+// Check if packet can be queued
+resource_manager.can_queue_packet(device_id).await?;
+
+// Increment queue size
+resource_manager.increment_queue_size(device_id).await?;
+
+// Decrement when packet is sent or dropped
+resource_manager.decrement_queue_size(device_id).await;
+
+// Get current queue size
+let size = resource_manager.get_queue_size(device_id).await;
+```
+
+**Features:**
+- Per-device queue limits
+- Memory tracking (~1KB per packet)
+- Automatic cleanup on connection close
+
+### Resource Summary
+
+Get overall resource usage summary.
+
+```rust
+let summary = resource_manager.get_resource_summary().await;
+println!("{}", summary);
+// Output: "Connections: 5/50, Transfers: 3/10, Memory: 150 MB / 500 MB"
+```
+
+### Cleanup Tasks
+
+Periodic cleanup to prevent resource leaks.
+
+```rust
+// Clean up stale connections (no activity for 5+ minutes)
+resource_manager.cleanup_stale_connections(300).await;
+```
+
+**Recommended Schedule:**
+- Stale connection cleanup: Every 5 minutes
+- Resource summary logging: Every minute (debug builds)
 
 ## File System Error Handling
 

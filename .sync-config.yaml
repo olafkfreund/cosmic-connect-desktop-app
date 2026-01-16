@@ -1,0 +1,143 @@
+# Multi-Repository Sync Configuration
+# Defines what changes need to be synced across repositories
+
+repos:
+  desktop-app:
+    path: /home/olafkfreund/Source/GitHub/cosmic-connect-desktop-app
+    role: source  # Primary source of changes
+
+  core:
+    path: /home/olafkfreund/Source/GitHub/cosmic-connect-core
+    url: https://github.com/olafkfreund/cosmic-connect-core
+    role: target  # Receives protocol/core changes
+
+  android:
+    path: /home/olafkfreund/Source/GitHub/cosmic-connect-android
+    url: https://github.com/olafkfreund/cosmic-connect-android
+    role: target  # Receives protocol/API changes
+
+# Components that need cross-repo syncing
+sync_components:
+  protocol:
+    description: "Protocol definitions, packet types, capabilities"
+    files:
+      desktop-app:
+        - cosmic-connect-protocol/src/packet.rs
+        - cosmic-connect-protocol/src/discovery/mod.rs
+        - cosmic-connect-protocol/src/pairing/mod.rs
+        - cosmic-connect-core/src/lib.rs
+      sync_to:
+        - core  # Protocol changes affect core
+        - android  # Protocol changes affect android client
+
+  error_types:
+    description: "Error types and classification"
+    files:
+      desktop-app:
+        - cosmic-connect-protocol/src/error.rs
+      sync_to:
+        - core  # Error types are shared
+        - android  # Android needs compatible error handling
+
+  constants:
+    description: "Protocol constants (ports, timeouts, versions)"
+    files:
+      desktop-app:
+        - cosmic-connect-protocol/src/lib.rs  # PROTOCOL_VERSION
+        - cosmic-connect-protocol/src/discovery/mod.rs  # DISCOVERY_PORT
+        - cosmic-connect-protocol/src/pairing/mod.rs  # PAIRING_TIMEOUT
+      sync_to:
+        - core
+        - android
+
+  capabilities:
+    description: "Plugin capabilities and packet types"
+    files:
+      desktop-app:
+        - cosmic-connect-protocol/src/plugins/*.rs
+      sync_to:
+        - android  # Android needs to know about new capabilities
+
+  tls_crypto:
+    description: "TLS/crypto implementation"
+    files:
+      desktop-app:
+        - cosmic-connect-core/  # crypto module
+      sync_to:
+        - core  # Core repo should have latest crypto
+
+# Sync strategy for each repository
+sync_strategies:
+  core:
+    language: rust
+    primary_syncs:
+      - protocol definitions
+      - error types
+      - constants
+      - crypto/TLS
+    strategy: |
+      1. Check for protocol version changes
+      2. Check for new packet types
+      3. Check for error type changes
+      4. Check for constant updates
+      5. Generate Rust code for core repo
+
+  android:
+    language: kotlin
+    primary_syncs:
+      - protocol definitions (translated to Kotlin)
+      - error types (translated to Kotlin)
+      - constants
+      - capabilities
+    strategy: |
+      1. Check for protocol version changes
+      2. Check for new packet types (generate Kotlin data classes)
+      3. Check for error types (generate Kotlin sealed classes)
+      4. Check for new capabilities
+      5. Generate Kotlin code for Android repo
+
+# What changes trigger sync needs
+triggers:
+  protocol_version_change:
+    files: ["cosmic-connect-protocol/src/lib.rs"]
+    pattern: "pub const PROTOCOL_VERSION"
+    sync_to: [core, android]
+    severity: critical
+
+  new_packet_type:
+    files: ["cosmic-connect-protocol/src/plugins/*.rs"]
+    pattern: 'packet_type.*"kdeconnect\.'
+    sync_to: [android]
+    severity: high
+
+  error_type_change:
+    files: ["cosmic-connect-protocol/src/error.rs"]
+    pattern: "pub enum ProtocolError"
+    sync_to: [core, android]
+    severity: high
+
+  capability_change:
+    files: ["cosmic-connect-protocol/src/plugins/*.rs"]
+    pattern: "incoming_capabilities|outgoing_capabilities"
+    sync_to: [android]
+    severity: medium
+
+  constant_change:
+    files: ["cosmic-connect-protocol/src/**/*.rs"]
+    pattern: "pub const.*PORT|TIMEOUT|VERSION"
+    sync_to: [core, android]
+    severity: medium
+
+# Exclude patterns (things that don't need syncing)
+exclude:
+  - "**/*_test.rs"
+  - "**/tests/**"
+  - "cosmic-connect-daemon/**"  # Daemon-specific code
+  - "cosmic-connect-protocol/src/fs_utils.rs"  # Desktop-specific
+  - "cosmic-connect-protocol/src/resource_manager.rs"  # Desktop-specific
+
+# Last sync information (updated by agent)
+last_sync:
+  timestamp: null
+  commit_hash: null
+  synced_changes: []

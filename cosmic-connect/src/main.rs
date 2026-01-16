@@ -1465,14 +1465,28 @@ impl CConnectApp {
 
         // Device Type
         content_col = content_col.push(
-            row![
-                widget::text::body("Device Type:").width(Length::Fixed(150.0)),
-                widget::text::body(settings::device_type_name(&config.device.device_type))
-                    .width(Length::Fixed(100.0)),
-            ]
-            .spacing(spacing.space_xs)
-            .align_y(Alignment::Center)
+            widget::text::body("Device Type:").width(Length::Fixed(150.0))
         );
+
+        // Device type selector buttons
+        let device_types = vec!["desktop", "laptop", "tablet"];
+        let current_type = &config.device.device_type;
+
+        let type_buttons: Vec<Element<'_, Message>> = device_types.iter().map(|&dt| {
+            let button = if dt == current_type {
+                widget::button::suggested(settings::device_type_name(dt))
+            } else {
+                widget::button::standard(settings::device_type_name(dt))
+                    .on_press(Message::SetDeviceType(dt.to_string()))
+            };
+            button.into()
+        }).collect();
+
+        let mut type_row = row![].spacing(spacing.space_xs);
+        for button in type_buttons {
+            type_row = type_row.push(button);
+        }
+        content_col = content_col.push(type_row);
 
         // Device ID (read-only)
         if let Some(device_id) = &config.device.device_id {
@@ -1685,6 +1699,8 @@ impl CConnectApp {
             column![
                 widget::text::title4("About"),
                 widget::divider::horizontal::default(),
+
+                // Application Info
                 row![
                     widget::text::body("Application:"),
                     widget::horizontal_space(),
@@ -1700,15 +1716,76 @@ impl CConnectApp {
                 row![
                     widget::text::body("Protocol:"),
                     widget::horizontal_space(),
-                    widget::text::body("CConnect v7/8"),
+                    widget::text::body("CConnect v7/8 (port 1816)"),
+                ]
+                .spacing(spacing.space_xxs),
+
+                widget::divider::horizontal::default(),
+
+                // Description
+                widget::text::body("Description"),
+                widget::text::caption("Connect and sync your devices seamlessly with COSMIC Connect. Share files, sync clipboards, mirror notifications, and control media across all your devices."),
+
+                widget::divider::horizontal::default(),
+
+                // Features
+                widget::text::body("Features"),
+                column![
+                    widget::text::caption("• File sharing and transfer"),
+                    widget::text::caption("• Clipboard synchronization"),
+                    widget::text::caption("• Notification mirroring"),
+                    widget::text::caption("• Battery status monitoring"),
+                    widget::text::caption("• Media player control (MPRIS)"),
+                    widget::text::caption("• Remote input and commands"),
+                    widget::text::caption("• Find My Phone"),
+                    widget::text::caption("• Desktop-to-desktop features"),
+                ]
+                .spacing(2),
+
+                widget::divider::horizontal::default(),
+
+                // System Status
+                widget::text::body("System Status"),
+                row![
+                    widget::text::caption("Daemon:"),
+                    widget::horizontal_space(),
+                    widget::text::caption(if self.dbus_client.is_some() { "Running" } else { "Disconnected" }),
                 ]
                 .spacing(spacing.space_xxs),
                 row![
-                    widget::text::body("Description:"),
+                    widget::text::caption("Connected Devices:"),
                     widget::horizontal_space(),
+                    widget::text::caption(format!("{}", self.devices.len())),
                 ]
                 .spacing(spacing.space_xxs),
-                widget::text::caption("Connect and sync your devices seamlessly with COSMIC Connect"),
+                row![
+                    widget::text::caption("Active Transfers:"),
+                    widget::horizontal_space(),
+                    widget::text::caption(format!("{}",
+                        self.transfers.values().filter(|t| t.status == TransferStatus::Active).count()
+                    )),
+                ]
+                .spacing(spacing.space_xxs),
+
+                widget::divider::horizontal::default(),
+
+                // Links
+                widget::text::body("Links"),
+                widget::text::caption("GitHub: https://github.com/olafkfreund/cosmic-connect-desktop-app"),
+                widget::text::caption("Report Issue: https://github.com/olafkfreund/cosmic-connect-desktop-app/issues"),
+
+                widget::divider::horizontal::default(),
+
+                // License & Credits
+                widget::text::body("License"),
+                widget::text::caption("Licensed under GPL-3.0-or-later"),
+                widget::text::caption(""),
+                widget::text::body("Built With"),
+                widget::text::caption("• COSMIC Toolkit by System76"),
+                widget::text::caption("• KDE Connect Protocol"),
+                widget::text::caption("• Rust and libcosmic"),
+                widget::text::caption(""),
+                widget::text::caption("COSMIC Connect is compatible with KDE Connect v7/8 protocol"),
             ]
             .spacing(spacing.space_xs)
             .padding(spacing.space_s)

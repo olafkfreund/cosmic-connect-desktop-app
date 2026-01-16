@@ -20,7 +20,8 @@ use cosmic_connect_protocol::{
         mpris::MprisPluginFactory, notification::NotificationPluginFactory,
         ping::PingPluginFactory, presenter::PresenterPluginFactory,
         remoteinput::RemoteInputPluginFactory, runcommand::RunCommandPluginFactory,
-        share::SharePluginFactory, telephony::TelephonyPluginFactory, PluginManager,
+        share::SharePluginFactory, systemmonitor::SystemMonitorPluginFactory,
+        telephony::TelephonyPluginFactory, PluginManager,
     },
     transport::{TransportPreference, TransportType},
     CertificateInfo, DeviceInfo, DeviceManager, DeviceType, TransportManager,
@@ -364,6 +365,13 @@ impl Daemon {
             manager
                 .register_factory(Arc::new(ContactsPluginFactory))
                 .context("Failed to register Contacts plugin factory")?;
+        }
+
+        if config.plugins.enable_systemmonitor {
+            info!("Registering SystemMonitor plugin factory");
+            manager
+                .register_factory(Arc::new(SystemMonitorPluginFactory))
+                .context("Failed to register SystemMonitor plugin factory")?;
         }
 
         info!(

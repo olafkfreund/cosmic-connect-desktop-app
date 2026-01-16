@@ -110,6 +110,7 @@ pub mod presenter;
 pub mod remoteinput;
 pub mod runcommand;
 pub mod share;
+pub mod systemmonitor;
 pub mod telephony;
 
 use crate::{Device, Packet, ProtocolError, Result};

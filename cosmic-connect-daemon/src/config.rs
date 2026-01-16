@@ -191,6 +191,10 @@ pub struct PluginConfig {
     /// Enable Contacts plugin
     #[serde(default = "default_true")]
     pub enable_contacts: bool,
+
+    /// Enable SystemMonitor plugin
+    #[serde(default = "default_true")]
+    pub enable_systemmonitor: bool,
 }
 
 /// Storage paths configuration
@@ -319,6 +323,7 @@ impl Default for PluginConfig {
             enable_telephony: true,       // Enabled - SMS and call notifications
             enable_presenter: false,      // Specialized use case - reduce packet size
             enable_contacts: false,       // Reduce packet size - can be enabled if needed
+            enable_systemmonitor: true,   // Desktop-to-desktop system monitoring
         }
     }
 }

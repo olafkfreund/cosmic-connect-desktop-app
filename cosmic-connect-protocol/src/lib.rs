@@ -43,7 +43,12 @@ pub use plugins::{Plugin, PluginManager};
 pub use recovery::{RecoveryManager, ReconnectionStrategy, TransferState};
 pub use recovery_coordinator::RecoveryCoordinator;
 pub use resource_manager::{MemoryStats, ResourceConfig, ResourceManager, TransferInfo};
-pub use transport::TcpConnection;
+pub use transport::{
+    BluetoothConnection, BluetoothTransportFactory, LatencyCategory, TcpConnection,
+    TcpTransportFactory, Transport, TransportAddress, TransportCapabilities, TransportFactory,
+    TransportPreference, TransportType, KDECONNECT_SERVICE_UUID, RFCOMM_READ_CHAR_UUID,
+    RFCOMM_WRITE_CHAR_UUID,
+};
 
 /// Protocol version we implement
 /// Updated to version 8 to match latest KDE Connect Android app

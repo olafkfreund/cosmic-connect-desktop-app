@@ -2,7 +2,12 @@
 //!
 //! Simple TCP connection for exchanging pairing packets before TLS is established.
 
+use crate::transport::{
+    LatencyCategory, Transport, TransportAddress, TransportCapabilities, TransportFactory,
+    TransportType,
+};
 use crate::{Packet, ProtocolError, Result};
+use async_trait::async_trait;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -130,10 +135,154 @@ impl TcpConnection {
     }
 
     /// Close the connection
-    pub async fn close(mut self) -> Result<()> {
+    pub async fn close_conn(mut self) -> Result<()> {
         debug!("Closing connection to {}", self.remote_addr);
         self.stream.shutdown().await?;
         Ok(())
+    }
+}
+
+// Implement Transport trait for TcpConnection
+#[async_trait]
+impl Transport for TcpConnection {
+    fn capabilities(&self) -> TransportCapabilities {
+        TransportCapabilities {
+            // TCP can handle large packets
+            max_packet_size: MAX_PACKET_SIZE,
+            // TCP is reliable
+            reliable: true,
+            // TCP is connection-oriented
+            connection_oriented: true,
+            // TCP typically has low latency on local network
+            latency: LatencyCategory::Low,
+        }
+    }
+
+    fn remote_address(&self) -> TransportAddress {
+        TransportAddress::Tcp(self.remote_addr)
+    }
+
+    async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
+        let bytes = packet.to_bytes()?;
+
+        if bytes.len() > MAX_PACKET_SIZE {
+            return Err(ProtocolError::InvalidPacket(format!(
+                "Packet too large: {} bytes (max {})",
+                bytes.len(),
+                MAX_PACKET_SIZE
+            )));
+        }
+
+        debug!(
+            "Sending packet ({} bytes) to {}",
+            bytes.len(),
+            self.remote_addr
+        );
+
+        // Send packet length as 4-byte big-endian
+        let len = bytes.len() as u32;
+        self.stream.write_all(&len.to_be_bytes()).await?;
+
+        // Send packet data
+        self.stream.write_all(&bytes).await?;
+        self.stream.flush().await?;
+
+        debug!("Packet sent successfully to {}", self.remote_addr);
+        Ok(())
+    }
+
+    async fn receive_packet(&mut self) -> Result<Packet> {
+        debug!("Waiting for packet from {}", self.remote_addr);
+
+        // Read packet length (4 bytes, big-endian)
+        let mut len_bytes = [0u8; 4];
+        timeout(TCP_TIMEOUT, self.stream.read_exact(&mut len_bytes))
+            .await
+            .map_err(|_| {
+                ProtocolError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Read timeout",
+                ))
+            })??;
+
+        let len = u32::from_be_bytes(len_bytes) as usize;
+
+        if len > MAX_PACKET_SIZE {
+            error!("Packet too large: {} bytes", len);
+            return Err(ProtocolError::InvalidPacket(format!(
+                "Packet too large: {} bytes (max {})",
+                len, MAX_PACKET_SIZE
+            )));
+        }
+
+        debug!("Receiving packet ({} bytes) from {}", len, self.remote_addr);
+
+        // Read packet data
+        let mut data = vec![0u8; len];
+        timeout(TCP_TIMEOUT, self.stream.read_exact(&mut data))
+            .await
+            .map_err(|_| {
+                ProtocolError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Read timeout",
+                ))
+            })??;
+
+        let packet = Packet::from_bytes(&data)?;
+        debug!(
+            "Received packet type '{}' from {}",
+            packet.packet_type, self.remote_addr
+        );
+
+        Ok(packet)
+    }
+
+    async fn close(mut self: Box<Self>) -> Result<()> {
+        debug!("Closing connection to {}", self.remote_addr);
+        self.stream.shutdown().await?;
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        // TCP streams don't have a simple way to check if connected
+        // without attempting I/O, so we assume connected until an error occurs
+        true
+    }
+}
+
+/// Factory for creating TCP connections
+#[derive(Debug, Clone)]
+pub struct TcpTransportFactory;
+
+impl TcpTransportFactory {
+    /// Create a new TCP transport factory
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for TcpTransportFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl TransportFactory for TcpTransportFactory {
+    async fn connect(&self, address: TransportAddress) -> Result<Box<dyn Transport>> {
+        match address {
+            TransportAddress::Tcp(addr) => {
+                let connection = TcpConnection::connect(addr).await?;
+                Ok(Box::new(connection))
+            }
+            _ => Err(ProtocolError::InvalidPacket(
+                "TCP factory can only create TCP connections".to_string(),
+            )),
+        }
+    }
+
+    fn transport_type(&self) -> TransportType {
+        TransportType::Tcp
     }
 }
 
@@ -172,7 +321,7 @@ mod tests {
         let response = client.receive_packet().await.unwrap();
         assert_eq!(response.packet_type, "test.response");
 
-        client.close().await.unwrap();
+        client.close_conn().await.unwrap();
         server_task.await.unwrap();
     }
 

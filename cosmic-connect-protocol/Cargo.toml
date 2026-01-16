@@ -23,6 +23,7 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 mouse-keyboard-input = { workspace = true }
+btleplug = { workspace = true }
 
 # Legacy pairing module still uses OpenSSL temporarily
 # TODO: Migrate pairing to use cosmic-connect-core CertificateInfo

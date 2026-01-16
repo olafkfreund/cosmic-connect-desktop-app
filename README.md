@@ -357,6 +357,34 @@ nix develop
 # Or install dependencies manually (see Prerequisites)
 ```
 
+### AI-Assisted Development
+
+This project includes a Claude Code skill with specialized agents for COSMIC Desktop development.
+
+**Install the skill:**
+```bash
+./.claude/skills/install.sh
+```
+
+**Quick usage:**
+```bash
+# Pre-commit check
+@cosmic-code-reviewer /pre-commit-check
+
+# Architecture review
+@cosmic-architect review this application structure
+
+# Theming audit
+@cosmic-theme-expert /audit-theming
+
+# Error handling
+@cosmic-error-handler /remove-unwraps
+```
+
+The skill provides 7 specialized agents covering architecture, theming, applets, widgets, error handling, performance, and comprehensive code review.
+
+**Documentation:** `.claude/skills/cosmic-ui-design-skill/README.md`
+
 ### Testing
 
 ```bash
@@ -539,10 +567,12 @@ See [Issue #52](https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
 ## Contributing
 
 Contributions are welcome! Please see:
-- **[Contributing Guidelines](docs/development/Contributing.md)** - Code style, workflow, and standards
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Complete contributing guide with AI skill setup
 - **[Development Guide](docs/development/Development-Guide.md)** - Development setup and workflow
 - **[Architecture](docs/architecture/Architecture.md)** - System architecture understanding
 - [CLAUDE.md](CLAUDE.md) - AI development guidelines
+
+**AI-Assisted Development:** Install the Claude Code skill (`./.claude/skills/install.sh`) for specialized agents that help with COSMIC Desktop best practices.
 
 ### Development Workflow
 

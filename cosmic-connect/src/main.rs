@@ -1,4 +1,5 @@
 mod dbus_client;
+mod notifications;
 mod settings;
 
 use cosmic::app::{Core, Settings, Task};
@@ -665,10 +666,20 @@ impl Application for CConnectApp {
                     }
                     DaemonEvent::TransferComplete {
                         transfer_id,
+                        filename,
                         success,
                         error_message,
                         ..
                     } => {
+                        // Show notification
+                        let error = if error_message.is_empty() {
+                            None
+                        } else {
+                            Some(error_message.as_str())
+                        };
+                        notifications::notify_transfer_complete(&filename, success, error);
+
+                        // Update transfer state
                         if let Some(transfer) = self.transfers.get_mut(&transfer_id) {
                             transfer.status = if success {
                                 TransferStatus::Completed
@@ -682,10 +693,20 @@ impl Application for CConnectApp {
                     }
                     DaemonEvent::DeviceAdded { device_id, device_info } => {
                         tracing::info!("Device added: {}", device_id);
+
+                        // Show notification
+                        notifications::notify_device_discovered(&device_info.name);
+
                         self.devices.insert(device_id, device_info);
                     }
                     DaemonEvent::DeviceRemoved { device_id } => {
                         tracing::info!("Device removed: {}", device_id);
+
+                        // Show notification
+                        if let Some(device) = self.devices.get(&device_id) {
+                            notifications::notify_device_disconnected(&device.name);
+                        }
+
                         self.devices.remove(&device_id);
                     }
                     DaemonEvent::DeviceStateChanged { device_id, state } => {
@@ -695,9 +716,66 @@ impl Application for CConnectApp {
                             cosmic::Action::App(Message::DevicesLoaded(devices))
                         });
                     }
-                    _ => {
-                        // Other events not handled yet
-                        tracing::debug!("Unhandled daemon event: {:?}", event);
+                    DaemonEvent::PairingRequest { device_id } => {
+                        tracing::info!("Pairing request from device: {}", device_id);
+
+                        // Show notification
+                        if let Some(device) = self.devices.get(&device_id) {
+                            notifications::notify_pairing_request(&device.name);
+                        } else {
+                            notifications::notify_pairing_request("Unknown Device");
+                        }
+                    }
+                    DaemonEvent::PairingStatusChanged { device_id, status } => {
+                        tracing::info!("Device {} pairing status changed to: {}", device_id, status);
+
+                        // Show notification for successful pairing
+                        if status.to_lowercase().contains("paired") || status.to_lowercase().contains("success") {
+                            if let Some(device) = self.devices.get(&device_id) {
+                                notifications::notify_pairing_success(&device.name);
+                            }
+                        } else if status.to_lowercase().contains("failed") || status.to_lowercase().contains("rejected") {
+                            let device_name = self.devices.get(&device_id)
+                                .map(|d| d.name.as_str())
+                                .unwrap_or("Unknown Device");
+                            notifications::notify_pairing_failed(device_name, Some(&status));
+                        }
+
+                        // Refresh devices to get updated pairing state
+                        return Task::perform(fetch_devices(), |devices| {
+                            cosmic::Action::App(Message::DevicesLoaded(devices))
+                        });
+                    }
+                    DaemonEvent::DaemonReconnected => {
+                        tracing::info!("Daemon reconnected");
+                        notifications::notify_daemon_reconnected();
+
+                        // Refresh devices after reconnection
+                        return Task::perform(fetch_devices(), |devices| {
+                            cosmic::Action::App(Message::DevicesLoaded(devices))
+                        });
+                    }
+                    DaemonEvent::PluginEvent { device_id, plugin, data } => {
+                        tracing::debug!("Plugin event from {}: {} - {}", device_id, plugin, data);
+
+                        // Show notification for ping events
+                        if plugin == "ping" {
+                            if let Some(device) = self.devices.get(&device_id) {
+                                // Try to parse message from data
+                                let message = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                                    json.get("message")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                } else {
+                                    None
+                                };
+                                notifications::notify_ping_received(&device.name, message.as_deref());
+                            }
+                        }
+                    }
+                    DaemonEvent::DaemonDisconnected => {
+                        tracing::warn!("Daemon disconnected");
+                        // Don't show notification for disconnect as it might be noisy during restarts
                     }
                 }
                 Task::none()

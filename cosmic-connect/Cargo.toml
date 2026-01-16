@@ -19,6 +19,7 @@ anyhow = { workspace = true }
 zbus = { workspace = true }
 futures = { workspace = true }
 ashpd = { workspace = true }
+notify-rust = "4.11"
 
 [[bin]]
 name = "cosmic-connect"

@@ -62,8 +62,24 @@ Add to your `configuration.nix`:
       mpris = true;
       ping = true;
 
-      # RemoteDesktop plugin (DISABLED by default for security)
-      remotedesktop = true;  # Enable VNC-based screen sharing
+      # Desktop control plugins (enabled by default)
+      remoteinput = true;     # Remote mouse/keyboard control
+      findmyphone = true;     # Audio alert to locate devices
+      lock = true;            # Remote desktop lock/unlock
+      telephony = true;       # SMS and call notifications
+
+      # Desktop-to-desktop plugins (enabled by default)
+      systemmonitor = true;   # CPU/memory/disk monitoring
+      wol = true;             # Wake-on-LAN support
+      screenshot = true;      # Remote screenshot capture
+
+      # Security-sensitive plugins (DISABLED by default)
+      remotedesktop = false;  # VNC-based screen sharing
+      runcommand = false;     # Remote command execution
+
+      # Specialized plugins (DISABLED by default)
+      presenter = false;      # Laser pointer and presentation tools
+      contacts = false;       # Contact list synchronization
     };
   };
 }
@@ -99,14 +115,32 @@ services.cosmic-connect = {
   applet.enable = true;
 
   plugins = {
-    # All plugins enabled including RemoteDesktop
+    # Core plugins
     battery = true;
     clipboard = true;
     notification = true;
     share = true;
     mpris = true;
     ping = true;
-    remotedesktop = true;  # Screen sharing enabled
+
+    # Desktop control
+    remoteinput = true;
+    findmyphone = true;
+    lock = true;
+    telephony = true;
+
+    # Desktop-to-desktop features
+    systemmonitor = true;
+    wol = true;
+    screenshot = true;
+    remotedesktop = true;  # Screen sharing enabled for desktop
+
+    # Security plugins (opt-in when needed)
+    runcommand = false;
+
+    # Specialized features
+    presenter = false;  # Enable only when needed
+    contacts = false;
   };
 
   security = {
@@ -130,13 +164,32 @@ services.cosmic-connect = {
   openFirewall = true;
 
   plugins = {
+    # Core plugins
     battery = true;
     clipboard = true;
     notification = true;
     share = true;
     mpris = true;
     ping = true;
-    remotedesktop = false;  # Disabled for security on mobile
+
+    # Desktop control
+    remoteinput = true;
+    findmyphone = true;
+    lock = true;
+    telephony = true;
+
+    # Desktop-to-desktop (enabled, can still monitor other desktops)
+    systemmonitor = true;
+    wol = true;
+    screenshot = true;
+
+    # Security: disable on mobile devices
+    remotedesktop = false;
+    runcommand = false;
+
+    # Specialized: not needed on laptop
+    presenter = false;
+    contacts = false;
   };
 };
 ```
@@ -153,13 +206,32 @@ services.cosmic-connect = {
   applet.enable = false;  # No GUI on server
 
   plugins = {
-    battery = false;  # No battery on server
-    clipboard = false;  # No clipboard without GUI
-    notification = true;  # Can still receive notifications
-    share = true;  # File sharing works
-    mpris = false;  # No media player
+    # Core plugins
+    battery = false;        # No battery on server
+    clipboard = false;      # No clipboard without GUI
+    notification = true;    # Can still send notifications
+    share = true;           # File sharing works
+    mpris = false;          # No media player
     ping = true;
+
+    # Desktop control (not applicable to headless)
+    remoteinput = false;
+    findmyphone = false;
+    lock = false;           # No desktop session to lock
+    telephony = false;
+
+    # Desktop-to-desktop
+    systemmonitor = true;   # Can share server metrics
+    wol = false;            # Server should stay on
+    screenshot = false;     # No display
+
+    # Security
     remotedesktop = false;  # No display to share
+    runcommand = false;     # Extra security on server
+
+    # Specialized
+    presenter = false;
+    contacts = false;
   };
 };
 ```
@@ -186,14 +258,32 @@ Create `cosmic-connect-shared.nix`:
 
     # Common plugins enabled on all hosts
     plugins = {
+      # Core plugins
       battery = true;
       clipboard = true;
       notification = true;
       share = true;
       mpris = true;
       ping = true;
-      # RemoteDesktop disabled by default, override per-host
+
+      # Desktop control
+      remoteinput = true;
+      findmyphone = true;
+      lock = true;
+      telephony = true;
+
+      # Desktop-to-desktop
+      systemmonitor = true;
+      wol = true;
+      screenshot = true;
+
+      # Security-sensitive - disabled by default, override per-host
       remotedesktop = false;
+      runcommand = false;
+
+      # Specialized - disabled by default
+      presenter = false;
+      contacts = false;
     };
   };
 }

@@ -71,8 +71,9 @@ in {
           }
         '';
         description = ''
-          Configuration for the COSMIC Connect daemon.
-          Settings are written to ~/.config/cosmic-connect/daemon.toml
+          Additional configuration for the COSMIC Connect daemon.
+          These settings are merged with plugin configuration and written to /etc/xdg/cosmic-connect/daemon.toml
+          Plugin settings are automatically configured based on services.cosmic-connect.plugins options.
         '';
       };
     };
@@ -133,6 +134,97 @@ in {
           Allows screen sharing and remote control between devices.
           Requires PipeWire and Wayland portal support.
           Security: Disabled by default, requires explicit opt-in.
+        '';
+      };
+
+      runcommand = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable RunCommand plugin for remote command execution.
+          Allows executing predefined commands on paired devices.
+          Security: Disabled by default, requires explicit opt-in for security.
+        '';
+      };
+
+      remoteinput = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable RemoteInput plugin for remote mouse and keyboard control.
+          Useful for presentations and remote assistance.
+        '';
+      };
+
+      findmyphone = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable FindMyPhone plugin to trigger audio alerts on devices.
+          Emergency feature to help locate misplaced devices.
+        '';
+      };
+
+      lock = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Lock plugin for remote desktop lock/unlock control.
+          Allows locking and unlocking the desktop session remotely.
+        '';
+      };
+
+      telephony = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Telephony plugin for SMS and call notifications.
+          Displays incoming calls and text messages from mobile devices.
+        '';
+      };
+
+      presenter = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable Presenter plugin for laser pointer and presentation controls.
+          Specialized use case - can be enabled when needed for presentations.
+        '';
+      };
+
+      contacts = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable Contacts plugin for contact list synchronization.
+          Syncs contact information between devices via vCard format.
+        '';
+      };
+
+      systemmonitor = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable SystemMonitor plugin for desktop-to-desktop resource monitoring.
+          Shares CPU, memory, disk, and network usage statistics.
+        '';
+      };
+
+      wol = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Wake-on-LAN plugin for remote desktop power management.
+          Send magic packets to wake sleeping desktops over the network.
+        '';
+      };
+
+      screenshot = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Screenshot plugin for remote desktop screen capture.
+          Capture and transfer screenshots from remote desktops.
         '';
       };
     };
@@ -255,8 +347,33 @@ in {
     };
 
     # Generate configuration file
-    environment.etc."xdg/cosmic-connect/config.toml" = mkIf (cfg.daemon.settings != { }) {
-      text = generators.toINI { } cfg.daemon.settings;
+    environment.etc."xdg/cosmic-connect/daemon.toml" = mkIf cfg.daemon.enable {
+      text = let
+        pluginConfig = {
+          plugins = {
+            enable_ping = cfg.plugins.ping;
+            enable_battery = cfg.plugins.battery;
+            enable_notification = cfg.plugins.notification;
+            enable_share = cfg.plugins.share;
+            enable_clipboard = cfg.plugins.clipboard;
+            enable_mpris = cfg.plugins.mpris;
+            enable_runcommand = cfg.plugins.runcommand;
+            enable_remoteinput = cfg.plugins.remoteinput;
+            enable_findmyphone = cfg.plugins.findmyphone;
+            enable_lock = cfg.plugins.lock;
+            enable_telephony = cfg.plugins.telephony;
+            enable_presenter = cfg.plugins.presenter;
+            enable_contacts = cfg.plugins.contacts;
+            enable_systemmonitor = cfg.plugins.systemmonitor;
+            enable_wol = cfg.plugins.wol;
+            enable_screenshot = cfg.plugins.screenshot;
+            enable_remotedesktop = cfg.plugins.remotedesktop;
+          };
+        };
+        # Merge user settings with plugin config
+        finalConfig = lib.recursiveUpdate pluginConfig cfg.daemon.settings;
+      in
+        generators.toTOML { } finalConfig;
     };
 
     # Create necessary directories

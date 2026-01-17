@@ -1169,9 +1169,26 @@ impl CConnectApplet {
     ) -> Element<'a, Message> {
         use cosmic::widget::{horizontal_space, toggler};
 
+        // Count overrides for display
+        let override_count = config.count_plugin_overrides();
+
         // Header with close button
-        let header = row![
+        let mut header_row = row![
             text("Plugin Settings").size(14),
+        ]
+        .spacing(8)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        // Add override count badge if any overrides exist
+        if override_count > 0 {
+            header_row = header_row.push(
+                text(format!("({} override{})", override_count, if override_count == 1 { "" } else { "s" }))
+                    .size(12)
+            );
+        }
+
+        let header = row![
+            header_row,
             horizontal_space(),
             button::icon(icon::from_name("window-close-symbolic").size(14))
                 .on_press(Message::ToggleDeviceSettings(device_id.to_string()))

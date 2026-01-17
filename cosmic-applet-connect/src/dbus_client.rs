@@ -140,6 +140,36 @@ impl DeviceConfig {
             _ => false,
         }
     }
+
+    /// Count how many plugin overrides this device has
+    pub fn count_plugin_overrides(&self) -> usize {
+        let mut count = 0;
+        if self.plugins.enable_ping.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_battery.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_notification.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_share.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_clipboard.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_mpris.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_remotedesktop.is_some() {
+            count += 1;
+        }
+        if self.plugins.enable_findmyphone.is_some() {
+            count += 1;
+        }
+        count
+    }
 }
 
 /// Events emitted by the daemon

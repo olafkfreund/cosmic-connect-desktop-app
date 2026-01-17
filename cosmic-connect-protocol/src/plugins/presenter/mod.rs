@@ -31,13 +31,19 @@
 //! - [CConnect Presenter Plugin](https://github.com/KDE/cconnect-kde/tree/master/plugins/presenter)
 //! - [Valent Protocol Documentation](https://valent.andyholmes.ca/documentation/protocol.html)
 
+pub mod laser_pointer;
+
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
+use laser_pointer::LaserPointer;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use tracing::{debug, info, warn};
 
 use super::{Plugin, PluginFactory};
+
+// Re-export for external use
+pub use laser_pointer::{LaserPointerColor, LaserPointerConfig};
 
 /// Packet type for presenter events
 pub const PACKET_TYPE_PRESENTER: &str = "cconnect.presenter";
@@ -62,6 +68,7 @@ pub struct PresenterEvent {
 pub struct PresenterPlugin {
     device_id: Option<String>,
     presentation_active: bool,
+    laser_pointer: LaserPointer,
 }
 
 impl PresenterPlugin {
@@ -70,7 +77,18 @@ impl PresenterPlugin {
         Self {
             device_id: None,
             presentation_active: false,
+            laser_pointer: LaserPointer::new(),
         }
+    }
+
+    /// Get laser pointer reference
+    pub fn laser_pointer(&self) -> &LaserPointer {
+        &self.laser_pointer
+    }
+
+    /// Get mutable laser pointer reference
+    pub fn laser_pointer_mut(&mut self) -> &mut LaserPointer {
+        &mut self.laser_pointer
     }
 
     /// Handle a presenter event packet
@@ -82,6 +100,7 @@ impl PresenterPlugin {
         if event.stop.unwrap_or(false) {
             info!("Presentation mode stopped");
             self.presentation_active = false;
+            self.laser_pointer.hide();
             return Ok(());
         }
 
@@ -93,12 +112,11 @@ impl PresenterPlugin {
             if !self.presentation_active {
                 info!("Presentation mode started");
                 self.presentation_active = true;
+                self.laser_pointer.show();
             }
 
             debug!("Presenter pointer moved: dx={}, dy={}", dx, dy);
-            // TODO: Implement laser pointer visualization via COSMIC APIs
-            // This would typically show a red dot or highlight on screen
-            // that moves according to dx/dy values
+            self.laser_pointer.move_by(dx, dy);
         }
 
         Ok(())
@@ -118,6 +136,10 @@ impl Plugin for PresenterPlugin {
     }
 
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 
@@ -144,6 +166,7 @@ impl Plugin for PresenterPlugin {
     async fn stop(&mut self) -> Result<()> {
         info!("Presenter plugin stopped");
         self.presentation_active = false;
+        self.laser_pointer.hide();
         Ok(())
     }
 
@@ -200,6 +223,7 @@ mod tests {
         assert_eq!(plugin.name(), "presenter");
         assert!(plugin.device_id.is_none());
         assert!(!plugin.presentation_active);
+        assert!(!plugin.laser_pointer().is_active());
     }
 
     #[tokio::test]
@@ -229,6 +253,8 @@ mod tests {
         let result = plugin.handle_packet(&packet, &mut device_mut).await;
         assert!(result.is_ok());
         assert!(plugin.presentation_active);
+        assert!(plugin.laser_pointer().is_active());
+        assert_eq!(plugin.laser_pointer().position(), (10.5, -5.2));
     }
 
     #[tokio::test]
@@ -239,6 +265,7 @@ mod tests {
 
         // Start presentation
         plugin.presentation_active = true;
+        plugin.laser_pointer_mut().show();
 
         let packet = Packet::new(
             "cconnect.presenter",
@@ -251,6 +278,7 @@ mod tests {
         let result = plugin.handle_packet(&packet, &mut device_mut).await;
         assert!(result.is_ok());
         assert!(!plugin.presentation_active);
+        assert!(!plugin.laser_pointer().is_active());
     }
 
     #[test]
@@ -275,7 +303,48 @@ mod tests {
 
         assert!(plugin.init(&device).await.is_ok());
         assert!(plugin.start().await.is_ok());
+
+        // Simulate presentation activity
+        plugin.laser_pointer_mut().show();
+        assert!(plugin.laser_pointer().is_active());
+
         assert!(plugin.stop().await.is_ok());
         assert!(!plugin.presentation_active);
+        assert!(!plugin.laser_pointer().is_active());
+    }
+
+    #[tokio::test]
+    async fn test_laser_pointer_movement() {
+        let mut plugin = PresenterPlugin::new();
+        let device = create_test_device();
+        plugin.init(&device).await.unwrap();
+
+        // First movement - should start presentation and show laser pointer
+        let packet1 = Packet::new(
+            "cconnect.presenter",
+            json!({
+                "dx": 5.0,
+                "dy": 10.0
+            }),
+        );
+
+        let mut device_mut = create_test_device();
+        plugin.handle_packet(&packet1, &mut device_mut).await.unwrap();
+        assert!(plugin.presentation_active);
+        assert!(plugin.laser_pointer().is_active());
+        assert_eq!(plugin.laser_pointer().position(), (5.0, 10.0));
+
+        // Second movement - should accumulate position
+        let packet2 = Packet::new(
+            "cconnect.presenter",
+            json!({
+                "dx": -2.0,
+                "dy": 3.0
+            }),
+        );
+
+        let mut device_mut2 = create_test_device();
+        plugin.handle_packet(&packet2, &mut device_mut2).await.unwrap();
+        assert_eq!(plugin.laser_pointer().position(), (3.0, 13.0));
     }
 }

@@ -103,10 +103,12 @@ pub mod battery;
 pub mod clipboard;
 pub mod contacts;
 pub mod findmyphone;
+pub mod lock;
 pub mod mpris;
 pub mod notification;
 pub mod ping;
 pub mod presenter;
+pub mod remotedesktop;
 pub mod remoteinput;
 pub mod runcommand;
 pub mod screenshot;
@@ -183,6 +185,11 @@ pub trait Plugin: Send + Sync + Any {
     ///
     /// This allows querying plugin-specific state through the trait object.
     fn as_any(&self) -> &dyn Any;
+
+    /// Downcast to mutable Any for type-specific state modification
+    ///
+    /// This allows modifying plugin-specific state through the trait object.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Get list of incoming packet types this plugin can handle
     ///
@@ -490,6 +497,14 @@ impl PluginManager {
             .get(device_id)
             .and_then(|plugins| plugins.get(plugin_name))
             .map(|p| p.as_ref())
+    }
+
+    /// Get mutable reference to a plugin for a specific device
+    pub fn get_device_plugin_mut(&mut self, device_id: &str, plugin_name: &str) -> Option<&mut dyn Plugin> {
+        self.device_plugins
+            .get_mut(device_id)
+            .and_then(|plugins| plugins.get_mut(plugin_name))
+            .map(|p| p.as_mut())
     }
 
     /// Unregister a plugin factory by name

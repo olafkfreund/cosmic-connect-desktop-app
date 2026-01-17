@@ -538,6 +538,10 @@ impl Plugin for ClipboardPlugin {
         self
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn incoming_capabilities(&self) -> Vec<String> {
         vec![
             "cconnect.clipboard".to_string(),

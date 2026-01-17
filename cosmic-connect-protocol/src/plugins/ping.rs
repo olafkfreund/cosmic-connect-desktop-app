@@ -240,6 +240,10 @@ impl Plugin for PingPlugin {
         self
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn incoming_capabilities(&self) -> Vec<String> {
         vec!["cconnect.ping".to_string()]
     }

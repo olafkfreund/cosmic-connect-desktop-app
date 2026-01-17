@@ -78,6 +78,10 @@ impl Plugin for FindMyPhonePlugin {
         self
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn incoming_capabilities(&self) -> Vec<String> {
         // This plugin only sends requests, doesn't receive
         vec![]

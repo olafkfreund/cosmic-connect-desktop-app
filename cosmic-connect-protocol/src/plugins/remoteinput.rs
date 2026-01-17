@@ -381,6 +381,10 @@ impl Plugin for RemoteInputPlugin {
         self
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn incoming_capabilities(&self) -> Vec<String> {
         vec![PACKET_TYPE_MOUSEPAD_REQUEST.to_string()]
     }

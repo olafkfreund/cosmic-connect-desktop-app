@@ -176,6 +176,63 @@
 //! }
 //! ```
 //!
+//! ## Playlist Management
+//!
+//! ### Request Playlist/Tracklist
+//!
+//! ```json
+//! {
+//!     "id": 1234567890,
+//!     "type": "cconnect.mpris.request",
+//!     "body": {
+//!         "player": "spotify",
+//!         "requestPlaylist": true
+//!     }
+//! }
+//! ```
+//!
+//! ### Playlist Response
+//!
+//! ```json
+//! {
+//!     "id": 1234567891,
+//!     "type": "cconnect.mpris",
+//!     "body": {
+//!         "player": "spotify",
+//!         "playlist": [
+//!             {
+//!                 "trackId": "/org/mpris/MediaPlayer2/Track/1",
+//!                 "title": "Song 1",
+//!                 "artist": "Artist 1",
+//!                 "album": "Album 1",
+//!                 "length": 180000
+//!             },
+//!             {
+//!                 "trackId": "/org/mpris/MediaPlayer2/Track/2",
+//!                 "title": "Song 2",
+//!                 "artist": "Artist 2",
+//!                 "album": "Album 2",
+//!                 "length": 210000
+//!             }
+//!         ],
+//!         "currentTrackIndex": 0
+//!     }
+//! }
+//! ```
+//!
+//! ### Go to Track
+//!
+//! ```json
+//! {
+//!     "id": 1234567890,
+//!     "type": "cconnect.mpris.request",
+//!     "body": {
+//!         "player": "spotify",
+//!         "goToTrack": "/org/mpris/MediaPlayer2/Track/5"
+//!     }
+//! }
+//! ```
+//!
 //! ## Example
 //!
 //! ```rust,ignore
@@ -351,6 +408,41 @@ pub struct PlayerMetadata {
     pub album: Option<String>,
     /// Album art URL/path
     pub album_art_url: Option<String>,
+}
+
+/// Track information in a playlist
+///
+/// Represents a single track in a player's playlist/tracklist.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackInfo {
+    /// MPRIS track ID (e.g., "/org/mpris/MediaPlayer2/Track/1")
+    #[serde(rename = "trackId")]
+    pub track_id: String,
+
+    /// Track title
+    pub title: String,
+
+    /// Track artist
+    pub artist: Option<String>,
+
+    /// Album name
+    pub album: Option<String>,
+
+    /// Track length in milliseconds
+    pub length: Option<i64>,
+}
+
+/// Playlist/Tracklist information
+///
+/// Contains the current playlist and playback position.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Playlist {
+    /// List of tracks in the playlist
+    pub tracks: Vec<TrackInfo>,
+
+    /// Index of currently playing track (0-based)
+    #[serde(rename = "currentTrackIndex")]
+    pub current_track_index: Option<usize>,
 }
 
 /// Media player status
@@ -816,6 +908,117 @@ impl MprisPlugin {
         )
     }
 
+    /// Create a request playlist packet
+    ///
+    /// Requests the current playlist/tracklist from a player.
+    ///
+    /// # Parameters
+    ///
+    /// - `player`: Player name
+    ///
+    /// # Returns
+    ///
+    /// Request packet asking for playlist information
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::plugins::mpris::MprisPlugin;
+    ///
+    /// let plugin = MprisPlugin::new();
+    /// let packet = plugin.create_request_playlist_packet("spotify".to_string());
+    /// assert_eq!(packet.packet_type, "cconnect.mpris.request");
+    /// ```
+    pub fn create_request_playlist_packet(&self, player: String) -> Packet {
+        Packet::new(
+            "cconnect.mpris.request",
+            json!({
+                "player": player,
+                "requestPlaylist": true
+            }),
+        )
+    }
+
+    /// Create a playlist response packet
+    ///
+    /// Sends the current playlist/tracklist to the requesting device.
+    ///
+    /// # Parameters
+    ///
+    /// - `player`: Player name
+    /// - `playlist`: Playlist information with tracks and current index
+    ///
+    /// # Returns
+    ///
+    /// Packet containing playlist data
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::plugins::mpris::{MprisPlugin, Playlist, TrackInfo};
+    ///
+    /// let plugin = MprisPlugin::new();
+    /// let playlist = Playlist {
+    ///     tracks: vec![
+    ///         TrackInfo {
+    ///             track_id: "/org/mpris/MediaPlayer2/Track/1".to_string(),
+    ///             title: "Song 1".to_string(),
+    ///             artist: Some("Artist 1".to_string()),
+    ///             album: Some("Album 1".to_string()),
+    ///             length: Some(180000),
+    ///         },
+    ///     ],
+    ///     current_track_index: Some(0),
+    /// };
+    /// let packet = plugin.create_playlist_packet("spotify".to_string(), playlist);
+    /// assert_eq!(packet.packet_type, "cconnect.mpris");
+    /// ```
+    pub fn create_playlist_packet(&self, player: String, playlist: Playlist) -> Packet {
+        Packet::new(
+            "cconnect.mpris",
+            json!({
+                "player": player,
+                "playlist": playlist.tracks,
+                "currentTrackIndex": playlist.current_track_index
+            }),
+        )
+    }
+
+    /// Create a go to track packet
+    ///
+    /// Instructs the player to jump to a specific track by its ID.
+    ///
+    /// # Parameters
+    ///
+    /// - `player`: Player name
+    /// - `track_id`: MPRIS track ID (e.g., "/org/mpris/MediaPlayer2/Track/5")
+    ///
+    /// # Returns
+    ///
+    /// Control packet to go to the specified track
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::plugins::mpris::MprisPlugin;
+    ///
+    /// let plugin = MprisPlugin::new();
+    /// let packet = plugin.create_go_to_track_packet(
+    ///     "spotify".to_string(),
+    ///     "/org/mpris/MediaPlayer2/Track/5".to_string()
+    /// );
+    /// assert_eq!(packet.packet_type, "cconnect.mpris.request");
+    /// ```
+    pub fn create_go_to_track_packet(&self, player: String, track_id: String) -> Packet {
+        Packet::new(
+            "cconnect.mpris.request",
+            json!({
+                "player": player,
+                "goToTrack": track_id
+            }),
+        )
+    }
+
     /// Get list of known players
     ///
     /// # Example
@@ -1062,6 +1265,10 @@ impl Plugin for MprisPlugin {
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 

@@ -114,7 +114,9 @@
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
@@ -160,6 +162,32 @@ impl ScreenshotPlugin {
         }
 
         DisplayServer::Unknown
+    }
+
+    /// Read PNG image dimensions from file header
+    ///
+    /// PNG files have a standardized header format:
+    /// - Bytes 16-19: Width (big-endian u32)
+    /// - Bytes 20-23: Height (big-endian u32)
+    ///
+    /// Returns (width, height) or None if file cannot be read or is not a valid PNG
+    fn read_png_dimensions(path: &Path) -> Option<(u32, u32)> {
+        let mut file = File::open(path).ok()?;
+        let mut header = [0u8; 24];
+
+        // Read first 24 bytes
+        file.read_exact(&mut header).ok()?;
+
+        // Verify PNG signature (first 8 bytes)
+        if &header[0..8] != b"\x89PNG\r\n\x1a\n" {
+            return None;
+        }
+
+        // Read width and height (bytes 16-23, big-endian)
+        let width = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
+        let height = u32::from_be_bytes([header[20], header[21], header[22], header[23]]);
+
+        Some((width, height))
     }
 
     /// Capture a screenshot
@@ -342,13 +370,12 @@ impl ScreenshotPlugin {
             .and_then(|n| n.to_str())
             .unwrap_or("screenshot.png");
 
-        // TODO: Get actual image dimensions
-        let width = 1920;
-        let height = 1080;
+        // Get actual image dimensions from PNG header
+        let (width, height) = Self::read_png_dimensions(&screenshot_path).unwrap_or((1920, 1080));
 
         debug!(
-            "Screenshot info - file: {}, size: {} bytes",
-            filename, file_size
+            "Screenshot info - file: {}, size: {} bytes, dimensions: {}x{}",
+            filename, file_size, width, height
         );
 
         // TODO: In a real implementation, this would:
@@ -467,6 +494,10 @@ impl Plugin for ScreenshotPlugin {
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 

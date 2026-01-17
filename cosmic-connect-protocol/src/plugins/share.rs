@@ -7,7 +7,7 @@
 //!
 //! **Packet Types**:
 //! - Incoming: `cconnect.share.request`, `cconnect.share.request.update`
-//! - Outgoing: `cconnect.share.request`, `cconnect.share.request.update`
+//! - Outgoing: `cconnect.share.request`, `cconnect.share.request.update`, `cconnect.share.request.progress`
 //!
 //! **Capabilities**: `cconnect.share.request`
 //!
@@ -74,6 +74,26 @@
 //!     "body": {
 //!         "numberOfFiles": 5,
 //!         "totalPayloadSize": 10485760
+//!     }
+//! }
+//! ```
+//!
+//! ### Transfer Progress
+//!
+//! During file transfers, progress packets are sent periodically to provide real-time feedback:
+//!
+//! ```json
+//! {
+//!     "id": 1234567891,
+//!     "type": "cconnect.share.request.progress",
+//!     "body": {
+//!         "transferId": "1234567890",
+//!         "filename": "image.png",
+//!         "bytesTransferred": 524288,
+//!         "totalBytes": 1048576,
+//!         "percentComplete": 50,
+//!         "speedBytesPerSecond": 1048576,
+//!         "eta": 5
 //!     }
 //! }
 //! ```
@@ -205,6 +225,38 @@ pub struct MultiFileInfo {
     /// Total size of all files in bytes
     #[serde(rename = "totalPayloadSize")]
     pub total_payload_size: i64,
+}
+
+/// Progress information for an ongoing file transfer
+///
+/// Sent periodically during file transfers to provide real-time feedback.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransferProgress {
+    /// Unique ID of the transfer (matches the original request packet ID)
+    #[serde(rename = "transferId")]
+    pub transfer_id: String,
+
+    /// Filename being transferred
+    pub filename: String,
+
+    /// Number of bytes transferred so far
+    #[serde(rename = "bytesTransferred")]
+    pub bytes_transferred: u64,
+
+    /// Total file size in bytes
+    #[serde(rename = "totalBytes")]
+    pub total_bytes: u64,
+
+    /// Percentage complete (0-100)
+    #[serde(rename = "percentComplete")]
+    pub percent_complete: u8,
+
+    /// Transfer speed in bytes per second
+    #[serde(rename = "speedBytesPerSecond")]
+    pub speed_bytes_per_second: u64,
+
+    /// Estimated time to completion in seconds
+    pub eta: u64,
 }
 
 /// Type of content being shared
@@ -442,6 +494,42 @@ impl SharePlugin {
         Packet::new("cconnect.share.request.update", json!(info))
     }
 
+    /// Create a transfer progress packet
+    ///
+    /// Creates a `cconnect.share.request.progress` packet to provide real-time
+    /// feedback during file transfers.
+    ///
+    /// # Parameters
+    ///
+    /// - `progress`: Transfer progress information
+    ///
+    /// # Returns
+    ///
+    /// Progress packet ready to be sent
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::plugins::share::{SharePlugin, TransferProgress};
+    ///
+    /// let plugin = SharePlugin::new();
+    /// let progress = TransferProgress {
+    ///     transfer_id: "1234567890".to_string(),
+    ///     filename: "large_file.zip".to_string(),
+    ///     bytes_transferred: 524288,
+    ///     total_bytes: 1048576,
+    ///     percent_complete: 50,
+    ///     speed_bytes_per_second: 1048576,
+    ///     eta: 5,
+    /// };
+    ///
+    /// let packet = plugin.create_progress_packet(progress);
+    /// assert_eq!(packet.packet_type, "cconnect.share.request.progress");
+    /// ```
+    pub fn create_progress_packet(&self, progress: TransferProgress) -> Packet {
+        Packet::new("cconnect.share.request.progress", json!(progress))
+    }
+
     /// Get the number of recorded shares
     ///
     /// # Example
@@ -573,11 +661,57 @@ impl SharePlugin {
                                 filename_clone, device_name, host_clone, port, file_path
                             );
 
-                            // Connect to payload server and download file
+                            // Connect to payload server and download file with progress tracking
                             use crate::PayloadClient;
+                            use std::sync::Arc;
+                            use std::sync::atomic::{AtomicU64, Ordering};
+                            use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
                             match PayloadClient::new(&host_clone, port).await {
                                 Ok(client) => {
-                                    match client.receive_file(&file_path, size as u64).await {
+                                    let transfer_start = Instant::now();
+                                    let last_update = Arc::new(AtomicU64::new(0));
+                                    let filename_for_callback = filename_clone.clone();
+                                    let device_name_for_callback = device_name.clone();
+
+                                    // Add progress callback with rate limiting (update every 500ms)
+                                    let client_with_progress = client.with_progress(Box::new(move |transferred, total| {
+                                        let now = SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .unwrap()
+                                            .as_millis() as u64;
+                                        let last = last_update.load(Ordering::Relaxed);
+
+                                        // Only log progress every 500ms to avoid spam
+                                        if now - last >= 500 {
+                                            last_update.store(now, Ordering::Relaxed);
+                                            let percent = (transferred as f64 / total as f64 * 100.0) as u8;
+                                            let elapsed = transfer_start.elapsed().as_secs_f64();
+                                            let speed = if elapsed > 0.0 {
+                                                transferred as f64 / elapsed
+                                            } else {
+                                                0.0
+                                            };
+
+                                            info!(
+                                                "Download progress '{}' from {}: {} / {} bytes ({}%, {:.2} KB/s)",
+                                                filename_for_callback,
+                                                device_name_for_callback,
+                                                transferred,
+                                                total,
+                                                percent,
+                                                speed / 1024.0
+                                            );
+
+                                            // TODO: Send progress packet back to device
+                                            // This would require passing a channel or device reference
+                                            // into this callback to send cconnect.share.request.progress packets
+                                        }
+
+                                        true // Continue transfer
+                                    }));
+
+                                    match client_with_progress.receive_file(&file_path, size as u64).await {
                                         Ok(()) => {
                                             info!(
                                                 "Successfully downloaded file '{}' from {}",
@@ -690,6 +824,10 @@ impl Plugin for SharePlugin {
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 

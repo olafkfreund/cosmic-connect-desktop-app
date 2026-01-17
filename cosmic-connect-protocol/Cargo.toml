@@ -34,6 +34,17 @@ pem = "3.0"
 # System monitoring (Linux)
 nix = { version = "0.27", features = ["fs"] }
 
+# RemoteDesktop plugin dependencies
+pipewire = { version = "0.8", optional = true }
+openh264 = { version = "0.6", optional = true }
+lz4 = { version = "1.25", optional = true }
+image = { version = "0.25", optional = true }
+
+[features]
+default = []
+remotedesktop = ["pipewire", "openh264", "lz4", "image"]
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.13"
+tracing-subscriber = "0.3"

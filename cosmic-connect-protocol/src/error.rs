@@ -394,6 +394,18 @@ pub enum ProtocolError {
     /// This error occurs when a packet exceeds maximum allowed size (DoS prevention).
     #[error("Packet size exceeded: {0} bytes (max: {1})")]
     PacketSizeExceeded(usize, usize),
+
+    /// Invalid state
+    ///
+    /// This error occurs when an operation is attempted in an invalid state.
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
+    /// Unsupported feature
+    ///
+    /// This error occurs when attempting to use a feature that is not enabled or supported.
+    #[error("Unsupported feature: {0}")]
+    UnsupportedFeature(String),
 }
 
 impl ProtocolError {
@@ -571,7 +583,45 @@ impl ProtocolError {
             ProtocolError::Transport(msg) => {
                 format!("Transport error: {}. Check network and Bluetooth connections.", msg)
             }
+            ProtocolError::InvalidState(msg) => {
+                format!("Invalid state: {}.", msg)
+            }
+            ProtocolError::UnsupportedFeature(msg) => {
+                format!("Feature not available: {}.", msg)
+            }
         }
+    }
+
+    /// Create an invalid state error
+    ///
+    /// This helper method creates an `InvalidState` error variant.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::ProtocolError;
+    ///
+    /// let error = ProtocolError::invalid_state("Cannot start capture: not initialized");
+    /// assert!(matches!(error, ProtocolError::InvalidState(_)));
+    /// ```
+    pub fn invalid_state(msg: impl Into<String>) -> Self {
+        ProtocolError::InvalidState(msg.into())
+    }
+
+    /// Create an unsupported feature error
+    ///
+    /// This helper method creates an `UnsupportedFeature` error variant.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::ProtocolError;
+    ///
+    /// let error = ProtocolError::unsupported_feature("RemoteDesktop requires feature flag");
+    /// assert!(matches!(error, ProtocolError::UnsupportedFeature(_)));
+    /// ```
+    pub fn unsupported_feature(msg: impl Into<String>) -> Self {
+        ProtocolError::UnsupportedFeature(msg.into())
     }
 }
 

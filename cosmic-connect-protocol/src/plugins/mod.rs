@@ -109,6 +109,7 @@ pub mod filesync;
 pub mod findmyphone;
 pub mod lock;
 pub mod r#macro;
+pub mod mousekeyboardshare;
 pub mod mpris;
 pub mod notification;
 pub mod ping;

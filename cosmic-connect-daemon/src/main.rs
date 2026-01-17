@@ -19,7 +19,8 @@ use cosmic_connect_protocol::{
         chat::ChatPluginFactory, clipboard::ClipboardPluginFactory,
         clipboardhistory::ClipboardHistoryPluginFactory, contacts::ContactsPluginFactory,
         filesync::FileSyncPluginFactory, findmyphone::FindMyPhonePluginFactory,
-        lock::LockPluginFactory, mpris::MprisPluginFactory,
+        lock::LockPluginFactory, mousekeyboardshare::MouseKeyboardSharePluginFactory,
+        mpris::MprisPluginFactory,
         notification::NotificationPluginFactory, ping::PingPluginFactory,
         power::PowerPluginFactory, presenter::PresenterPluginFactory,
         r#macro::MacroPluginFactory, remoteinput::RemoteInputPluginFactory,
@@ -455,6 +456,13 @@ impl Daemon {
             manager
                 .register_factory(Arc::new(ScreenSharePluginFactory))
                 .context("Failed to register ScreenShare plugin factory")?;
+        }
+
+        if config.plugins.enable_mousekeyboardshare {
+            info!("Registering MouseKeyboardShare plugin factory");
+            manager
+                .register_factory(Arc::new(MouseKeyboardSharePluginFactory))
+                .context("Failed to register MouseKeyboardShare plugin factory")?;
         }
 
         info!(

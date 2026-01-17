@@ -236,6 +236,10 @@ pub struct PluginConfig {
     /// Enable ScreenShare plugin (one-way screen sharing for presentations)
     #[serde(default = "default_false")]
     pub enable_screenshare: bool,
+
+    /// Enable MouseKeyboardShare plugin (Synergy-like input sharing)
+    #[serde(default = "default_false")]
+    pub enable_mousekeyboardshare: bool,
 }
 
 /// Storage paths configuration
@@ -376,6 +380,7 @@ impl Default for PluginConfig {
             enable_audiostream: false,    // Audio streaming disabled by default (requires audio backend)
             enable_filesync: false,       // File sync disabled by default (requires file system integration)
             enable_screenshare: false,    // Screen share disabled by default (requires screen capture)
+            enable_mousekeyboardshare: false, // Mouse/keyboard share disabled by default (requires input capture)
         }
     }
 }

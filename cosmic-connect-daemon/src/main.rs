@@ -17,17 +17,19 @@ use cosmic_connect_protocol::{
     plugins::{
         battery::BatteryPluginFactory, clipboard::ClipboardPluginFactory,
         contacts::ContactsPluginFactory, findmyphone::FindMyPhonePluginFactory,
-        mpris::MprisPluginFactory, notification::NotificationPluginFactory,
-        ping::PingPluginFactory, presenter::PresenterPluginFactory,
-        remoteinput::RemoteInputPluginFactory, runcommand::RunCommandPluginFactory,
-        screenshot::ScreenshotPluginFactory, share::SharePluginFactory,
-        systemmonitor::SystemMonitorPluginFactory, telephony::TelephonyPluginFactory,
-        wol::WolPluginFactory, PluginManager,
+        lock::LockPluginFactory, mpris::MprisPluginFactory,
+        notification::NotificationPluginFactory, ping::PingPluginFactory,
+        presenter::PresenterPluginFactory, remoteinput::RemoteInputPluginFactory,
+        runcommand::RunCommandPluginFactory, screenshot::ScreenshotPluginFactory,
+        share::SharePluginFactory, systemmonitor::SystemMonitorPluginFactory,
+        telephony::TelephonyPluginFactory, wol::WolPluginFactory, PluginManager,
     },
     transport::{TransportPreference, TransportType},
     CertificateInfo, DeviceInfo, DeviceManager, DeviceType, TransportManager,
     TransportManagerConfig, TransportManagerEvent,
 };
+
+use cosmic_connect_protocol::plugins::remotedesktop::RemoteDesktopPluginFactory;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -347,6 +349,13 @@ impl Daemon {
                 .context("Failed to register Find My Phone plugin factory")?;
         }
 
+        if config.plugins.enable_lock {
+            info!("Registering Lock plugin factory");
+            manager
+                .register_factory(Arc::new(LockPluginFactory))
+                .context("Failed to register Lock plugin factory")?;
+        }
+
         if config.plugins.enable_telephony {
             info!("Registering Telephony/SMS plugin factory");
             manager
@@ -387,6 +396,13 @@ impl Daemon {
             manager
                 .register_factory(Arc::new(ScreenshotPluginFactory))
                 .context("Failed to register Screenshot plugin factory")?;
+        }
+
+        if config.plugins.enable_remotedesktop {
+            info!("Registering RemoteDesktop plugin factory");
+            manager
+                .register_factory(Arc::new(RemoteDesktopPluginFactory))
+                .context("Failed to register RemoteDesktop plugin factory")?;
         }
 
         info!(
@@ -730,6 +746,7 @@ impl Daemon {
             let device_manager = self.device_manager.clone();
             let plugin_manager = self.plugin_manager.clone();
             let connection_mgr = self.connection_manager.clone();
+            let device_config_registry = self.device_config_registry.clone();
             let pairing_service = self.pairing_service.clone();
             let dbus_server = self.dbus_server.clone();
             let cosmic_notifier = self.cosmic_notifier.clone();
@@ -795,6 +812,7 @@ impl Daemon {
                         &device_manager,
                         &plugin_manager,
                         &connection_mgr,
+                        &device_config_registry,
                         &pairing_service,
                         &dbus_server,
                         &cosmic_notifier,
@@ -832,6 +850,7 @@ impl Daemon {
             let device_manager = self.device_manager.clone();
             let plugin_manager = self.plugin_manager.clone();
             let connection_mgr = self.connection_manager.clone();
+            let device_config_registry = self.device_config_registry.clone();
             let pairing_service = self.pairing_service.clone();
             let dbus_server = self.dbus_server.clone();
             let cosmic_notifier = self.cosmic_notifier.clone();
@@ -844,6 +863,7 @@ impl Daemon {
                         &device_manager,
                         &plugin_manager,
                         &connection_mgr,
+                        &device_config_registry,
                         &pairing_service,
                         &dbus_server,
                         &cosmic_notifier,
@@ -1075,6 +1095,7 @@ impl Daemon {
         device_manager: &Arc<RwLock<DeviceManager>>,
         plugin_manager: &Arc<RwLock<PluginManager>>,
         connection_mgr: &Arc<RwLock<ConnectionManager>>,
+        device_config_registry: &Arc<RwLock<device_config::DeviceConfigRegistry>>,
         pairing_service: &Option<Arc<RwLock<PairingService>>>,
         dbus_server: &Option<Arc<DbusServer>>,
         cosmic_notifier: &Option<Arc<cosmic_notifications::CosmicNotifier>>,
@@ -1108,6 +1129,20 @@ impl Daemon {
                                 );
                             } else {
                                 info!("Initialized plugins for device {}", device_id);
+
+                                // Load MAC address from config and set it on WOL plugin
+                                let config_registry = device_config_registry.read().await;
+                                if let Some(device_config) = config_registry.get(&device_id) {
+                                    if let Some(mac_address) = device_config.get_mac_address() {
+                                        use cosmic_connect_protocol::plugins::wol::WolPlugin;
+                                        if let Some(wol_plugin) = plug_manager.get_device_plugin_mut(&device_id, "wol") {
+                                            if let Some(wol) = wol_plugin.as_any_mut().downcast_mut::<WolPlugin>() {
+                                                info!("Loading saved MAC address {} for device {}", mac_address, device_id);
+                                                wol.set_mac_address(mac_address);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             info!(
@@ -1266,6 +1301,34 @@ impl Daemon {
                     {
                         error!("Error handling packet from device {}: {}", device_id, e);
                     }
+
+                    // Save MAC address if WOL config packet was received
+                    if packet.packet_type == "cconnect.wol.config" {
+                        use cosmic_connect_protocol::plugins::wol::WolPlugin;
+
+                        if let Some(wol_plugin) = plug_manager.get_device_plugin_mut(&device_id, "wol") {
+                            if let Some(wol) = wol_plugin.as_any_mut().downcast_mut::<WolPlugin>() {
+                                if let Some(mac_address) = wol.get_mac_address() {
+                                    info!("Persisting MAC address {} for device {}", mac_address, device_id);
+
+                                    let mut config_registry = device_config_registry.write().await;
+                                    let device_config = config_registry.get_or_create(&device_id);
+
+                                    if let Err(e) = device_config.set_mac_address(mac_address) {
+                                        error!("Failed to set MAC address: {}", e);
+                                    } else {
+                                        // Save config to disk
+                                        if let Err(e) = config_registry.save() {
+                                            error!("Failed to save device config: {}", e);
+                                        } else {
+                                            info!("MAC address saved to device config");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     drop(plug_manager);
                     drop(dev_manager);
 

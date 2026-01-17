@@ -32,3 +32,7 @@ rustc_version = "0.4"
 [[bin]]
 name = "cosmic-connect-daemon"
 path = "src/main.rs"
+
+[features]
+default = []
+remotedesktop = ["cosmic-connect-protocol/remotedesktop"]

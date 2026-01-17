@@ -180,6 +180,10 @@ pub struct PluginConfig {
     #[serde(default = "default_true")]
     pub enable_findmyphone: bool,
 
+    /// Enable Lock plugin
+    #[serde(default = "default_true")]
+    pub enable_lock: bool,
+
     /// Enable Telephony/SMS plugin
     #[serde(default = "default_true")]
     pub enable_telephony: bool,
@@ -203,6 +207,10 @@ pub struct PluginConfig {
     /// Enable Screenshot plugin
     #[serde(default = "default_true")]
     pub enable_screenshot: bool,
+
+    /// Enable RemoteDesktop plugin (VNC-based remote desktop)
+    #[serde(default = "default_false")]
+    pub enable_remotedesktop: bool,
 }
 
 /// Storage paths configuration
@@ -328,12 +336,14 @@ impl Default for PluginConfig {
             enable_runcommand: false,     // Security: command execution should be opt-in
             enable_remoteinput: true,     // Keep enabled - useful for presentations
             enable_findmyphone: true,     // Keep enabled - emergency feature
+            enable_lock: true,            // Desktop lock/unlock control
             enable_telephony: true,       // Enabled - SMS and call notifications
             enable_presenter: false,      // Specialized use case - reduce packet size
             enable_contacts: false,       // Reduce packet size - can be enabled if needed
             enable_systemmonitor: true,   // Desktop-to-desktop system monitoring
             enable_wol: true,             // Desktop-to-desktop Wake-on-LAN
             enable_screenshot: true,      // Desktop-to-desktop screenshot capture
+            enable_remotedesktop: false,  // Security: disabled by default, requires explicit opt-in
         }
     }
 }

@@ -629,7 +629,7 @@ impl Plugin for NotificationPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!(
             "Notification plugin initialized for device {}",
@@ -786,7 +786,7 @@ mod tests {
         let mut plugin = NotificationPlugin::new();
         let device = create_test_device();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         plugin.start().await.unwrap();
@@ -847,7 +847,7 @@ mod tests {
     async fn test_handle_notification() {
         let mut plugin = NotificationPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let notif = Notification::new("123", "Messages", "New Message", "Hello!", true);
@@ -864,7 +864,7 @@ mod tests {
     async fn test_handle_cancel_notification() {
         let mut plugin = NotificationPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
 
@@ -887,7 +887,7 @@ mod tests {
     async fn test_get_all_notifications() {
         let mut plugin = NotificationPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
 
@@ -912,7 +912,7 @@ mod tests {
     async fn test_ignore_non_notification_packets() {
         let mut plugin = NotificationPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new("cconnect.ping", json!({}));

@@ -577,7 +577,7 @@ impl Plugin for ScreenSharePlugin {
         vec![OUTGOING_CAPABILITY.to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         info!(
             "Initializing ScreenShare plugin for device {}",
             device.name()
@@ -823,7 +823,7 @@ mod tests {
         let factory = ScreenSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let config = ShareConfig::default();
@@ -843,7 +843,7 @@ mod tests {
         let factory = ScreenSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         // Start receiving first

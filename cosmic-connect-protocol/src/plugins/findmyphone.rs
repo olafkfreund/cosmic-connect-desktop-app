@@ -91,7 +91,7 @@ impl Plugin for FindMyPhonePlugin {
         vec![PACKET_TYPE_FINDMYPHONE_REQUEST.to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!(
             "Find My Phone plugin initialized for device {}",
@@ -160,7 +160,7 @@ mod tests {
         let mut plugin = FindMyPhonePlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert_eq!(plugin.device_id, Some(device.id().to_string()));
     }
 
@@ -193,7 +193,7 @@ mod tests {
         let mut plugin = FindMyPhonePlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert!(plugin.start().await.is_ok());
         assert!(plugin.stop().await.is_ok());
     }

@@ -3,7 +3,7 @@
 //! These tests verify the complete protocol flow including device discovery,
 //! pairing, and plugin communication.
 
-use cosmic_connect_core::{
+use cosmic_connect_protocol::{
     CertificateInfo, ConnectionState, Device, DeviceInfo, DeviceManager, DeviceType, Packet,
     PairingStatus,
 };

@@ -502,7 +502,7 @@ impl Plugin for MouseKeyboardSharePlugin {
         vec![OUTGOING_CAPABILITY.to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         info!(
             "Initializing MouseKeyboardShare plugin for device {}",
             device.name()
@@ -759,7 +759,7 @@ mod tests {
         let factory = MouseKeyboardSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let config = MkShareConfig::default();
@@ -776,7 +776,7 @@ mod tests {
         let factory = MouseKeyboardSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mouse_event = MouseEvent {

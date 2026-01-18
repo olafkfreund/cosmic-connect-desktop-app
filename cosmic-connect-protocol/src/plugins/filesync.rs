@@ -57,6 +57,7 @@
 //! - [ ] File versioning system
 //! - [ ] Bandwidth limiting implementation
 
+use crate::payload::{PayloadClient, PayloadServer};
 use crate::plugins::{Plugin, PluginFactory};
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
@@ -67,7 +68,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -291,7 +295,7 @@ pub struct FileSyncPlugin {
     enabled: bool,
 
     /// Configured sync folders
-    sync_folders: HashMap<String, SyncFolder>,
+    sync_folders: Arc<RwLock<HashMap<String, SyncFolder>>>,
 
     /// Current sync index by folder ID
     sync_indexes: HashMap<String, SyncIndex>,
@@ -304,6 +308,12 @@ pub struct FileSyncPlugin {
 
     /// File system watcher
     watcher: Option<RecommendedWatcher>,
+
+    /// Watcher task handle
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
+
+    /// Packet sender for proactive updates
+    packet_sender: Option<Sender<(String, Packet)>>,
 }
 
 impl FileSyncPlugin {
@@ -312,16 +322,18 @@ impl FileSyncPlugin {
         Self {
             device_id: None,
             enabled: false,
-            sync_folders: HashMap::new(),
+            sync_folders: Arc::new(RwLock::new(HashMap::new())),
             sync_indexes: HashMap::new(),
             pending_conflicts: Vec::new(),
             active_transfers: HashMap::new(),
             watcher: None,
+            watcher_handle: None,
+            packet_sender: None,
         }
     }
 
     /// Add or update sync folder configuration
-    pub fn configure_folder(&mut self, folder_id: String, config: SyncFolder) -> Result<()> {
+    pub async fn configure_folder(&mut self, folder_id: String, config: SyncFolder) -> Result<()> {
         config.validate()?;
 
         info!(
@@ -331,7 +343,10 @@ impl FileSyncPlugin {
             config.remote_path.display()
         );
 
-        self.sync_folders.insert(folder_id.clone(), config.clone());
+        {
+            let mut folders = self.sync_folders.write().await;
+            folders.insert(folder_id.clone(), config.clone());
+        }
 
         // Start watching if plugin is enabled
         if self.enabled {
@@ -354,8 +369,13 @@ impl FileSyncPlugin {
     }
 
     /// Remove sync folder configuration
-    pub fn remove_folder(&mut self, folder_id: &str) -> Result<()> {
-        if let Some(config) = self.sync_folders.remove(folder_id) {
+    pub async fn remove_folder(&mut self, folder_id: &str) -> Result<()> {
+        let config = {
+            let mut folders = self.sync_folders.write().await;
+            folders.remove(folder_id)
+        };
+
+        if let Some(config) = config {
             // Clean up related data
             self.sync_indexes.remove(folder_id);
             self.active_transfers.remove(folder_id);
@@ -402,10 +422,22 @@ impl FileSyncPlugin {
 
     /// Generate sync index for a folder
     pub async fn generate_index(&self, folder_id: &str) -> Result<SyncIndex> {
-        let config = self.sync_folders.get(folder_id).ok_or_else(|| {
-            ProtocolError::Plugin(format!("Sync folder not found: {}", folder_id))
-        })?;
+        let (config, _) = {
+            let folders = self.sync_folders.read().await;
+            if let Some(c) = folders.get(folder_id) {
+                (c.clone(), ())
+            } else {
+                return Err(ProtocolError::Plugin(format!(
+                    "Sync folder not found: {}",
+                    folder_id
+                )));
+            }
+        };
 
+        Self::generate_index_internal(folder_id, &config).await
+    }
+
+    async fn generate_index_internal(folder_id: &str, config: &SyncFolder) -> Result<SyncIndex> {
         info!(
             "Generating sync index for folder '{}' at {}",
             folder_id,
@@ -508,7 +540,7 @@ impl FileSyncPlugin {
     }
 
     /// Create a synchronization plan by comparing local and remote indexes
-    pub fn create_sync_plan(
+    pub async fn create_sync_plan(
         &self,
         folder_id: &str,
         local_index: &SyncIndex,
@@ -516,7 +548,20 @@ impl FileSyncPlugin {
     ) -> SyncPlan {
         let mut plan = SyncPlan::default();
 
-        let config = match self.sync_folders.get(folder_id) {
+        // Check if folder exists
+        let exists = {
+            let folders = self.sync_folders.read().await;
+            folders.contains_key(folder_id)
+        };
+
+        let config = if exists {
+            let folders = self.sync_folders.read().await;
+            folders.get(folder_id).cloned()
+        } else {
+            return plan;
+        };
+
+        let config = match config {
             Some(c) => c,
             None => return plan,
         };
@@ -651,8 +696,8 @@ impl FileSyncPlugin {
     }
 
     /// Get sync folder configuration
-    pub fn get_folder_config(&self, folder_id: &str) -> Option<&SyncFolder> {
-        self.sync_folders.get(folder_id)
+    pub async fn get_folder_config(&self, folder_id: &str) -> Option<SyncFolder> {
+        self.sync_folders.read().await.get(folder_id).cloned()
     }
 
     /// Get current sync index for a folder
@@ -664,6 +709,105 @@ impl FileSyncPlugin {
 impl Default for FileSyncPlugin {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl FileSyncPlugin {
+    async fn initiate_upload(
+        &self,
+        device_id: String,
+        folder_id: String,
+        relative_path: PathBuf,
+    ) -> Result<()> {
+        let path_str = relative_path.to_string_lossy().to_string();
+
+        let config = {
+            let folders = self.sync_folders.read().await;
+            folders.get(&folder_id).cloned()
+        };
+
+        if let Some(config) = config {
+            let local_path = config.local_path.join(&relative_path);
+
+            if local_path.exists() && local_path.starts_with(&config.local_path) {
+                // Start PayloadServer
+                match PayloadServer::new().await {
+                    Ok(mut server) => {
+                        let port = server.port();
+                        let size = tokio::fs::metadata(&local_path)
+                            .await
+                            .map_err(|e| ProtocolError::Io(e))?
+                            .len();
+
+                        // Create transfer packet
+                        let mut transfer_packet = Packet::new(
+                            "cconnect.filesync.transfer",
+                            serde_json::json!({
+                                "folder_id": folder_id,
+                                "path": path_str
+                            }),
+                        )
+                        .with_payload_size(size as i64);
+
+                        let mut transfer_info = HashMap::new();
+                        transfer_info.insert("port".to_string(), serde_json::json!(port));
+                        transfer_packet = transfer_packet.with_payload_transfer_info(transfer_info);
+
+                        // Send packet
+                        if let Some(sender) = &self.packet_sender {
+                            sender
+                                .send((device_id, transfer_packet))
+                                .await
+                                .map_err(|_| {
+                                    ProtocolError::Plugin("Failed to send packet".to_string())
+                                })?;
+
+                            // Spawn task to send file
+                            tokio::spawn(async move {
+                                if let Err(e) = server.send_file(&local_path).await {
+                                    warn!("Failed to send file {}: {}", local_path.display(), e);
+                                } else {
+                                    info!("Successfully sent file {}", local_path.display());
+                                }
+                            });
+                        } else {
+                            warn!("No packet sender available");
+                        }
+                    }
+                    Err(e) => warn!("Failed to start payload server: {}", e),
+                }
+            } else {
+                warn!(
+                    "Requested file not found or invalid path: {}",
+                    local_path.display()
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn request_download(
+        &self,
+        device_id: String,
+        folder_id: String,
+        relative_path: PathBuf,
+    ) -> Result<()> {
+        let path_str = relative_path.to_string_lossy().to_string();
+        let packet = Packet::new(
+            "cconnect.filesync.request",
+            serde_json::json!({
+                "folder_id": folder_id,
+                "path": path_str
+            }),
+        );
+
+        if let Some(sender) = &self.packet_sender {
+            sender
+                .send((device_id, packet))
+                .await
+                .map_err(|_| ProtocolError::Plugin("Failed to send packet".to_string()))?;
+        }
+        Ok(())
     }
 }
 
@@ -689,9 +833,14 @@ impl Plugin for FileSyncPlugin {
         vec![OUTGOING_CAPABILITY.to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(
+        &mut self,
+        device: &Device,
+        packet_sender: Sender<(String, Packet)>,
+    ) -> Result<()> {
         info!("Initializing FileSync plugin for device {}", device.name());
         self.device_id = Some(device.id().to_string());
+        self.packet_sender = Some(packet_sender);
 
         // TODO: Load sync folder configurations from database
         // TODO: Initialize file system watchers
@@ -703,10 +852,16 @@ impl Plugin for FileSyncPlugin {
         info!("Starting FileSync plugin");
         self.enabled = true;
 
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+        let tx_clone = tx.clone();
+
         // Initialize watcher
+        // Use blocking_send within the sync closure
         let mut watcher = RecommendedWatcher::new(
-            |res: notify::Result<notify::Event>| match res {
-                Ok(event) => info!("File change detected: {:?}", event),
+            move |res: notify::Result<notify::Event>| match res {
+                Ok(event) => {
+                    let _ = tx_clone.blocking_send(event);
+                }
                 Err(e) => warn!("Watch error: {:?}", e),
             },
             Config::default(),
@@ -714,7 +869,8 @@ impl Plugin for FileSyncPlugin {
         .map_err(|e| ProtocolError::Plugin(e.to_string()))?;
 
         // Start watching all configured folders
-        for config in self.sync_folders.values() {
+        let folders_guard = self.sync_folders.read().await;
+        for config in folders_guard.values() {
             if config.enabled {
                 if let Err(e) = watcher.watch(&config.local_path, RecursiveMode::Recursive) {
                     warn!(
@@ -725,11 +881,57 @@ impl Plugin for FileSyncPlugin {
                 }
             }
         }
+        drop(folders_guard); // Release lock
 
         self.watcher = Some(watcher);
 
-        // TODO: Trigger initial index generation for all folders
-        // TODO: Schedule periodic scans
+        // Spawn watcher event consumer task
+        let sync_folders = self.sync_folders.clone();
+        let packet_sender = self.packet_sender.clone();
+        let device_id = self.device_id.clone();
+
+        let handle = tokio::spawn(async move {
+            info!("FileSync watcher task started");
+
+            while let Some(event) = rx.recv().await {
+                debug!("Filesystem event: {:?}", event);
+
+                // Ideally identify which folder this belongs to
+                // For now, naive approach: check all folders
+                let folders = sync_folders.read().await;
+
+                // Use simple debounce or just handle each event (expensive if many)
+                // We will simply find the matching folder and regenerate index
+
+                // Naive: check if event path starts with any config path
+                if let Some(path) = event.paths.first() {
+                    for (fid, config) in folders.iter() {
+                        if path.starts_with(&config.local_path) {
+                            // Regenerate index for this folder
+                            info!("Changes detected in {}, generating index...", fid);
+
+                            if let Ok(index) = Self::generate_index_internal(fid, config).await {
+                                // Send index packet
+                                if let Some(sender) = &packet_sender {
+                                    if let Some(did) = &device_id {
+                                        let packet = Packet::new(
+                                            "cconnect.filesync.index",
+                                            serde_json::to_value(&index)
+                                                .unwrap_or(serde_json::Value::Null),
+                                        );
+                                        let _ = sender.send((did.clone(), packet)).await;
+                                    }
+                                }
+                            }
+                            break; // Found the folder
+                        }
+                    }
+                }
+            }
+            info!("FileSync watcher task stopped");
+        });
+
+        self.watcher_handle = Some(handle);
 
         Ok(())
     }
@@ -745,7 +947,7 @@ impl Plugin for FileSyncPlugin {
         Ok(())
     }
 
-    async fn handle_packet(&mut self, packet: &Packet, _device: &mut Device) -> Result<()> {
+    async fn handle_packet(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
         if !self.enabled {
             debug!("FileSync plugin is disabled, ignoring packet");
             return Ok(());
@@ -769,7 +971,7 @@ impl Plugin for FileSyncPlugin {
                     )?)
                     .map_err(|e| ProtocolError::InvalidPacket(e.to_string()))?;
 
-                self.configure_folder(folder_id, config)?;
+                self.configure_folder(folder_id, config).await?;
 
                 info!("Received sync folder configuration");
             }
@@ -784,7 +986,9 @@ impl Plugin for FileSyncPlugin {
                 // Compare with local index
                 // Compare with local index
                 if let Ok(local_index) = self.generate_index(&folder_id).await {
-                    let plan = self.create_sync_plan(&folder_id, &local_index, &index);
+                    let plan = self
+                        .create_sync_plan(&folder_id, &local_index, &index)
+                        .await;
 
                     if plan.stats.files_to_upload > 0
                         || plan.stats.files_to_download > 0
@@ -808,58 +1012,210 @@ impl Plugin for FileSyncPlugin {
                     // Store remote index
                     self.sync_indexes.insert(folder_id.clone(), index);
 
-                    // TODO: Execute transfers (Uploads)
-                    // TODO: Request downloads
+                    // Execute transfers (Uploads / Downloads)
+                    let device_id = device.id().to_string();
+
+                    for action in plan.actions {
+                        match action {
+                            SyncAction::Upload(path) => {
+                                if let Err(e) = self
+                                    .initiate_upload(device_id.clone(), folder_id.clone(), path)
+                                    .await
+                                {
+                                    warn!("Failed to initiate upload: {}", e);
+                                }
+                            }
+                            SyncAction::Download(path) => {
+                                if let Err(e) = self
+                                    .request_download(device_id.clone(), folder_id.clone(), path)
+                                    .await
+                                {
+                                    warn!("Failed to request download: {}", e);
+                                }
+                            }
+                            SyncAction::DeleteLocal(path) => {
+                                if let Some(config) = self.sync_folders.read().await.get(&folder_id)
+                                {
+                                    let local_path = config.local_path.join(&path);
+                                    if local_path.exists() {
+                                        if let Err(e) = tokio::fs::remove_file(&local_path).await {
+                                            warn!(
+                                                "Failed to delete local file {}: {}",
+                                                local_path.display(),
+                                                e
+                                            );
+                                        } else {
+                                            info!(
+                                                "Deleted local file per sync plan: {}",
+                                                local_path.display()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {} // Conflicts and Remote Deletes handled differently or already processed
+                        }
+                    }
                 }
 
                 info!("Processed sync index");
             }
 
-            "cconnect.filesync.transfer" => {
-                // Receive file data transfer
-                let _folder_id: String = packet
+            "cconnect.filesync.request" => {
+                // Handle file transfer request (Remote wants to download from us)
+                let folder_id: String = packet
                     .body
                     .get("folder_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ProtocolError::InvalidPacket("Missing folder_id".to_string()))?
                     .to_string();
 
-                let file_path: PathBuf = packet
+                let path_str: String = packet
                     .body
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ProtocolError::InvalidPacket("Missing path".to_string()))?
-                    .into();
+                    .to_string();
 
-                // TODO: Extract file data from payload
-                // TODO: Write file to local filesystem
-                // TODO: Update sync index
-                // TODO: Apply file permissions
+                info!(
+                    "Received request for file {} in folder {}",
+                    path_str, folder_id
+                );
 
-                debug!("Received file transfer for {}", file_path.display());
+                let device_id = device.id().to_string();
+                if let Err(e) = self
+                    .initiate_upload(device_id, folder_id, PathBuf::from(path_str))
+                    .await
+                {
+                    warn!("Failed to process file request: {}", e);
+                }
+            }
+
+            "cconnect.filesync.transfer" => {
+                // Receive file data transfer (Remote is sending to us)
+                let folder_id: String = packet
+                    .body
+                    .get("folder_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ProtocolError::InvalidPacket("Missing folder_id".to_string()))?
+                    .to_string();
+
+                let path_str: String = packet
+                    .body
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ProtocolError::InvalidPacket("Missing path".to_string()))?
+                    .to_string();
+
+                let path = PathBuf::from(&path_str);
+
+                debug!(
+                    "Received file transfer offer for {} in {}",
+                    path.display(),
+                    folder_id
+                );
+
+                let config = {
+                    let folders = self.sync_folders.read().await;
+                    folders.get(&folder_id).cloned()
+                };
+
+                if let Some(config) = config {
+                    let target_path = config.local_path.join(&path);
+
+                    if !target_path.starts_with(&config.local_path) {
+                        warn!(
+                            "Security warning: Attempted path traversal to {}",
+                            target_path.display()
+                        );
+                        return Ok(());
+                    }
+
+                    // Check capabilities and device info
+                    if let Some(transfer_info) = &packet.payload_transfer_info {
+                        if let Some(port) = transfer_info.get("port").and_then(|v| v.as_u64()) {
+                            let port = port as u16;
+                            if let Some(host) = &device.host {
+                                let host = host.clone();
+                                let size = packet.payload_size.unwrap_or(0);
+
+                                // Ensure parent directory exists
+                                if let Some(parent) = target_path.parent() {
+                                    tokio::fs::create_dir_all(parent).await?;
+                                }
+
+                                debug!(
+                                    "Starting download from {}:{} to {}",
+                                    host,
+                                    port,
+                                    target_path.display()
+                                );
+
+                                // Spawn download task
+                                tokio::spawn(async move {
+                                    match PayloadClient::new(&host, port).await {
+                                        Ok(client) => {
+                                            if let Err(e) =
+                                                client.receive_file(&target_path, size as u64).await
+                                            {
+                                                warn!(
+                                                    "Failed to receive file {}: {}",
+                                                    target_path.display(),
+                                                    e
+                                                );
+                                            } else {
+                                                info!(
+                                                    "Successfully received file {}",
+                                                    target_path.display()
+                                                );
+                                                // TODO: Update sync index locally
+                                            }
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to connect to payload server: {}", e)
+                                        }
+                                    }
+                                });
+                            } else {
+                                warn!("Cannot download: Unknown device host");
+                            }
+                        } else {
+                            warn!("No port in transfer info");
+                        }
+                    }
+                }
             }
 
             "cconnect.filesync.delete" => {
                 // Synchronize file deletion
-                let _folder_id: String = packet
+                let folder_id: String = packet
                     .body
                     .get("folder_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ProtocolError::InvalidPacket("Missing folder_id".to_string()))?
                     .to_string();
 
-                let file_path: PathBuf = packet
+                let path_str: String = packet
                     .body
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ProtocolError::InvalidPacket("Missing path".to_string()))?
-                    .into();
+                    .to_string();
 
-                // TODO: Delete file from local filesystem
-                // TODO: Update sync index
-                // TODO: Archive to versioning if enabled
+                let file_path = PathBuf::from(&path_str);
 
-                info!("File deleted: {}", file_path.display());
+                if let Some(config) = self.sync_folders.read().await.get(&folder_id) {
+                    let local_path = config.local_path.join(&file_path);
+                    if local_path.exists() && local_path.starts_with(&config.local_path) {
+                        if let Err(e) = tokio::fs::remove_file(&local_path).await {
+                            warn!("Failed to delete file {}: {}", local_path.display(), e);
+                            // Try remove dir if it's a dir?
+                            // But protocol spec implies files usually.
+                        } else {
+                            info!("Deleted file handled: {}", local_path.display());
+                        }
+                    }
+                }
             }
 
             "cconnect.filesync.conflict" => {
@@ -938,8 +1294,9 @@ mod tests {
 
         assert!(plugin
             .configure_folder("test_folder".to_string(), config)
+            .await
             .is_ok());
-        assert!(plugin.get_folder_config("test_folder").is_some());
+        assert!(plugin.get_folder_config("test_folder").await.is_some());
     }
 
     #[tokio::test]
@@ -962,9 +1319,10 @@ mod tests {
 
         plugin
             .configure_folder("test_folder".to_string(), config)
+            .await
             .unwrap();
-        assert!(plugin.remove_folder("test_folder").is_ok());
-        assert!(plugin.get_folder_config("test_folder").is_none());
+        assert!(plugin.remove_folder("test_folder").await.is_ok());
+        assert!(plugin.get_folder_config("test_folder").await.is_none());
     }
 
     #[tokio::test]
@@ -1017,7 +1375,8 @@ mod tests {
         let factory = FileSyncPluginFactory;
         let mut plugin = factory.create();
 
-        assert!(plugin.init(&device).await.is_ok());
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
+        assert!(plugin.init(&device, tx).await.is_ok());
         assert!(plugin.start().await.is_ok());
         assert!(plugin.stop().await.is_ok());
     }
@@ -1028,7 +1387,8 @@ mod tests {
         let factory = FileSyncPluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
+        plugin.init(&device, tx).await.unwrap();
         plugin.start().await.unwrap();
 
         let config = SyncFolder {

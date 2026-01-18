@@ -377,7 +377,7 @@ impl Plugin for LockPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Lock plugin initialized for device {}", device.name());
         Ok(())
@@ -522,7 +522,7 @@ mod tests {
         let mut plugin = LockPlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert_eq!(plugin.device_id, Some("test_device".to_string()));
 
         assert!(plugin.start().await.is_ok());

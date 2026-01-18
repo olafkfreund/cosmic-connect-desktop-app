@@ -849,7 +849,7 @@ impl Plugin for SharePlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Share plugin initialized for device {}", device.name());
         Ok(())
@@ -947,7 +947,7 @@ mod tests {
         let device = create_test_device();
 
         // Initialize
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         // Start
@@ -1035,7 +1035,7 @@ mod tests {
     async fn test_handle_file_share() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -1068,7 +1068,7 @@ mod tests {
     async fn test_handle_text_share() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new("cconnect.share.request", json!({ "text": "Test message" }));
@@ -1089,7 +1089,7 @@ mod tests {
     async fn test_handle_url_share() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -1113,7 +1113,7 @@ mod tests {
     async fn test_handle_multifile_update() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -1191,7 +1191,7 @@ mod tests {
     async fn test_multiple_shares() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
 
@@ -1223,7 +1223,7 @@ mod tests {
     async fn test_ignore_invalid_share() {
         let mut plugin = SharePlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
 

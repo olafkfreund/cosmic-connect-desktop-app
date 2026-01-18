@@ -506,7 +506,7 @@ impl Plugin for RunCommandPlugin {
         vec!["cconnect.runcommand".to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
 
         // Set up config path
@@ -723,7 +723,7 @@ mod tests {
     async fn test_handle_command_list_request() {
         let mut plugin = RunCommandPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         // Add a command
         plugin
@@ -750,7 +750,7 @@ mod tests {
         let device = create_test_device();
 
         // Initialize
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
         assert!(plugin.config_path.is_some());
 

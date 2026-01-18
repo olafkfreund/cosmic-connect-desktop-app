@@ -69,7 +69,7 @@ fn test_critical_error_classification() {
     assert!(!error.requires_user_action());
 
     // Internal errors are critical
-    let error = ProtocolError::InternalError("internal failure".to_string());
+    let error = ProtocolError::Plugin("internal failure".to_string());
     assert!(!error.is_recoverable());
     assert!(!error.requires_user_action());
 }

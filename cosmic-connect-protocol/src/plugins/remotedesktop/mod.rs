@@ -161,7 +161,7 @@ impl Plugin for RemoteDesktopPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!(
             "RemoteDesktop plugin initialized for device {}",
@@ -446,7 +446,7 @@ mod tests {
         let device = create_test_device();
 
         // Test init
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
         assert_eq!(plugin.device_id.as_ref().unwrap(), device.id());
 
@@ -463,7 +463,7 @@ mod tests {
     async fn test_handle_request() {
         let mut plugin = RemoteDesktopPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();
@@ -485,7 +485,7 @@ mod tests {
     async fn test_disabled_plugin_ignores_packets() {
         let mut plugin = RemoteDesktopPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         // Don't start the plugin - it should be disabled
 
         let mut device = create_test_device();

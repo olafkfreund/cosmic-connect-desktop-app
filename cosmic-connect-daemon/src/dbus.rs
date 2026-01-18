@@ -242,7 +242,7 @@ impl CConnectInterface {
     ///
     /// Returns a map of device ID to device information for all devices
     /// (paired and unpaired, reachable and unreachable).
-    async fn list_devices(&self) -> HashMap<String, DeviceInfo> {
+    async fn list_devices(&self) -> zbus::fdo::Result<HashMap<String, DeviceInfo>> {
         debug!("DBus: ListDevices called");
 
         let device_manager = self.device_manager.read().await;
@@ -260,7 +260,7 @@ impl CConnectInterface {
         }
 
         info!("DBus: Returning {} devices", result.len());
-        result
+        Ok(result)
     }
 
     /// Get information about a specific device
@@ -279,7 +279,11 @@ impl CConnectInterface {
             .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
 
         let mut info = DeviceInfo::from(device);
-        info.has_pairing_request = self.pending_pairing_requests.read().await.contains_key(&device_id);
+        info.has_pairing_request = self
+            .pending_pairing_requests
+            .read()
+            .await
+            .contains_key(&device_id);
 
         Ok(info)
     }
@@ -314,9 +318,13 @@ impl CConnectInterface {
         }
 
         let device_info = device.info.clone();
-        let remote_addr = format!("{}:{}", device.host.as_deref().unwrap_or("0.0.0.0"), device.port.unwrap_or(1716))
-            .parse()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Invalid remote address: {}", e)))?;
+        let remote_addr = format!(
+            "{}:{}",
+            device.host.as_deref().unwrap_or("0.0.0.0"),
+            device.port.unwrap_or(1716)
+        )
+        .parse()
+        .map_err(|e| zbus::fdo::Error::Failed(format!("Invalid remote address: {}", e)))?;
 
         drop(device_manager);
 
@@ -325,9 +333,7 @@ impl CConnectInterface {
         pairing_service
             .request_pairing(device_info, remote_addr)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to request pairing: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to request pairing: {}", e)))?;
 
         info!("Pairing request sent to device {}", device_id);
         Ok(())
@@ -366,9 +372,10 @@ impl CConnectInterface {
 
         // Unpair the device
         let pairing_service = pairing_service.read().await;
-        pairing_service.unpair(&device_id).await.map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to unpair device: {}", e))
-        })?;
+        pairing_service
+            .unpair(&device_id)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to unpair device: {}", e)))?;
 
         info!("Device {} unpaired successfully", device_id);
         Ok(())
@@ -391,9 +398,10 @@ impl CConnectInterface {
 
         // Accept pairing (certificate is retrieved from stored request)
         let pairing_service = pairing_service.read().await;
-        pairing_service.accept_pairing(&device_id).await.map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to accept pairing: {}", e))
-        })?;
+        pairing_service
+            .accept_pairing(&device_id)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to accept pairing: {}", e)))?;
 
         info!("Pairing accepted for device {}", device_id);
         Ok(())
@@ -419,9 +427,7 @@ impl CConnectInterface {
         pairing_service
             .reject_pairing(&device_id)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to reject pairing: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to reject pairing: {}", e)))?;
 
         info!("Pairing rejected for device {}", device_id);
         Ok(())
@@ -540,9 +546,14 @@ impl CConnectInterface {
         conn_manager
             .send_packet(&device_id, &packet)
             .await
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send find phone request: {}", e)))?;
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send find phone request: {}", e))
+            })?;
 
-        info!("DBus: Find phone request sent successfully to {}", device_id);
+        info!(
+            "DBus: Find phone request sent successfully to {}",
+            device_id
+        );
         Ok(())
     }
 
@@ -570,9 +581,9 @@ impl CConnectInterface {
 
         // Extract file metadata
         use cosmic_connect_protocol::{FileTransferInfo, PayloadServer};
-        let file_info = FileTransferInfo::from_path(&path)
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to read file metadata: {}", e)))?;
+        let file_info = FileTransferInfo::from_path(&path).await.map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to read file metadata: {}", e))
+        })?;
 
         info!(
             "DBus: Sharing file '{}' ({} bytes) to {}",
@@ -580,9 +591,9 @@ impl CConnectInterface {
         );
 
         // Create payload server on available port
-        let server = PayloadServer::new()
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to create payload server: {}", e)))?;
+        let server = PayloadServer::new().await.map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to create payload server: {}", e))
+        })?;
         let port = server.port();
 
         info!("DBus: Payload server listening on port {}", port);
@@ -600,7 +611,10 @@ impl CConnectInterface {
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send share packet: {}", e)))?;
 
-        info!("DBus: Share packet sent to {}, waiting for connection", device_id);
+        info!(
+            "DBus: Share packet sent to {}, waiting for connection",
+            device_id
+        );
 
         // Generate unique transfer ID
         let timestamp_millis = std::time::SystemTime::now()
@@ -610,7 +624,10 @@ impl CConnectInterface {
         let transfer_id = format!("{}_{}", device_id, timestamp_millis);
 
         // Register transfer and get cancellation flag
-        let cancel_flag = self.transfer_manager.register_transfer(transfer_id.clone()).await;
+        let cancel_flag = self
+            .transfer_manager
+            .register_transfer(transfer_id.clone())
+            .await;
 
         // Spawn background task to handle file transfer with progress tracking
         let file_path = path.clone();
@@ -628,35 +645,41 @@ impl CConnectInterface {
             let fname = filename.clone();
             let cancel_flag_inner = cancel_flag.clone();
 
-            let progress_callback = Box::new(move |bytes_transferred: u64, total_bytes: u64| -> bool {
-                // Check if transfer is cancelled
-                if cancel_flag_inner.load(Ordering::SeqCst) {
-                    info!("Transfer {} cancelled by user", tid);
-                    return false; // Stop transfer
-                }
-
-                let conn_clone = conn.clone();
-                let tid_clone = tid.clone();
-                let did_clone = did.clone();
-                let fname_clone = fname.clone();
-
-                // Emit progress signal (non-blocking)
-                tokio::spawn(async move {
-                    if let Ok(object_server) = conn_clone.object_server().interface::<_, CConnectInterface>(OBJECT_PATH).await {
-                        let _ = CConnectInterface::transfer_progress(
-                            object_server.signal_context(),
-                            &tid_clone,
-                            &did_clone,
-                            &fname_clone,
-                            bytes_transferred,
-                            total_bytes,
-                            "sending",
-                        ).await;
+            let progress_callback =
+                Box::new(move |bytes_transferred: u64, total_bytes: u64| -> bool {
+                    // Check if transfer is cancelled
+                    if cancel_flag_inner.load(Ordering::SeqCst) {
+                        info!("Transfer {} cancelled by user", tid);
+                        return false; // Stop transfer
                     }
-                });
 
-                true // Continue transfer
-            });
+                    let conn_clone = conn.clone();
+                    let tid_clone = tid.clone();
+                    let did_clone = did.clone();
+                    let fname_clone = fname.clone();
+
+                    // Emit progress signal (non-blocking)
+                    tokio::spawn(async move {
+                        if let Ok(object_server) = conn_clone
+                            .object_server()
+                            .interface::<_, CConnectInterface>(OBJECT_PATH)
+                            .await
+                        {
+                            let _ = CConnectInterface::transfer_progress(
+                                object_server.signal_context(),
+                                &tid_clone,
+                                &did_clone,
+                                &fname_clone,
+                                bytes_transferred,
+                                total_bytes,
+                                "sending",
+                            )
+                            .await;
+                        }
+                    });
+
+                    true // Continue transfer
+                });
 
             // Attach progress callback and start transfer
             let server_with_progress = server.with_progress(progress_callback);
@@ -666,11 +689,22 @@ impl CConnectInterface {
             let (success, error_msg) = if cancel_flag.load(Ordering::SeqCst) {
                 (false, "Transfer cancelled by user".to_string())
             } else {
-                (result.is_ok(), result.as_ref().err().map(|e| e.to_string()).unwrap_or_default())
+                (
+                    result.is_ok(),
+                    result
+                        .as_ref()
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default(),
+                )
             };
 
             // Emit completion signal
-            if let Ok(object_server) = dbus_conn.object_server().interface::<_, CConnectInterface>(OBJECT_PATH).await {
+            if let Ok(object_server) = dbus_conn
+                .object_server()
+                .interface::<_, CConnectInterface>(OBJECT_PATH)
+                .await
+            {
                 let _ = CConnectInterface::transfer_complete(
                     object_server.signal_context(),
                     &transfer_id_clone,
@@ -678,20 +712,30 @@ impl CConnectInterface {
                     &filename,
                     success,
                     &error_msg,
-                ).await;
+                )
+                .await;
             }
 
             // Remove transfer from manager
             transfer_manager.remove_transfer(&transfer_id_clone).await;
 
             if success {
-                info!("File transfer completed successfully for device {}", device_id_clone);
+                info!(
+                    "File transfer completed successfully for device {}",
+                    device_id_clone
+                );
             } else {
-                warn!("File transfer failed for device {}: {}", device_id_clone, error_msg);
+                warn!(
+                    "File transfer failed for device {}: {}",
+                    device_id_clone, error_msg
+                );
             }
         });
 
-        info!("DBus: File sharing initiated for {} (transfer_id: {})", device_id, transfer_id);
+        info!(
+            "DBus: File sharing initiated for {} (transfer_id: {})",
+            device_id, transfer_id
+        );
         Ok(())
     }
 
@@ -740,10 +784,7 @@ impl CConnectInterface {
     /// * `device_id` - The device ID to share with
     /// * `url` - URL to share (will be opened in default browser on receiving device)
     async fn share_url(&self, device_id: String, url: String) -> Result<(), zbus::fdo::Error> {
-        info!(
-            "DBus: ShareUrl called for {} with URL '{}'",
-            device_id, url
-        );
+        info!("DBus: ShareUrl called for {} with URL '{}'", device_id, url);
 
         let device_manager = self.device_manager.read().await;
         let device = device_manager
@@ -782,7 +823,10 @@ impl CConnectInterface {
     /// * `Ok(())` if transfer was cancelled or not found
     /// * `Err` if cancellation failed
     async fn cancel_transfer(&self, transfer_id: String) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: CancelTransfer called for transfer_id: {}", transfer_id);
+        info!(
+            "DBus: CancelTransfer called for transfer_id: {}",
+            transfer_id
+        );
 
         let cancelled = self.transfer_manager.cancel_transfer(&transfer_id).await;
 
@@ -791,7 +835,10 @@ impl CConnectInterface {
             Ok(())
         } else {
             // Transfer not found - this is not an error, it may have already completed
-            debug!("Transfer {} not found (may have already completed)", transfer_id);
+            debug!(
+                "Transfer {} not found (may have already completed)",
+                transfer_id
+            );
             Ok(())
         }
     }
@@ -935,9 +982,12 @@ impl CConnectInterface {
 
         // Send packet
         let conn_manager = self.connection_manager.read().await;
-        conn_manager.send_packet(&device_id, &packet).await.map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to send battery request: {}", e))
-        })?;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send battery request: {}", e))
+            })?;
 
         info!("DBus: Battery update request sent to {}", device_id);
         Ok(())
@@ -988,9 +1038,10 @@ impl CConnectInterface {
 
         // Send packet
         let conn_manager = self.connection_manager.read().await;
-        conn_manager.send_packet(&device_id, &packet).await.map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to send command list: {}", e))
-        })?;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send command list: {}", e)))?;
 
         info!("DBus: Command list sent to {}", device_id);
         Ok(())
@@ -1200,8 +1251,7 @@ impl CConnectInterface {
 
         info!(
             "All plugin overrides reset for device {} ({} plugins affected)",
-            device_id,
-            num_affected
+            device_id, num_affected
         );
 
         Ok(())
@@ -1239,7 +1289,10 @@ impl CConnectInterface {
     ///
     /// # Returns
     /// JSON string with RemoteDesktop settings
-    async fn get_remotedesktop_settings(&self, device_id: String) -> Result<String, zbus::fdo::Error> {
+    async fn get_remotedesktop_settings(
+        &self,
+        device_id: String,
+    ) -> Result<String, zbus::fdo::Error> {
         debug!("DBus: GetRemoteDesktopSettings called for {}", device_id);
 
         let registry = self.device_config_registry.read().await;
@@ -1266,10 +1319,7 @@ impl CConnectInterface {
         device_id: String,
         settings_json: String,
     ) -> Result<(), zbus::fdo::Error> {
-        info!(
-            "DBus: SetRemoteDesktopSettings called for {}",
-            device_id
-        );
+        info!("DBus: SetRemoteDesktopSettings called for {}", device_id);
 
         let settings: crate::device_config::RemoteDesktopSettings =
             serde_json::from_str(&settings_json)
@@ -1279,9 +1329,9 @@ impl CConnectInterface {
         let config = registry.get_or_create(&device_id);
         config.set_remotedesktop_settings(settings);
 
-        registry.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Save failed: {}", e))
-        })?;
+        registry
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Save failed: {}", e)))?;
 
         info!("DBus: RemoteDesktop settings updated for {}", device_id);
         Ok(())
@@ -1318,9 +1368,12 @@ impl CConnectInterface {
 
         // Downcast to RunCommandPlugin
         use cosmic_connect_protocol::plugins::runcommand::RunCommandPlugin;
-        let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
-            zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
-        })?;
+        let runcommand_plugin = plugin
+            .as_any()
+            .downcast_ref::<RunCommandPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
+            })?;
 
         // Add the command
         runcommand_plugin
@@ -1362,9 +1415,12 @@ impl CConnectInterface {
 
         // Downcast to RunCommandPlugin
         use cosmic_connect_protocol::plugins::runcommand::RunCommandPlugin;
-        let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
-            zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
-        })?;
+        let runcommand_plugin = plugin
+            .as_any()
+            .downcast_ref::<RunCommandPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
+            })?;
 
         // Remove the command
         runcommand_plugin
@@ -1401,18 +1457,26 @@ impl CConnectInterface {
 
         // Downcast to RunCommandPlugin
         use cosmic_connect_protocol::plugins::runcommand::RunCommandPlugin;
-        let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
-            zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
-        })?;
+        let runcommand_plugin = plugin
+            .as_any()
+            .downcast_ref::<RunCommandPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
+            })?;
 
         // Get all commands
         let commands = runcommand_plugin.get_commands().await;
 
         // Serialize to JSON
-        let json = serde_json::to_string_pretty(&commands)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to serialize commands: {}", e)))?;
+        let json = serde_json::to_string_pretty(&commands).map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to serialize commands: {}", e))
+        })?;
 
-        debug!("DBus: Retrieved {} commands for device {}", commands.len(), device_id);
+        debug!(
+            "DBus: Retrieved {} commands for device {}",
+            commands.len(),
+            device_id
+        );
         Ok(json)
     }
 
@@ -1435,9 +1499,12 @@ impl CConnectInterface {
 
         // Downcast to RunCommandPlugin
         use cosmic_connect_protocol::plugins::runcommand::RunCommandPlugin;
-        let runcommand_plugin = plugin.as_any().downcast_ref::<RunCommandPlugin>().ok_or_else(|| {
-            zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
-        })?;
+        let runcommand_plugin = plugin
+            .as_any()
+            .downcast_ref::<RunCommandPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to RunCommandPlugin".to_string())
+            })?;
 
         // Clear all commands
         runcommand_plugin
@@ -1456,7 +1523,7 @@ impl CConnectInterface {
     async fn get_metrics(&self) -> Result<DaemonMetrics, zbus::fdo::Error> {
         let metrics = self.metrics.as_ref().ok_or_else(|| {
             zbus::fdo::Error::Failed(
-                "Metrics not enabled. Start daemon with --metrics flag to enable".to_string()
+                "Metrics not enabled. Start daemon with --metrics flag to enable".to_string(),
             )
         })?;
 
@@ -1597,9 +1664,9 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.device.name = name;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
         info!("DBus: Device name updated successfully");
         Ok(())
@@ -1623,9 +1690,9 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.device.device_type = device_type;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
         info!("DBus: Device type updated successfully");
         Ok(())
@@ -1645,7 +1712,10 @@ impl CConnectInterface {
 
         status.insert("ping".to_string(), config.plugins.enable_ping);
         status.insert("battery".to_string(), config.plugins.enable_battery);
-        status.insert("notification".to_string(), config.plugins.enable_notification);
+        status.insert(
+            "notification".to_string(),
+            config.plugins.enable_notification,
+        );
         status.insert("share".to_string(), config.plugins.enable_share);
         status.insert("clipboard".to_string(), config.plugins.enable_clipboard);
         status.insert("mpris".to_string(), config.plugins.enable_mpris);
@@ -1701,11 +1771,15 @@ impl CConnectInterface {
             }
         }
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Plugin {} {} globally", plugin, if enabled { "enabled" } else { "disabled" });
+        info!(
+            "DBus: Plugin {} {} globally",
+            plugin,
+            if enabled { "enabled" } else { "disabled" }
+        );
         Ok(())
     }
 
@@ -1719,11 +1793,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.transport.enable_tcp = enabled;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: TCP transport {} (restart required)", if enabled { "enabled" } else { "disabled" });
+        info!(
+            "DBus: TCP transport {} (restart required)",
+            if enabled { "enabled" } else { "disabled" }
+        );
         Ok(())
     }
 
@@ -1737,11 +1814,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.transport.enable_bluetooth = enabled;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Bluetooth transport {} (restart required)", if enabled { "enabled" } else { "disabled" });
+        info!(
+            "DBus: Bluetooth transport {} (restart required)",
+            if enabled { "enabled" } else { "disabled" }
+        );
         Ok(())
     }
 
@@ -1773,11 +1853,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.transport.preference = pref_config;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Transport preference set to {} (restart required)", preference);
+        info!(
+            "DBus: Transport preference set to {} (restart required)",
+            preference
+        );
         Ok(())
     }
 
@@ -1793,11 +1876,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.transport.auto_fallback = enabled;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Auto fallback {} (restart required)", if enabled { "enabled" } else { "disabled" });
+        info!(
+            "DBus: Auto fallback {} (restart required)",
+            if enabled { "enabled" } else { "disabled" }
+        );
         Ok(())
     }
 
@@ -1817,8 +1903,9 @@ impl CConnectInterface {
             "discovery_port": config.network.discovery_port,
         });
 
-        let json = serde_json::to_string_pretty(&discovery_config)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to serialize discovery config: {}", e)))?;
+        let json = serde_json::to_string_pretty(&discovery_config).map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to serialize discovery config: {}", e))
+        })?;
 
         Ok(json)
     }
@@ -1841,11 +1928,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.network.discovery_interval = interval_secs;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Discovery interval set to {} seconds (restart required)", interval_secs);
+        info!(
+            "DBus: Discovery interval set to {} seconds (restart required)",
+            interval_secs
+        );
         Ok(())
     }
 
@@ -1867,11 +1957,14 @@ impl CConnectInterface {
         let mut config = self.config.write().await;
         config.network.device_timeout = timeout_secs;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
-        info!("DBus: Device timeout set to {} seconds (restart required)", timeout_secs);
+        info!(
+            "DBus: Device timeout set to {} seconds (restart required)",
+            timeout_secs
+        );
         Ok(())
     }
 
@@ -1893,9 +1986,9 @@ impl CConnectInterface {
         // Restore device ID
         config.device.device_id = device_id;
 
-        config.save().map_err(|e| {
-            zbus::fdo::Error::Failed(format!("Failed to save config: {}", e))
-        })?;
+        config
+            .save()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save config: {}", e)))?;
 
         warn!("DBus: Configuration reset to defaults (restart required for full effect)");
         Ok(())

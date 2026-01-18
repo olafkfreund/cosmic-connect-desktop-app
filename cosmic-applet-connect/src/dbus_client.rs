@@ -31,6 +31,8 @@ pub struct DeviceInfo {
     pub is_reachable: bool,
     /// Is device connected (TLS)
     pub is_connected: bool,
+    /// Has pending pairing request
+    pub has_pairing_request: bool,
     /// Last seen timestamp (UNIX timestamp)
     pub last_seen: i64,
     /// Supported incoming plugin capabilities
@@ -214,62 +216,66 @@ pub enum DaemonEvent {
 )]
 trait CConnect {
     /// List all known devices
-    async fn list_devices(&self) -> zbus::Result<HashMap<String, DeviceInfo>>;
+    async fn list_devices(&self) -> zbus::fdo::Result<HashMap<String, DeviceInfo>>;
 
     /// Get information about a specific device
-    async fn get_device(&self, device_id: &str) -> zbus::Result<DeviceInfo>;
+    async fn get_device(&self, device_id: &str) -> zbus::fdo::Result<DeviceInfo>;
 
     /// Request pairing with a device
-    async fn pair_device(&self, device_id: &str) -> zbus::Result<()>;
+    async fn pair_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Unpair a device
-    async fn unpair_device(&self, device_id: &str) -> zbus::Result<()>;
+    async fn unpair_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Trigger device discovery
-    async fn refresh_discovery(&self) -> zbus::Result<()>;
+    async fn refresh_discovery(&self) -> zbus::fdo::Result<()>;
 
     /// Get device connection state
-    async fn get_device_state(&self, device_id: &str) -> zbus::Result<String>;
+    async fn get_device_state(&self, device_id: &str) -> zbus::fdo::Result<String>;
 
     /// Send a ping to a device
-    async fn send_ping(&self, device_id: &str, message: &str) -> zbus::Result<()>;
+    async fn send_ping(&self, device_id: &str, message: &str) -> zbus::fdo::Result<()>;
 
     /// Trigger find phone on a device
-    async fn find_phone(&self, device_id: &str) -> zbus::Result<()>;
+    async fn find_phone(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Share a file with a device
-    async fn share_file(&self, device_id: &str, path: &str) -> zbus::Result<()>;
+    async fn share_file(&self, device_id: &str, path: &str) -> zbus::fdo::Result<()>;
 
     /// Share text or URL with a device
-    async fn share_text(&self, device_id: &str, text: &str) -> zbus::Result<()>;
+    async fn share_text(&self, device_id: &str, text: &str) -> zbus::fdo::Result<()>;
 
     /// Share URL with a device
-    async fn share_url(&self, device_id: &str, url: &str) -> zbus::Result<()>;
+    async fn share_url(&self, device_id: &str, url: &str) -> zbus::fdo::Result<()>;
 
     /// Send a notification to a device
-    async fn send_notification(&self, device_id: &str, title: &str, body: &str)
-        -> zbus::Result<()>;
+    async fn send_notification(
+        &self,
+        device_id: &str,
+        title: &str,
+        body: &str,
+    ) -> zbus::fdo::Result<()>;
 
     /// Get battery status from a device
-    async fn get_battery_status(&self, device_id: &str) -> zbus::Result<BatteryStatus>;
+    async fn get_battery_status(&self, device_id: &str) -> zbus::fdo::Result<BatteryStatus>;
 
     /// Request battery update from a device
-    async fn request_battery_update(&self, device_id: &str) -> zbus::Result<()>;
+    async fn request_battery_update(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Get list of available MPRIS media players
-    async fn get_mpris_players(&self) -> zbus::Result<Vec<String>>;
+    async fn get_mpris_players(&self) -> zbus::fdo::Result<Vec<String>>;
 
     /// Control MPRIS player playback
-    async fn mpris_control(&self, player: &str, action: &str) -> zbus::Result<()>;
+    async fn mpris_control(&self, player: &str, action: &str) -> zbus::fdo::Result<()>;
 
     /// Set MPRIS player volume
-    async fn mpris_set_volume(&self, player: &str, volume: f64) -> zbus::Result<()>;
+    async fn mpris_set_volume(&self, player: &str, volume: f64) -> zbus::fdo::Result<()>;
 
     /// Seek MPRIS player position
-    async fn mpris_seek(&self, player: &str, offset_microseconds: i64) -> zbus::Result<()>;
+    async fn mpris_seek(&self, player: &str, offset_microseconds: i64) -> zbus::fdo::Result<()>;
 
     /// Get device configuration (plugin settings)
-    async fn get_device_config(&self, device_id: &str) -> zbus::Result<String>;
+    async fn get_device_config(&self, device_id: &str) -> zbus::fdo::Result<String>;
 
     /// Set plugin enabled state for a device
     async fn set_device_plugin_enabled(
@@ -277,49 +283,59 @@ trait CConnect {
         device_id: &str,
         plugin: &str,
         enabled: bool,
-    ) -> zbus::Result<()>;
+    ) -> zbus::fdo::Result<()>;
 
     /// Clear device-specific plugin override
-    async fn clear_device_plugin_override(&self, device_id: &str, plugin: &str)
-        -> zbus::Result<()>;
+    async fn clear_device_plugin_override(
+        &self,
+        device_id: &str,
+        plugin: &str,
+    ) -> zbus::fdo::Result<()>;
 
     /// Reset all plugin overrides for a device (revert to global config)
-    async fn reset_all_plugin_overrides(&self, device_id: &str) -> zbus::Result<()>;
+    async fn reset_all_plugin_overrides(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Get RemoteDesktop settings for a device
-    async fn get_remotedesktop_settings(&self, device_id: &str) -> zbus::Result<String>;
+    async fn get_remotedesktop_settings(&self, device_id: &str) -> zbus::fdo::Result<String>;
 
     /// Set RemoteDesktop settings for a device
-    async fn set_remotedesktop_settings(&self, device_id: &str, settings_json: &str)
-        -> zbus::Result<()>;
+    async fn set_remotedesktop_settings(
+        &self,
+        device_id: &str,
+        settings_json: &str,
+    ) -> zbus::fdo::Result<()>;
 
     /// Signal: Device was added
     #[zbus(signal)]
-    fn device_added(device_id: &str, device_info: DeviceInfo) -> zbus::Result<()>;
+    fn device_added(device_id: &str, device_info: DeviceInfo) -> zbus::fdo::Result<()>;
 
     /// Signal: Device was removed
     #[zbus(signal)]
-    fn device_removed(device_id: &str) -> zbus::Result<()>;
+    fn device_removed(device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: Device state changed
     #[zbus(signal)]
-    fn device_state_changed(device_id: &str, state: &str) -> zbus::Result<()>;
+    fn device_state_changed(device_id: &str, state: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: Pairing request received
     #[zbus(signal)]
-    fn pairing_request(device_id: &str) -> zbus::Result<()>;
+    fn pairing_request(device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: Pairing status changed
     #[zbus(signal)]
-    fn pairing_status_changed(device_id: &str, status: &str) -> zbus::Result<()>;
+    fn pairing_status_changed(device_id: &str, status: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: Plugin event
     #[zbus(signal)]
-    fn plugin_event(device_id: &str, plugin: &str, data: &str) -> zbus::Result<()>;
+    fn plugin_event(device_id: &str, plugin: &str, data: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: Device plugin state changed
     #[zbus(signal)]
-    fn device_plugin_state_changed(device_id: &str, plugin_name: &str, enabled: bool) -> zbus::Result<()>;
+    fn device_plugin_state_changed(
+        device_id: &str,
+        plugin_name: &str,
+        enabled: bool,
+    ) -> zbus::fdo::Result<()>;
 }
 
 /// DBus client for communicating with the daemon
@@ -445,7 +461,8 @@ impl DbusClient {
         });
 
         let event_tx = self.event_tx.clone();
-        let mut plugin_state_changed_stream = self.proxy.receive_device_plugin_state_changed().await?;
+        let mut plugin_state_changed_stream =
+            self.proxy.receive_device_plugin_state_changed().await?;
         tokio::spawn(async move {
             while let Some(signal) = plugin_state_changed_stream.next().await {
                 if let Ok(args) = signal.args() {
@@ -632,7 +649,10 @@ impl DbusClient {
     /// * `player` - Player name
     /// * `offset_microseconds` - Seek offset in microseconds (can be negative)
     pub async fn mpris_seek(&self, player: &str, offset_microseconds: i64) -> Result<()> {
-        info!("Seeking MPRIS player {} by {}μs", player, offset_microseconds);
+        info!(
+            "Seeking MPRIS player {} by {}μs",
+            player, offset_microseconds
+        );
         self.proxy
             .mpris_seek(player, offset_microseconds)
             .await
@@ -681,7 +701,10 @@ impl DbusClient {
     /// * `device_id` - Device ID
     /// * `plugin` - Plugin name
     pub async fn clear_device_plugin_override(&self, device_id: &str, plugin: &str) -> Result<()> {
-        info!("Clearing plugin override for {} on device {}", plugin, device_id);
+        info!(
+            "Clearing plugin override for {} on device {}",
+            plugin, device_id
+        );
         self.proxy
             .clear_device_plugin_override(device_id, plugin)
             .await
@@ -704,7 +727,10 @@ impl DbusClient {
     ///
     /// # Arguments
     /// * `device_id` - Device ID
-    pub async fn get_remotedesktop_settings(&self, device_id: &str) -> Result<RemoteDesktopSettings> {
+    pub async fn get_remotedesktop_settings(
+        &self,
+        device_id: &str,
+    ) -> Result<RemoteDesktopSettings> {
         debug!("Getting RemoteDesktop settings for {}", device_id);
         let json = self
             .proxy

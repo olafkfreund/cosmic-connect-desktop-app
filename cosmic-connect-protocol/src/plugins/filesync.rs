@@ -12,6 +12,7 @@
 //! - `cconnect.filesync.config` - Sync folder configuration
 //! - `cconnect.filesync.index` - File list with hashes and metadata
 //! - `cconnect.filesync.transfer` - File data transfer (via payload)
+//! - `cconnect.filesync.request` - Request file transfer
 //! - `cconnect.filesync.conflict` - Conflict notification
 //! - `cconnect.filesync.delete` - File deletion synchronization
 //!
@@ -47,22 +48,28 @@
 //!
 //! ## Implementation Status
 //!
-//! TODO: File system monitoring (inotify integration)
-//! TODO: BLAKE3 hashing for content comparison
-//! TODO: SQLite database for sync state
-//! TODO: Delta sync algorithm (rsync-like)
-//! TODO: File versioning system
-//! TODO: Bandwidth limiting implementation
+//! - [x] File system monitoring (notify integration)
+//! - [x] BLAKE3 hashing for content comparison
+//! - [x] Sync logic and plan generation
+//! - [ ] File transfer implementation (upload/download)
+//! - [ ] SQLite database for sync state (history)
+//! - [ ] Delta sync algorithm (rsync-like)
+//! - [ ] File versioning system
+//! - [ ] Bandwidth limiting implementation
 
 use crate::plugins::{Plugin, PluginFactory};
 use crate::{Device, Packet, ProtocolError, Result};
 use async_trait::async_trait;
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
+use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
+use walkdir::WalkDir;
 
 const PLUGIN_NAME: &str = "filesync";
 const INCOMING_CAPABILITY: &str = "cconnect.filesync";
@@ -186,7 +193,7 @@ impl SyncFolder {
 }
 
 /// File metadata for sync index
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileMetadata {
     /// Relative path from sync folder root
     pub path: PathBuf,
@@ -209,7 +216,7 @@ pub struct FileMetadata {
 }
 
 /// Sync index containing all files in a folder
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncIndex {
     /// Folder identifier
     pub folder_id: String,
@@ -228,7 +235,7 @@ pub struct SyncIndex {
 }
 
 /// File conflict information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileConflict {
     /// Folder identifier
     pub folder_id: String,
@@ -247,6 +254,32 @@ pub struct FileConflict {
 
     /// Conflict detection timestamp (milliseconds since epoch)
     pub timestamp: i64,
+}
+
+/// Action to perform during synchronization
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncAction {
+    Upload(PathBuf),
+    Download(PathBuf),
+    DeleteRemote(PathBuf),
+    DeleteLocal(PathBuf),
+    Conflict(FileConflict),
+}
+
+/// Synchronization plan
+#[derive(Debug, Clone, Default)]
+pub struct SyncPlan {
+    pub actions: Vec<SyncAction>,
+    pub stats: SyncStats,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SyncStats {
+    pub files_to_upload: usize,
+    pub files_to_download: usize,
+    pub bytes_to_upload: u64,
+    pub bytes_to_download: u64,
+    pub conflicts: usize,
 }
 
 /// File sync plugin
@@ -268,6 +301,9 @@ pub struct FileSyncPlugin {
 
     /// Active transfers (folder_id -> file_path)
     active_transfers: HashMap<String, Vec<PathBuf>>,
+
+    /// File system watcher
+    watcher: Option<RecommendedWatcher>,
 }
 
 impl FileSyncPlugin {
@@ -280,6 +316,7 @@ impl FileSyncPlugin {
             sync_indexes: HashMap::new(),
             pending_conflicts: Vec::new(),
             active_transfers: HashMap::new(),
+            watcher: None,
         }
     }
 
@@ -294,9 +331,23 @@ impl FileSyncPlugin {
             config.remote_path.display()
         );
 
-        self.sync_folders.insert(folder_id.clone(), config);
+        self.sync_folders.insert(folder_id.clone(), config.clone());
 
-        // TODO: Start file system watching for this folder
+        // Start watching if plugin is enabled
+        if self.enabled {
+            if let Some(watcher) = &mut self.watcher {
+                if let Err(e) = watcher.watch(&config.local_path, RecursiveMode::Recursive) {
+                    warn!(
+                        "Failed to watch folder {}: {}",
+                        config.local_path.display(),
+                        e
+                    );
+                } else {
+                    info!("Started watching folder: {}", config.local_path.display());
+                }
+            }
+        }
+
         // TODO: Trigger initial index generation
 
         Ok(())
@@ -304,7 +355,7 @@ impl FileSyncPlugin {
 
     /// Remove sync folder configuration
     pub fn remove_folder(&mut self, folder_id: &str) -> Result<()> {
-        if self.sync_folders.remove(folder_id).is_some() {
+        if let Some(config) = self.sync_folders.remove(folder_id) {
             // Clean up related data
             self.sync_indexes.remove(folder_id);
             self.active_transfers.remove(folder_id);
@@ -312,7 +363,16 @@ impl FileSyncPlugin {
 
             info!("Removed sync folder '{}'", folder_id);
 
-            // TODO: Stop file system watching for this folder
+            // Stop file system watching for this folder
+            if let Some(watcher) = &mut self.watcher {
+                if let Err(e) = watcher.unwatch(&config.local_path) {
+                    warn!(
+                        "Failed to unwatch folder {}: {}",
+                        config.local_path.display(),
+                        e
+                    );
+                }
+            }
 
             Ok(())
         } else {
@@ -321,6 +381,23 @@ impl FileSyncPlugin {
                 folder_id
             )))
         }
+    }
+
+    /// Compute BLAKE3 hash of a file
+    fn compute_file_hash<P: AsRef<std::path::Path>>(path: P) -> Result<String> {
+        let mut file = fs::File::open(path).map_err(|e| ProtocolError::Io(e))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut buffer = [0; 65536]; // 64KB buffer
+
+        loop {
+            let count = file.read(&mut buffer).map_err(|e| ProtocolError::Io(e))?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+
+        Ok(hasher.finalize().to_hex().to_string())
     }
 
     /// Generate sync index for a folder
@@ -335,47 +412,183 @@ impl FileSyncPlugin {
             config.local_path.display()
         );
 
-        // TODO: Walk directory tree
-        // TODO: Hash files with BLAKE3
-        // TODO: Apply ignore patterns
-        // TODO: Collect file metadata
+        let mut files = Vec::new();
+        let mut total_size = 0;
+
+        for entry in WalkDir::new(&config.local_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+
+            // Skip the root folder itself
+            if path == config.local_path {
+                continue;
+            }
+
+            // Calculate relative path
+            let relative_path = match path.strip_prefix(&config.local_path) {
+                Ok(p) => p.to_path_buf(),
+                Err(_) => continue,
+            };
+
+            // Basic ignore logic (TODO: Use robust glob matching)
+            let path_str = relative_path.to_string_lossy();
+            if config
+                .ignore_patterns
+                .iter()
+                .any(|pattern| path_str.contains(pattern))
+            {
+                continue;
+            }
+            if path_str.contains(".git") || path_str.contains(".DS_Store") {
+                continue;
+            }
+
+            let metadata = entry.metadata().map_err(|e| ProtocolError::Io(e.into()))?;
+            let is_dir = metadata.is_dir();
+            let size = metadata.len();
+            let modified = metadata
+                .modified()
+                .unwrap_or(SystemTime::now())
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            // Unix permissions (if applicable)
+            #[cfg(unix)]
+            let permissions = {
+                use std::os::unix::fs::MetadataExt;
+                Some(metadata.mode())
+            };
+            #[cfg(not(unix))]
+            let permissions = None;
+
+            let hash = if is_dir {
+                String::new()
+            } else {
+                Self::compute_file_hash(path)?
+            };
+
+            if !is_dir {
+                total_size += size;
+            }
+
+            files.push(FileMetadata {
+                path: relative_path,
+                size,
+                modified,
+                hash,
+                is_dir,
+                permissions,
+            });
+        }
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
+        debug!(
+            "Generated index for {}: {} files, {} bytes",
+            folder_id,
+            files.len(),
+            total_size
+        );
+
         let index = SyncIndex {
             folder_id: folder_id.to_string(),
-            files: Vec::new(), // TODO: Populate with actual files
+            file_count: files.len(),
+            files,
             timestamp,
-            total_size: 0,
-            file_count: 0,
+            total_size,
         };
 
         Ok(index)
     }
 
-    /// Compare local and remote indexes to detect changes
-    pub fn compare_indexes(
+    /// Create a synchronization plan by comparing local and remote indexes
+    pub fn create_sync_plan(
         &self,
+        folder_id: &str,
         local_index: &SyncIndex,
         remote_index: &SyncIndex,
-    ) -> Vec<FileConflict> {
-        let conflicts = Vec::new();
+    ) -> SyncPlan {
+        let mut plan = SyncPlan::default();
 
-        // TODO: Compare file lists
-        // TODO: Detect additions, deletions, modifications
-        // TODO: Identify conflicts (both sides modified)
+        let config = match self.sync_folders.get(folder_id) {
+            Some(c) => c,
+            None => return plan,
+        };
+
+        // Efficient lookups
+        let local_map: HashMap<&PathBuf, &FileMetadata> =
+            local_index.files.iter().map(|f| (&f.path, f)).collect();
+        let remote_map: HashMap<&PathBuf, &FileMetadata> =
+            remote_index.files.iter().map(|f| (&f.path, f)).collect();
+
+        // 1. Check local files (Uploads / Conflicts)
+        for (path, local_file) in &local_map {
+            match remote_map.get(path) {
+                Some(remote_file) => {
+                    // File exists on both sides
+                    if local_file.hash != remote_file.hash {
+                        // Content differs, check timestamps
+                        if local_file.modified > remote_file.modified {
+                            // Local is newer -> Upload
+                            plan.actions.push(SyncAction::Upload(path.to_path_buf()));
+                            plan.stats.files_to_upload += 1;
+                            plan.stats.bytes_to_upload += local_file.size;
+                        } else if remote_file.modified > local_file.modified {
+                            // Remote is newer -> Download
+                            plan.actions.push(SyncAction::Download(path.to_path_buf()));
+                            plan.stats.files_to_download += 1;
+                            plan.stats.bytes_to_download += remote_file.size;
+                        } else {
+                            // Timestamps differ but logic unsure, treat as conflict
+                            plan.stats.conflicts += 1;
+                            plan.actions.push(SyncAction::Conflict(FileConflict {
+                                folder_id: folder_id.to_string(),
+                                path: path.to_path_buf(),
+                                local_metadata: (*local_file).clone(),
+                                remote_metadata: (*remote_file).clone(),
+                                suggested_strategy: config.conflict_strategy,
+                                timestamp: SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as i64,
+                            }));
+                        }
+                    }
+                }
+                None => {
+                    // Local file only. Assume ADD (Upload).
+                    plan.actions.push(SyncAction::Upload(path.to_path_buf()));
+                    plan.stats.files_to_upload += 1;
+                    plan.stats.bytes_to_upload += local_file.size;
+                }
+            }
+        }
+
+        // 2. Check remote files (Downloads)
+        for (path, remote_file) in &remote_map {
+            if !local_map.contains_key(path) {
+                // Remote file only. Assume ADD (Download).
+                plan.actions.push(SyncAction::Download(path.to_path_buf()));
+                plan.stats.files_to_download += 1;
+                plan.stats.bytes_to_download += remote_file.size;
+            }
+        }
 
         debug!(
-            "Compared indexes: {} local files, {} remote files, {} conflicts",
-            local_index.file_count,
-            remote_index.file_count,
-            conflicts.len()
+            "Created sync plan for {}: +{}up, +{}down, {} conflicts",
+            folder_id,
+            plan.stats.files_to_upload,
+            plan.stats.files_to_download,
+            plan.stats.conflicts
         );
 
-        conflicts
+        plan
     }
 
     /// Resolve a file conflict
@@ -490,7 +703,31 @@ impl Plugin for FileSyncPlugin {
         info!("Starting FileSync plugin");
         self.enabled = true;
 
-        // TODO: Start file system monitoring threads
+        // Initialize watcher
+        let mut watcher = RecommendedWatcher::new(
+            |res: notify::Result<notify::Event>| match res {
+                Ok(event) => info!("File change detected: {:?}", event),
+                Err(e) => warn!("Watch error: {:?}", e),
+            },
+            Config::default(),
+        )
+        .map_err(|e| ProtocolError::Plugin(e.to_string()))?;
+
+        // Start watching all configured folders
+        for config in self.sync_folders.values() {
+            if config.enabled {
+                if let Err(e) = watcher.watch(&config.local_path, RecursiveMode::Recursive) {
+                    warn!(
+                        "Failed to watch folder {}: {}",
+                        config.local_path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        self.watcher = Some(watcher);
+
         // TODO: Trigger initial index generation for all folders
         // TODO: Schedule periodic scans
 
@@ -500,8 +737,8 @@ impl Plugin for FileSyncPlugin {
     async fn stop(&mut self) -> Result<()> {
         info!("Stopping FileSync plugin");
         self.enabled = false;
+        self.watcher = None;
 
-        // TODO: Stop file system monitoring
         // TODO: Cancel active transfers
         // TODO: Save sync state to database
 
@@ -545,23 +782,34 @@ impl Plugin for FileSyncPlugin {
                 let folder_id = index.folder_id.clone();
 
                 // Compare with local index
+                // Compare with local index
                 if let Ok(local_index) = self.generate_index(&folder_id).await {
-                    let conflicts = self.compare_indexes(&local_index, &index);
+                    let plan = self.create_sync_plan(&folder_id, &local_index, &index);
 
-                    if !conflicts.is_empty() {
+                    if plan.stats.files_to_upload > 0
+                        || plan.stats.files_to_download > 0
+                        || plan.stats.conflicts > 0
+                    {
                         info!(
-                            "Detected {} conflicts in folder '{}'",
-                            conflicts.len(),
-                            folder_id
+                            "Sync Plan: {} uploads, {} downloads, {} conflicts",
+                            plan.stats.files_to_upload,
+                            plan.stats.files_to_download,
+                            plan.stats.conflicts
                         );
-                        self.pending_conflicts.extend(conflicts);
+                    }
+
+                    // Handle conflicts
+                    for action in &plan.actions {
+                        if let SyncAction::Conflict(conflict) = action {
+                            self.pending_conflicts.push(conflict.clone());
+                        }
                     }
 
                     // Store remote index
                     self.sync_indexes.insert(folder_id.clone(), index);
 
-                    // TODO: Determine required transfers
-                    // TODO: Initiate file synchronization
+                    // TODO: Execute transfers (Uploads)
+                    // TODO: Request downloads
                 }
 
                 info!("Processed sync index");

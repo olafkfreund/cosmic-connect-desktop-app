@@ -59,6 +59,9 @@ pub use transport_manager::{TransportManager, TransportManagerConfig, TransportM
 pub const PROTOCOL_VERSION: u32 = 8;
 
 #[cfg(test)]
+pub mod test_utils;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -39,6 +39,9 @@ pipewire = { version = "0.8", optional = true }
 openh264 = { version = "0.6", optional = true }
 lz4 = { version = "1.25", optional = true }
 image = { version = "0.25", optional = true }
+notify = "8.2.0"
+blake3 = "1.8.3"
+walkdir = "2.5.0"
 
 [features]
 default = []

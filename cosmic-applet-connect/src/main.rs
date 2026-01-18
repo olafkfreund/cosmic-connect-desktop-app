@@ -186,6 +186,7 @@ struct CConnectApplet {
     view_mode: ViewMode,
     // Scanning state
     scanning: bool,
+    loading_battery: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -470,6 +471,7 @@ impl cosmic::Application for CConnectApplet {
             history: Vec::new(),
             view_mode: ViewMode::Devices,
             scanning: false,
+            loading_battery: false,
         };
         (app, Task::none())
     }
@@ -600,11 +602,13 @@ impl cosmic::Application for CConnectApplet {
                     "Fetching battery status for {} connected devices",
                     connected_ids.len()
                 );
+                self.loading_battery = true;
                 Task::perform(fetch_battery_statuses(connected_ids), |statuses| {
                     cosmic::Action::App(Message::BatteryStatusesUpdated(statuses))
                 })
             }
             Message::BatteryStatusesUpdated(statuses) => {
+                self.loading_battery = false;
                 tracing::debug!("Battery statuses updated for {} devices", statuses.len());
 
                 for device_state in &mut self.devices {
@@ -1491,8 +1495,8 @@ impl CConnectApplet {
                 search_input,
                 container(
                     row![
-                        cosmic::widget::text::caption("Scanning"),
                         icon::from_name("process-working-symbolic").size(ICON_S),
+                        cosmic::widget::text::caption("Scanning..."),
                     ]
                     .spacing(SPACE_S)
                     .align_y(cosmic::iced::Alignment::Center)
@@ -1802,7 +1806,18 @@ impl CConnectApplet {
                     .align_y(cosmic::iced::Alignment::Center),
                 ]
             }
-            None => row![name_status_col],
+            None => {
+                if self.loading_battery && device.is_connected() {
+                    row![
+                        name_status_col,
+                        icon::from_name("process-working-symbolic").size(ICON_14)
+                    ]
+                    .spacing(SPACE_S)
+                    .align_y(cosmic::iced::Alignment::Center)
+                } else {
+                    row![name_status_col]
+                }
+            }
         }
         .spacing(SPACE_S)
         .align_y(cosmic::iced::Alignment::Center);

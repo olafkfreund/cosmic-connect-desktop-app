@@ -867,9 +867,8 @@ impl CConnectApplet {
                 container(icon::from_name("phone-disconnected-symbolic").size(48))
                     .padding(Padding::from([8, 0, 12, 0])),
                 text("No Devices Found")
-                    .size(18)
-                    .weight(cosmic::iced::font::Weight::Bold),
-                text("Make sure:").size(13).weight(cosmic::iced::font::Weight::Medium),
+                    .size(18),
+                text("Make sure:").size(13),
                 text("• CConnect app is installed on your devices").size(12),
                 text("• Devices are on the same network").size(12),
                 text("• Firewall ports 1814-1864 are open").size(12),
@@ -1024,8 +1023,7 @@ impl CConnectApplet {
         // Device name and status column with last seen for disconnected devices
         let mut name_status_col = column![
             text(&device.info.device_name)
-                .size(16)
-                .weight(cosmic::iced::font::Weight::Semibold),
+                .size(16),
             text(status_text).size(12),
         ]
         .spacing(2);

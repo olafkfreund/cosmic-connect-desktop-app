@@ -1398,7 +1398,9 @@ impl CConnectApplet {
                 .align_y(cosmic::iced::Alignment::Center);
 
                 history_list = history_list.push(
-                    container(row).padding(8), //.style(cosmic::theme::Container::Card),
+                    container(row)
+                        .padding(8)
+                        .class(cosmic::theme::Container::Card),
                 );
             }
         }
@@ -1694,7 +1696,10 @@ impl CConnectApplet {
             .spacing(8)
             .padding(Padding::from([8.0, 12.0]));
 
-        container(content).width(Length::Fill).into()
+        container(content)
+            .width(Length::Fill)
+            .class(cosmic::theme::Container::Card)
+            .into()
     }
 
     fn device_row<'a>(&'a self, device_state: &'a DeviceState) -> Element<'a, Message> {
@@ -1801,7 +1806,10 @@ impl CConnectApplet {
             }
         }
 
-        container(content).width(Length::Fill).into()
+        container(content)
+            .width(Length::Fill)
+            .class(cosmic::theme::Container::Card)
+            .into()
     }
 
     fn build_device_actions<'a>(

@@ -130,6 +130,7 @@ use async_trait::async_trait;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
 /// Factory trait for creating plugin instances
@@ -215,17 +216,20 @@ pub trait Plugin: Send + Sync + Any {
     /// Example: `["cconnect.ping", "cconnect.battery.request"]`
     fn outgoing_capabilities(&self) -> Vec<String>;
 
-    /// Initialize the plugin with device context
+    /// Initialize the plugin with device context and packet sender
     ///
-    /// Called once after plugin creation to provide device-specific configuration.
-    /// The plugin should store any needed device information but not start
-    /// processing packets yet.
+    /// Called once after plugin creation to provide device-specific configuration
+    /// and a channel for sending proactive packets.
     ///
     /// # Errors
     ///
     /// Returns error if plugin initialization fails (e.g., invalid device state,
     /// missing required capabilities).
-    async fn init(&mut self, device: &Device) -> Result<()>;
+    async fn init(
+        &mut self,
+        device: &Device,
+        packet_sender: Sender<(String, Packet)>,
+    ) -> Result<()>;
 
     /// Start the plugin
     ///
@@ -407,7 +411,12 @@ impl PluginManager {
     /// # Errors
     ///
     /// Returns error if plugin creation or initialization fails
-    pub async fn init_device_plugins(&mut self, device_id: &str, device: &Device) -> Result<()> {
+    pub async fn init_device_plugins(
+        &mut self,
+        device_id: &str,
+        device: &Device,
+        packet_sender: Sender<(String, Packet)>,
+    ) -> Result<()> {
         info!(
             "Initializing {} plugins for device {}",
             self.factories.len(),
@@ -423,7 +432,7 @@ impl PluginManager {
             let mut plugin = factory.create();
 
             // Initialize plugin
-            if let Err(e) = plugin.init(device).await {
+            if let Err(e) = plugin.init(device, packet_sender.clone()).await {
                 error!(
                     "Failed to initialize plugin {} for device {}: {}",
                     name, device_id, e
@@ -775,7 +784,6 @@ impl Default for PluginManager {
 mod tests {
     use super::*;
     use crate::{DeviceInfo, DeviceType};
-    use serde_json::json;
 
     // Mock plugin for testing
     struct MockPlugin {
@@ -810,6 +818,10 @@ mod tests {
             self
         }
 
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+
         fn incoming_capabilities(&self) -> Vec<String> {
             self.incoming.clone()
         }
@@ -818,7 +830,11 @@ mod tests {
             self.outgoing.clone()
         }
 
-        async fn init(&mut self, _device: &Device) -> Result<()> {
+        async fn init(
+            &mut self,
+            _device: &Device,
+            _packet_sender: Sender<(String, Packet)>,
+        ) -> Result<()> {
             self.initialized = true;
             Ok(())
         }
@@ -847,7 +863,7 @@ mod tests {
     #[test]
     fn test_plugin_manager_creation() {
         let manager = PluginManager::new();
-        assert_eq!(manager.plugin_count(), 0);
+        assert_eq!(manager.factory_count(), 0);
         assert!(manager.list_plugins().is_empty());
     }
 
@@ -959,8 +975,9 @@ mod tests {
         let device = create_test_device();
         let device_id = device.id();
 
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
         assert!(manager
-            .init_device_plugins(device_id, &device)
+            .init_device_plugins(device_id, &device, tx)
             .await
             .is_ok());
         assert_eq!(manager.device_plugin_count(device_id), 1);
@@ -980,8 +997,9 @@ mod tests {
         let device = create_test_device();
         let device_id = device.id();
 
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
         manager
-            .init_device_plugins(device_id, &device)
+            .init_device_plugins(device_id, &device, tx)
             .await
             .unwrap();
         assert_eq!(manager.device_plugin_count(device_id), 1);
@@ -1004,8 +1022,9 @@ mod tests {
         let mut device = create_test_device();
         let device_id = device.id().to_string();
 
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
         manager
-            .init_device_plugins(&device_id, &device)
+            .init_device_plugins(&device_id, &device, tx)
             .await
             .unwrap();
 
@@ -1032,12 +1051,14 @@ mod tests {
         let device2 = create_test_device();
         let device2_id = device2.id();
 
+        let (tx1, _rx1) = tokio::sync::mpsc::channel(100);
         manager
-            .init_device_plugins(device1_id, &device1)
+            .init_device_plugins(device1_id, &device1, tx1)
             .await
             .unwrap();
+        let (tx2, _rx2) = tokio::sync::mpsc::channel(100);
         manager
-            .init_device_plugins(device2_id, &device2)
+            .init_device_plugins(device2_id, &device2, tx2)
             .await
             .unwrap();
 
@@ -1079,8 +1100,9 @@ mod tests {
         let mut device = create_test_device();
         let device_id = device.id().to_string();
 
+        let (tx, _rx) = tokio::sync::mpsc::channel(100);
         manager
-            .init_device_plugins(&device_id, &device)
+            .init_device_plugins(&device_id, &device, tx)
             .await
             .unwrap();
 

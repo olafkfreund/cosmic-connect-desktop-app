@@ -235,7 +235,7 @@ pub enum MacroExecutionStatus {
 
 /// Active macro execution state
 #[derive(Debug, Clone)]
-struct MacroExecution {
+pub struct MacroExecution {
     /// Execution ID
     id: String,
 
@@ -421,7 +421,7 @@ impl MacroPlugin {
     }
 
     /// Execute a single macro step
-    async fn execute_step(step: &MacroStep, variables: &HashMap<String, String>) -> Result<()> {
+    async fn execute_step(step: &MacroStep, _variables: &HashMap<String, String>) -> Result<()> {
         match step.action.as_str() {
             "notify" => {
                 let title = step
@@ -760,7 +760,7 @@ impl Plugin for MacroPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Macro plugin initialized for device {}", device.name());
         Ok(())
@@ -930,7 +930,7 @@ mod tests {
         let mut plugin = MacroPlugin::new();
 
         let mut steps = Vec::new();
-        for i in 0..200 {
+        for _ in 0..200 {
             steps.push(MacroStep {
                 action: "wait".to_string(),
                 params: json!({"seconds": 0}),
@@ -953,7 +953,7 @@ mod tests {
         let mut plugin = MacroPlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert!(plugin.start().await.is_ok());
         assert!(plugin.enabled);
         assert!(plugin.stop().await.is_ok());

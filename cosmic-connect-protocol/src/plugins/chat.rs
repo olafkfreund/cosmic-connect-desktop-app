@@ -140,6 +140,7 @@ use super::{Plugin, PluginFactory};
 const DEFAULT_MAX_MESSAGES: usize = 1000;
 
 /// Default retention period in days
+#[allow(dead_code)]
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
 /// Chat message
@@ -242,6 +243,7 @@ impl ChatStorage {
     }
 
     /// Get message by ID
+    #[allow(dead_code)]
     fn get(&self, message_id: &str) -> Option<&ChatMessage> {
         self.messages
             .iter()
@@ -597,7 +599,7 @@ impl Plugin for ChatPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Chat plugin initialized for device {}", device.name());
         Ok(())
@@ -780,7 +782,7 @@ mod tests {
         let mut plugin = ChatPlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert!(plugin.start().await.is_ok());
         assert!(plugin.enabled);
         assert!(plugin.stop().await.is_ok());
@@ -805,7 +807,7 @@ mod tests {
     async fn test_handle_incoming_message() {
         let mut plugin = ChatPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();

@@ -1286,7 +1286,7 @@ impl Plugin for MprisPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("MPRIS plugin initialized for device {}", device.name());
         Ok(())
@@ -1410,7 +1410,7 @@ mod tests {
         let mut plugin = MprisPlugin::new();
         let device = create_test_device();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         plugin.start().await.unwrap();
@@ -1569,7 +1569,7 @@ mod tests {
     async fn test_handle_player_list() {
         let mut plugin = MprisPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -1588,7 +1588,7 @@ mod tests {
     async fn test_handle_player_status() {
         let mut plugin = MprisPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -1671,7 +1671,7 @@ mod tests {
     async fn test_handle_control_request() {
         let mut plugin = MprisPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(

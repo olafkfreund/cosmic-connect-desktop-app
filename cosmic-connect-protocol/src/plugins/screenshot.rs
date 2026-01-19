@@ -192,6 +192,7 @@ impl ScreenshotPlugin {
     /// Capture a screenshot
     ///
     /// Returns the path to the captured screenshot file.
+    #[allow(dead_code)]
     fn capture_screenshot(&self, capture_type: CaptureType) -> Result<PathBuf> {
         let display_server = Self::detect_display_server();
 
@@ -483,7 +484,10 @@ enum CaptureType {
         height: u32,
     },
     /// Window capture
-    Window { window_id: String },
+    Window {
+        #[allow(dead_code)]
+        window_id: String,
+    },
 }
 
 impl Default for ScreenshotPlugin {
@@ -518,7 +522,7 @@ impl Plugin for ScreenshotPlugin {
         vec!["cconnect.screenshot.data".to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Screenshot plugin initialized for device {}", device.name());
 
@@ -596,6 +600,7 @@ impl PluginFactory for ScreenshotPluginFactory {
 mod tests {
     use super::*;
     use crate::{DeviceInfo, DeviceType};
+    use serde_json::json;
 
     fn create_test_device() -> Device {
         let info = DeviceInfo::new("Test Device", DeviceType::Desktop, 1716);
@@ -629,7 +634,7 @@ mod tests {
         let mut plugin = ScreenshotPlugin::new();
         let device = create_test_device();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         plugin.start().await.unwrap();
@@ -654,7 +659,7 @@ mod tests {
     async fn test_handle_screenshot_request() {
         let mut plugin = ScreenshotPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();
@@ -673,7 +678,7 @@ mod tests {
     async fn test_handle_region_request() {
         let mut plugin = ScreenshotPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();

@@ -15,12 +15,35 @@ use cosmic::{
     widget::{button, divider, horizontal_space, icon},
     Element,
 };
+
 use cosmic_connect_protocol::{
     ConnectionState, Device, DeviceInfo as ProtocolDeviceInfo, DeviceType, PairingStatus,
 };
 
 use cosmic::iced::widget::progress_bar;
 use dbus_client::DbusClient;
+
+// COSMIC Design System spacing scale
+// Following libcosmic patterns for consistent spacing
+const SPACE_XXXS: f32 = 2.0; // Minimal spacing
+const SPACE_XXS: f32 = 4.0; // Tight spacing
+const SPACE_XS: f32 = 6.0; // Extra small
+const SPACE_S: f32 = 8.0; // Small (default for most UI elements)
+const SPACE_M: f32 = 12.0; // Medium (sections, groups)
+const SPACE_L: f32 = 16.0; // Large (major sections)
+const SPACE_XL: f32 = 20.0; // Extra large
+const SPACE_XXL: f32 = 24.0; // Double extra large (empty states, major padding)
+
+// Icon sizes
+const ICON_XS: u16 = 12;
+const ICON_S: u16 = 16; // Standard button/action icon
+#[allow(dead_code)]
+const ICON_M: u16 = 24;
+const ICON_L: u16 = 32;
+const ICON_XL: u16 = 48; // Hero/Empty state
+                         // Specific sizes
+const ICON_14: u16 = 14; // Text-aligned small
+const ICON_28: u16 = 28; // Device row icon
 
 fn main() -> cosmic::iced::Result {
     // Initialize logging with environment variable support
@@ -112,6 +135,20 @@ const PLUGINS: &[PluginMetadata] = &[
         icon: "find-location-symbolic",
         capability: "cconnect.findmyphone",
     },
+    PluginMetadata {
+        id: "filesync",
+        name: "File Synchronization",
+        description: "Sync folders with device",
+        icon: "folder-sync-symbolic",
+        capability: "cconnect.filesync",
+    },
+    PluginMetadata {
+        id: "runcommand",
+        name: "Run Commands",
+        description: "Execute remote commands",
+        icon: "system-run-symbolic",
+        capability: "cconnect.runcommand",
+    },
 ];
 
 #[derive(Debug, Clone)]
@@ -129,6 +166,21 @@ struct TransferState {
     current: u64,
     total: u64,
     direction: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum OperationType {
+    Ping,
+    Pair,
+    Unpair,
+
+    Battery,
+    FindPhone,
+    ShareText,
+    ShareUrl,
+    AddRunCommand,
+    AddSyncFolder,
+    SaveNickname,
 }
 
 struct CConnectApplet {
@@ -163,7 +215,43 @@ struct CConnectApplet {
     history: Vec<HistoryEvent>,
     view_mode: ViewMode,
     // Scanning state
+    // Scanning state
     scanning: bool,
+    loading_battery: bool,
+    // File Sync state
+    sync_folders: HashMap<String, Vec<dbus_client::SyncFolderInfo>>,
+    add_sync_folder_device: Option<String>,
+    add_sync_folder_path: String,
+    add_sync_folder_id: String,
+    add_sync_folder_strategy: String,
+    file_sync_settings_device: Option<String>,
+    // Run Command state
+    run_commands: HashMap<String, HashMap<String, dbus_client::RunCommand>>,
+    // State for run command form
+    add_run_command_device: Option<String>,
+    add_run_command_name: String,
+    add_run_command_cmd: String,
+    run_command_settings_device: Option<String>,
+    // Generic notification state (Error, Success, Info)
+    notification: Option<AppNotification>,
+    // Loading state
+    pending_operations: std::collections::HashSet<(String, OperationType)>,
+    // Animation state
+    notification_progress: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct AppNotification {
+    message: String,
+    kind: NotificationType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotificationType {
+    Error,
+    Success,
+    #[allow(dead_code)]
+    Info,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,7 +304,7 @@ enum Message {
     CancelRenaming,
     UpdateNicknameInput(String),
     SaveNickname(String), // device_id
-    RingDevice(String),   // device_id
+
     // Settings UI
     ToggleDeviceSettings(String),                          // device_id
     SetDevicePluginEnabled(String, String, bool),          // device_id, plugin, enabled
@@ -233,6 +321,29 @@ enum Message {
     UpdateRemoteDesktopCustomHeight(String, String), // device_id, height_str
     SaveRemoteDesktopSettings(String),          // device_id
     RemoteDesktopSettingsLoaded(String, dbus_client::RemoteDesktopSettings), // device_id, settings
+    // Run Commands
+    ShowRunCommandSettings(String), // device_id
+    CloseRunCommandSettings,
+    LoadRunCommands(String), // device_id
+    RunCommandsLoaded(String, HashMap<String, dbus_client::RunCommand>), // device_id, commands
+    StartAddRunCommand(String), // device_id
+    CancelAddRunCommand,
+    UpdateRunCommandNameInput(String),
+    UpdateRunCommandCmdInput(String),
+    AddRunCommand(String),            // device_id
+    RemoveRunCommand(String, String), // device_id, command_id
+    // Loading state management
+    OperationStarted(String, OperationType),
+    OperationCompleted(String, OperationType),
+    OperationFailed(String, OperationType, String),
+    OperationSucceeded(String, OperationType, String),
+    ClearNotification,
+    ShowNotification(String, NotificationType),
+    // Keyboard events
+    KeyPress(
+        cosmic::iced::keyboard::Key,
+        cosmic::iced::keyboard::Modifiers,
+    ),
     // File Transfer events
     TransferProgress(
         String,
@@ -243,6 +354,20 @@ enum Message {
         String,
     ), // id, device, file, cur, tot, dir
     TransferComplete(String, String, String, bool, String), // id, device, file, success, error
+    // File Sync
+    LoadSyncFolders(String),
+    SyncFoldersLoaded(String, Vec<dbus_client::SyncFolderInfo>),
+    UpdateSyncFolderPathInput(String),
+    UpdateSyncFolderIdInput(String),
+    UpdateSyncFolderStrategy(String),
+    AddSyncFolder(String),            // device_id
+    RemoveSyncFolder(String, String), // device_id, folder_id
+    StartAddSyncFolder(String),       // device_id
+    CancelAddSyncFolder,
+    ShowFileSyncSettings(String), // device_id
+    CloseFileSyncSettings,
+    // Animation
+    Tick(std::time::Instant),
 }
 
 /// Fetches device list from the daemon via D-Bus
@@ -352,6 +477,40 @@ fn get_clipboard_text() -> Option<String> {
         .and_then(|mut clipboard| clipboard.get_text().ok())
 }
 
+// Helper to perform device operation with completion event
+fn device_operation_with_completion<F, Fut>(
+    device_id: String,
+    op_type: OperationType,
+    operation: F,
+) -> Task<Message>
+where
+    F: FnOnce(DbusClient, String) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    let id_cl = device_id.clone();
+    let op_cl = op_type.clone();
+    Task::perform(
+        async move {
+            if let Ok((client, _)) = DbusClient::connect().await {
+                operation(client, id_cl).await
+            } else {
+                Err(anyhow::anyhow!("Failed to connect to daemon"))
+            }
+        },
+        move |result| match result {
+            Ok(_) => cosmic::Action::App(Message::OperationCompleted(device_id.clone(), op_type)),
+            Err(e) => {
+                tracing::error!("Device operation {:?} failed: {}", op_cl, e);
+                cosmic::Action::App(Message::OperationFailed(
+                    device_id.clone(),
+                    op_type,
+                    e.to_string(),
+                ))
+            }
+        },
+    )
+}
+
 /// Creates a task that executes a device operation then refreshes the device list
 fn device_operation_task<F, Fut>(
     device_id: String,
@@ -447,6 +606,21 @@ impl cosmic::Application for CConnectApplet {
             history: Vec::new(),
             view_mode: ViewMode::Devices,
             scanning: false,
+            loading_battery: false,
+            sync_folders: HashMap::new(),
+            add_sync_folder_device: None,
+            add_sync_folder_path: String::new(),
+            add_sync_folder_id: String::new(),
+            add_sync_folder_strategy: "last_modified_wins".to_string(),
+            file_sync_settings_device: None,
+            run_commands: HashMap::new(),
+            add_run_command_device: None,
+            add_run_command_name: String::new(),
+            add_run_command_cmd: String::new(),
+            run_command_settings_device: None,
+            notification: None,
+            pending_operations: std::collections::HashSet::new(),
+            notification_progress: 0.0,
         };
         (app, Task::none())
     }
@@ -479,6 +653,32 @@ impl cosmic::Application for CConnectApplet {
             Message::SetViewMode(mode) => {
                 self.view_mode = mode;
                 Task::none()
+            }
+            Message::Tick(_) => {
+                let mut needs_redux = false;
+
+                // Notification Animation
+                if self.notification.is_some() {
+                    if self.notification_progress < 1.0 {
+                        self.notification_progress += 0.1;
+                        if self.notification_progress > 1.0 {
+                            self.notification_progress = 1.0;
+                        }
+                        needs_redux = true;
+                    }
+                } else if self.notification_progress > 0.0 {
+                    self.notification_progress -= 0.1;
+                    if self.notification_progress < 0.0 {
+                        self.notification_progress = 0.0;
+                    }
+                    needs_redux = true;
+                }
+
+                if needs_redux {
+                    cosmic::task::message(cosmic::Action::None)
+                } else {
+                    Task::none()
+                }
             }
             Message::DeviceEvent(event) => {
                 let timestamp = std::time::SystemTime::now();
@@ -577,11 +777,13 @@ impl cosmic::Application for CConnectApplet {
                     "Fetching battery status for {} connected devices",
                     connected_ids.len()
                 );
+                self.loading_battery = true;
                 Task::perform(fetch_battery_statuses(connected_ids), |statuses| {
                     cosmic::Action::App(Message::BatteryStatusesUpdated(statuses))
                 })
             }
             Message::BatteryStatusesUpdated(statuses) => {
+                self.loading_battery = false;
                 tracing::debug!("Battery statuses updated for {} devices", statuses.len());
 
                 for device_state in &mut self.devices {
@@ -594,27 +796,47 @@ impl cosmic::Application for CConnectApplet {
                 Task::none()
             }
             Message::PairDevice(device_id) => {
-                tracing::info!("Pairing device: {}", device_id);
-                device_operation_task(device_id, "pair", |client, id| async move {
-                    client.pair_device(&id).await
-                })
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::Pair,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::Pair,
+                        move |client, _| async move { client.pair_device(&id).await },
+                    ),
+                ])
             }
             Message::UnpairDevice(device_id) => {
-                tracing::info!("Unpairing device: {}", device_id);
-                device_operation_task(device_id, "unpair", |client, id| async move {
-                    client.unpair_device(&id).await
-                })
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::Unpair,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::Unpair,
+                        move |client, _| async move { client.unpair_device(&id).await },
+                    ),
+                ])
             }
-            Message::RefreshDevices => {
-                tracing::info!("Refreshing device list");
-                self.scanning = true;
-                fetch_devices_task()
-            }
+            Message::RefreshDevices => fetch_devices_task(),
             Message::SendPing(device_id) => {
-                tracing::info!("Sending ping to device: {}", device_id);
-                device_operation_task(device_id, "ping", |client, id| async move {
-                    client.send_ping(&id, "Ping from COSMIC").await
-                })
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::Ping,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::Ping,
+                        move |client, _| async move { client.send_ping(&id, "Ping from COSMIC").await },
+                    ),
+                ])
             }
             Message::SendFile(device_id) => {
                 tracing::info!("Opening file picker for device: {}", device_id);
@@ -635,22 +857,42 @@ impl cosmic::Application for CConnectApplet {
                 })
             }
             Message::FindPhone(device_id) => {
-                tracing::info!("Finding phone: {}", device_id);
-                device_operation_task(device_id, "find phone", |client, id| async move {
-                    client.find_phone(&id).await
-                })
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::FindPhone,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::FindPhone,
+                        move |client, _| async move { client.find_phone(&id).await },
+                    ),
+                ])
             }
             Message::ShareText(device_id) => {
                 tracing::info!("Share text to device: {}", device_id);
                 match get_clipboard_text() {
-                    Some(text) => device_operation_task(
-                        device_id,
-                        "share text",
-                        move |client, id| async move { client.share_text(&id, &text).await },
-                    ),
+                    Some(text) => {
+                        let id = device_id.clone();
+                        Task::batch(vec![
+                            Task::done(cosmic::Action::App(Message::OperationStarted(
+                                device_id.clone(),
+                                OperationType::ShareText,
+                            ))),
+                            device_operation_with_completion(
+                                device_id,
+                                OperationType::ShareText,
+                                move |client, _| async move { client.share_text(&id, &text).await },
+                            ),
+                        ])
+                    }
                     None => {
                         tracing::warn!("No text in clipboard to share");
-                        Task::none()
+                        Task::done(cosmic::Action::App(Message::ShowNotification(
+                            "Clipboard is empty".into(),
+                            NotificationType::Error,
+                        )))
                     }
                 }
             }
@@ -662,11 +904,18 @@ impl cosmic::Application for CConnectApplet {
                             || text.starts_with("https://")
                             || text.starts_with("www.") =>
                     {
-                        device_operation_task(
-                            device_id,
-                            "share URL",
-                            move |client, id| async move { client.share_url(&id, &text).await },
-                        )
+                        let id = device_id.clone();
+                        Task::batch(vec![
+                            Task::done(cosmic::Action::App(Message::OperationStarted(
+                                device_id.clone(),
+                                OperationType::ShareUrl,
+                            ))),
+                            device_operation_with_completion(
+                                device_id,
+                                OperationType::ShareUrl,
+                                move |client, _| async move { client.share_url(&id, &text).await },
+                            ),
+                        ])
                     }
                     Some(_) => {
                         tracing::warn!("Clipboard text is not a valid URL");
@@ -679,10 +928,18 @@ impl cosmic::Application for CConnectApplet {
                 }
             }
             Message::RequestBatteryUpdate(device_id) => {
-                tracing::info!("Requesting battery update for device: {}", device_id);
-                device_operation_task(device_id, "request battery", |client, id| async move {
-                    client.request_battery_update(&id).await
-                })
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::Battery,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::Battery,
+                        move |client, _| async move { client.request_battery_update(&id).await },
+                    ),
+                ])
             }
             Message::MprisPlayersUpdated(players) => {
                 tracing::info!("MPRIS players updated: {} players", players.len());
@@ -834,31 +1091,21 @@ impl cosmic::Application for CConnectApplet {
             }
             Message::SaveNickname(device_id) => {
                 let nickname = self.nickname_input.clone();
-                self.renaming_device = None;
-                self.nickname_input.clear();
-
-                Task::perform(
-                    async move {
-                        if let Ok((client, _)) = DbusClient::connect().await {
-                            if let Err(e) = client.set_device_nickname(&device_id, &nickname).await
-                            {
-                                tracing::error!("Failed to set nickname: {}", e);
-                            }
-                        }
-                    },
-                    |_| cosmic::Action::App(Message::RefreshDevices),
-                )
+                // Form stays open until completion
+                let id = device_id.clone();
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::SaveNickname,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::SaveNickname,
+                        move |client, _| async move { client.set_device_nickname(&id, &nickname).await },
+                    ),
+                ])
             }
-            Message::RingDevice(device_id) => Task::perform(
-                async move {
-                    if let Ok((client, _)) = DbusClient::connect().await {
-                        if let Err(e) = client.find_phone(&device_id).await {
-                            tracing::error!("Failed to ring device: {}", e);
-                        }
-                    }
-                },
-                |_| cosmic::Action::None,
-            ),
+
             Message::MprisSetVolume(player, volume) => {
                 tracing::info!("MPRIS set volume: {} to {}", player, volume);
                 Task::perform(
@@ -1202,6 +1449,152 @@ impl cosmic::Application for CConnectApplet {
             Message::Surface(action) => {
                 cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(action)))
             }
+            // Loading state management
+            Message::OperationStarted(device_id, op_type) => {
+                self.pending_operations.insert((device_id, op_type));
+                Task::none()
+            }
+            Message::OperationCompleted(device_id, op_type) => {
+                self.pending_operations
+                    .remove(&(device_id.clone(), op_type));
+                // Cleanup forms on completion
+                match op_type {
+                    OperationType::AddRunCommand => self.add_run_command_device = None,
+                    OperationType::AddSyncFolder => self.add_sync_folder_device = None,
+                    OperationType::SaveNickname => self.renaming_device = None,
+                    OperationType::Ping => {
+                        return cosmic::task::message(cosmic::Action::App(
+                            Message::OperationSucceeded(
+                                device_id,
+                                op_type,
+                                "Ping sent successfully".into(),
+                            ),
+                        ));
+                    }
+                    OperationType::ShareText => {
+                        return cosmic::task::message(cosmic::Action::App(
+                            Message::OperationSucceeded(
+                                device_id,
+                                op_type,
+                                "Text shared successfully".into(),
+                            ),
+                        ));
+                    }
+                    OperationType::ShareUrl => {
+                        return cosmic::task::message(cosmic::Action::App(
+                            Message::OperationSucceeded(
+                                device_id,
+                                op_type,
+                                "URL shared successfully".into(),
+                            ),
+                        ));
+                    }
+                    OperationType::FindPhone => {
+                        return cosmic::task::message(cosmic::Action::App(
+                            Message::OperationSucceeded(
+                                device_id,
+                                op_type,
+                                "Find Phone request sent".into(),
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+
+                // Always refresh devices after an operation completes
+                cosmic::task::message(cosmic::Action::App(Message::RefreshDevices))
+            }
+            Message::OperationSucceeded(device_id, op_type, message) => {
+                self.pending_operations.remove(&(device_id, op_type));
+                self.notification = Some(AppNotification {
+                    message,
+                    kind: NotificationType::Success,
+                });
+                self.notification_progress = 0.0; // Start animation
+                Task::perform(
+                    async { tokio::time::sleep(std::time::Duration::from_secs(3)).await },
+                    |_| cosmic::Action::App(Message::ClearNotification),
+                )
+            }
+            Message::OperationFailed(device_id, op_type, error) => {
+                self.pending_operations.remove(&(device_id, op_type));
+                self.notification = Some(AppNotification {
+                    message: format!("Error: {}", error),
+                    kind: NotificationType::Error,
+                });
+                self.notification_progress = 0.0; // Start animation
+                Task::perform(
+                    async { tokio::time::sleep(std::time::Duration::from_secs(5)).await },
+                    |_| cosmic::Action::App(Message::ClearNotification),
+                )
+            }
+            Message::ShowNotification(message, kind) => {
+                self.notification = Some(AppNotification { message, kind });
+                self.notification_progress = 0.0; // Start animation
+                Task::perform(
+                    async { tokio::time::sleep(std::time::Duration::from_secs(5)).await },
+                    |_| cosmic::Action::App(Message::ClearNotification),
+                )
+            }
+            Message::ClearNotification => {
+                self.notification = None;
+                Task::none()
+            }
+            Message::KeyPress(key, modifiers) => {
+                let mut handled = false;
+                if let cosmic::iced::keyboard::Key::Named(
+                    cosmic::iced::keyboard::key::Named::Escape,
+                ) = key
+                {
+                    // Handle Esc key to close overlays/forms one by one
+                    if self.notification.is_some() {
+                        self.notification = None;
+                        handled = true;
+                    } else if self.add_run_command_device.is_some() {
+                        self.add_run_command_device = None;
+                        handled = true;
+                    } else if self.add_sync_folder_device.is_some() {
+                        self.add_sync_folder_device = None;
+                        handled = true;
+                    } else if self.renaming_device.is_some() {
+                        self.renaming_device = None;
+                        handled = true;
+                    } else if self.run_command_settings_device.is_some() {
+                        self.run_command_settings_device = None;
+                        handled = true;
+                    } else if self.file_sync_settings_device.is_some() {
+                        self.file_sync_settings_device = None;
+                        handled = true;
+                    } else if self.remotedesktop_settings_device.is_some() {
+                        self.remotedesktop_settings_device = None;
+                        handled = true;
+                    } else if self.expanded_device_settings.is_some() {
+                        self.expanded_device_settings = None;
+                        handled = true;
+                    } else if self.view_mode == ViewMode::History {
+                        self.view_mode = ViewMode::Devices;
+                        handled = true;
+                    }
+
+                    if !handled {
+                        // If nothing was handled, close the popup
+                        if let Some(id) = self.popup {
+                            // destroy_popup comes from cosmic::surface::action
+                            return cosmic::task::message(cosmic::Action::Cosmic(
+                                cosmic::app::Action::Surface(destroy_popup(id)),
+                            ));
+                        }
+                    }
+                }
+
+                if key == cosmic::iced::keyboard::Key::Character("r".into()) && modifiers.control()
+                {
+                    return cosmic::task::message(cosmic::Action::App(Message::RefreshDevices));
+                }
+
+                Task::none()
+            }
+            // File Transfer events
             Message::TransferProgress(tid, device_id, filename, cur, tot, dir) => {
                 self.active_transfers.insert(
                     tid,
@@ -1224,13 +1617,232 @@ impl cosmic::Application for CConnectApplet {
                 }
                 Task::none()
             }
+
+            Message::ShowFileSyncSettings(device_id) => {
+                self.file_sync_settings_device = Some(device_id.clone());
+                // Also load folders when showing settings
+                return cosmic::task::message(cosmic::Action::App(Message::LoadSyncFolders(
+                    device_id,
+                )));
+            }
+            Message::CloseFileSyncSettings => {
+                self.file_sync_settings_device = None;
+                self.add_sync_folder_device = None; // Also close add form if open
+                Task::none()
+            }
+            Message::LoadSyncFolders(device_id) => match tokio::runtime::Handle::try_current() {
+                Ok(_) => {
+                    let future = async move {
+                        match DbusClient::connect().await {
+                            Ok((client, _)) => {
+                                match client.get_sync_folders(device_id.clone()).await {
+                                    Ok(folders) => Some((device_id, folders)),
+                                    Err(e) => {
+                                        tracing::error!("Failed to get sync folders: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect to dbus: {}", e);
+                                None
+                            }
+                        }
+                    };
+
+                    Task::perform(future, |result| {
+                        if let Some((device_id, folders)) = result {
+                            cosmic::Action::App(Message::SyncFoldersLoaded(device_id, folders))
+                        } else {
+                            cosmic::Action::None
+                        }
+                    })
+                }
+                Err(_) => Task::none(),
+            },
+            Message::SyncFoldersLoaded(device_id, folders) => {
+                self.sync_folders.insert(device_id, folders);
+                Task::none()
+            }
+            Message::StartAddSyncFolder(device_id) => {
+                self.add_sync_folder_device = Some(device_id);
+                self.add_sync_folder_path = String::new();
+                self.add_sync_folder_id = String::new();
+                self.add_sync_folder_strategy = "last_modified_wins".to_string();
+                Task::none()
+            }
+            Message::CancelAddSyncFolder => {
+                self.add_sync_folder_device = None;
+                Task::none()
+            }
+            Message::UpdateSyncFolderPathInput(path) => {
+                self.add_sync_folder_path = path;
+                // Auto-generate folder ID from path if empty
+                if self.add_sync_folder_id.is_empty() {
+                    if let Some(name) = std::path::Path::new(&self.add_sync_folder_path).file_name()
+                    {
+                        self.add_sync_folder_id = name.to_string_lossy().to_string();
+                    }
+                }
+                Task::none()
+            }
+            Message::UpdateSyncFolderIdInput(id) => {
+                self.add_sync_folder_id = id;
+                Task::none()
+            }
+            Message::UpdateSyncFolderStrategy(strategy) => {
+                self.add_sync_folder_strategy = strategy;
+                Task::none()
+            }
+            Message::AddSyncFolder(device_id) => {
+                if self.add_sync_folder_path.is_empty() || self.add_sync_folder_id.is_empty() {
+                    return Task::none();
+                }
+
+                let folder_id = self.add_sync_folder_id.clone();
+                let path = self.add_sync_folder_path.clone();
+                let strategy = self.add_sync_folder_strategy.clone();
+                let id = device_id.clone();
+
+                // Form stays open until completion
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::AddSyncFolder,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::AddSyncFolder,
+                        move |client, _| async move {
+                            client
+                                .add_sync_folder(id.clone(), folder_id, path, strategy)
+                                .await
+                        },
+                    ),
+                ])
+            }
+            Message::RemoveSyncFolder(device_id, folder_id) => device_operation_task(
+                device_id,
+                "remove_sync_folder",
+                move |client, dev_id| async move { client.remove_sync_folder(dev_id, folder_id).await },
+            ),
+
+            // Run Command logic
+            Message::ShowRunCommandSettings(device_id) => {
+                self.run_command_settings_device = Some(device_id.clone());
+                // Also load commands
+                let _ = self.update(Message::LoadRunCommands(device_id));
+                Task::none()
+            }
+            Message::CloseRunCommandSettings => {
+                self.run_command_settings_device = None;
+                self.add_run_command_device = None; // Also close add form
+                Task::none()
+            }
+            Message::LoadRunCommands(device_id) => match tokio::runtime::Handle::try_current() {
+                Ok(_) => {
+                    let future = async move {
+                        match DbusClient::connect().await {
+                            Ok((client, _)) => {
+                                match client.get_run_commands(device_id.clone()).await {
+                                    Ok(commands) => Some((device_id, commands)),
+                                    Err(e) => {
+                                        tracing::error!("Failed to get run commands: {}", e);
+                                        None
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect to dbus: {}", e);
+                                None
+                            }
+                        }
+                    };
+                    Task::perform(future, |result| {
+                        if let Some((device_id, commands)) = result {
+                            cosmic::Action::App(Message::RunCommandsLoaded(device_id, commands))
+                        } else {
+                            cosmic::Action::None
+                        }
+                    })
+                }
+                Err(_) => Task::none(),
+            },
+            Message::RunCommandsLoaded(device_id, commands) => {
+                self.run_commands.insert(device_id, commands);
+                Task::none()
+            }
+            Message::StartAddRunCommand(device_id) => {
+                self.add_run_command_device = Some(device_id);
+                self.add_run_command_name = String::new();
+                self.add_run_command_cmd = String::new();
+                Task::none()
+            }
+            Message::CancelAddRunCommand => {
+                self.add_run_command_device = None;
+                Task::none()
+            }
+            Message::UpdateRunCommandNameInput(name) => {
+                self.add_run_command_name = name;
+                Task::none()
+            }
+            Message::UpdateRunCommandCmdInput(cmd) => {
+                self.add_run_command_cmd = cmd;
+                Task::none()
+            }
+            Message::AddRunCommand(device_id) => {
+                if self.add_run_command_name.is_empty() || self.add_run_command_cmd.is_empty() {
+                    return Task::none();
+                }
+
+                let name = self.add_run_command_name.clone();
+                let command = self.add_run_command_cmd.clone();
+                // Generate a command ID (simple slug or UUID-like)
+                let command_id = name.to_lowercase().replace(" ", "_");
+                let id = device_id.clone();
+
+                // Form stays open until completion
+                Task::batch(vec![
+                    Task::done(cosmic::Action::App(Message::OperationStarted(
+                        device_id.clone(),
+                        OperationType::AddRunCommand,
+                    ))),
+                    device_operation_with_completion(
+                        device_id,
+                        OperationType::AddRunCommand,
+                        move |client, _| async move {
+                            client
+                                .add_run_command(id.clone(), command_id, name, command)
+                                .await
+                        },
+                    ),
+                ])
+            }
+            Message::RemoveRunCommand(device_id, command_id) => device_operation_task(
+                device_id,
+                "remove_run_command",
+                move |client, dev_id| async move { client.remove_run_command(dev_id, command_id).await },
+            ),
         }
     }
 
     fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
         struct DbusSubscription;
 
-        cosmic::iced::Subscription::run_with_id(
+        let key_sub = cosmic::iced::event::listen_with(|event, _status, _window_id| {
+            if let cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                ..
+            }) = event
+            {
+                Some(Message::KeyPress(key, modifiers))
+            } else {
+                None
+            }
+        });
+
+        let dbus_sub = cosmic::iced::Subscription::run_with_id(
             std::any::TypeId::of::<DbusSubscription>(),
             cosmic::iced::futures::stream::unfold(
                 None,
@@ -1299,7 +1911,11 @@ impl cosmic::Application for CConnectApplet {
                     }
                 },
             ),
-        )
+        );
+
+        let tick_sub = cosmic::iced::window::frames().map(|(_, instant)| Message::Tick(instant));
+
+        cosmic::iced::Subscription::batch(vec![dbus_sub, key_sub, tick_sub])
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
@@ -1374,31 +1990,33 @@ impl cosmic::Application for CConnectApplet {
 
 impl CConnectApplet {
     fn history_view(&self) -> Element<'_, Message> {
-        let mut history_list = column![].spacing(4);
+        let mut history_list = column![].spacing(SPACE_XXS);
 
         if self.history.is_empty() {
             history_list = history_list.push(
-                container(text("No history events").size(14))
+                container(cosmic::widget::text::body("No history events"))
                     .width(Length::Fill)
                     .align_x(cosmic::iced::Alignment::Center)
-                    .padding(20),
+                    .padding(SPACE_XL),
             );
         } else {
             // In reverse order (newest first)
             for event in self.history.iter().rev() {
                 let row = row![
                     column![
-                        text(&event.event_type).size(14),
-                        text(&event.device_name).size(12),
+                        cosmic::widget::text::body(&event.event_type),
+                        cosmic::widget::text::caption(&event.device_name),
                     ],
                     horizontal_space(),
-                    text(&event.details).size(12).width(Length::Fixed(150.0)),
+                    cosmic::widget::text::caption(&event.details).width(Length::Fixed(150.0)),
                 ]
                 .width(Length::Fill)
                 .align_y(cosmic::iced::Alignment::Center);
 
                 history_list = history_list.push(
-                    container(row).padding(8), //.style(cosmic::theme::Container::Card),
+                    container(row)
+                        .padding(SPACE_S)
+                        .class(cosmic::theme::Container::Card),
                 );
             }
         }
@@ -1407,6 +2025,63 @@ impl CConnectApplet {
     }
 
     fn popup_view(&self) -> Element<'_, Message> {
+        let content = self.inner_view();
+
+        if let Some(notification) = &self.notification {
+            let icon_name = match notification.kind {
+                NotificationType::Error => "dialog-error-symbolic",
+                NotificationType::Success => "emblem-ok-symbolic",
+                NotificationType::Info => "dialog-information-symbolic",
+            };
+
+            // Hack: Card works, but we ideally want Success/Danger.
+            // Since Container::Success/Danger might not be exposed or mapped correctly in styling yet,
+            // we will stick to Card for now but use icon/text to differentiate, or try to use proper classes if available.
+            // Actually, cosmic::theme::Container has variants. Let's try to map them if possible, otherwise Card + Icon is safe.
+            // For now, let's use Card for everything to be safe on compilation, but maybe colored text?
+            // Wait, I can't easily change container background without correct theme support.
+            // Let's stick to Card and just change the icon.
+
+            column![
+                container(
+                    container(
+                        row![
+                            icon::from_name(icon_name),
+                            text(notification.message.clone())
+                        ]
+                        .spacing(SPACE_XS)
+                    )
+                    .padding(SPACE_S)
+                    .class(cosmic::theme::Container::Card)
+                )
+                .height(Length::Fixed(self.notification_progress * 50.0))
+                .clip(true),
+                content
+            ]
+            .spacing(if self.notification_progress > 0.0 {
+                SPACE_S
+            } else {
+                0.0
+            })
+            .into()
+        } else {
+            content
+        }
+    }
+
+    fn inner_view(&self) -> Element<'_, Message> {
+        // Settings overrides
+        if let Some(device_id) = &self.remotedesktop_settings_device {
+            if let Some(settings) = self.remotedesktop_settings.get(device_id) {
+                return self.remotedesktop_settings_view(device_id, settings);
+            }
+        }
+        if let Some(device_id) = &self.file_sync_settings_device {
+            return self.file_sync_settings_view(device_id);
+        }
+        if let Some(device_id) = &self.run_command_settings_device {
+            return self.run_command_settings_view(device_id);
+        }
         let view_switcher = row![
             button::text("Devices")
                 .on_press(Message::SetViewMode(ViewMode::Devices))
@@ -1415,7 +2090,7 @@ impl CConnectApplet {
                 .on_press(Message::SetViewMode(ViewMode::History))
                 .width(Length::Fill)
         ]
-        .spacing(4)
+        .spacing(SPACE_XXS)
         .width(Length::Fill);
 
         if self.view_mode == ViewMode::History {
@@ -1424,8 +2099,8 @@ impl CConnectApplet {
                 divider::horizontal::default(),
                 self.history_view()
             ]
-            .spacing(8)
-            .padding(12)
+            .spacing(SPACE_S)
+            .padding(SPACE_M)
             .into();
         }
 
@@ -1434,7 +2109,7 @@ impl CConnectApplet {
             .width(Length::Fill);
 
         let header = row![view_switcher,]
-            .spacing(8)
+            .spacing(SPACE_S)
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill);
 
@@ -1443,52 +2118,61 @@ impl CConnectApplet {
                 search_input,
                 container(
                     row![
-                        cosmic::widget::text::caption("Scanning").class(
-                            cosmic::theme::Text::Color(cosmic::iced::Color::from_rgb(
-                                0.5, 0.5, 0.5
-                            ))
-                        ),
-                        icon::from_name("process-working-symbolic").size(16),
+                        icon::from_name("process-working-symbolic").size(ICON_S),
+                        cosmic::widget::text::caption("Scanning..."),
                     ]
-                    .spacing(8)
+                    .spacing(SPACE_S)
                     .align_y(cosmic::iced::Alignment::Center)
                 )
-                .padding(4)
+                .padding(SPACE_XXS)
             ]
-            .spacing(8)
+            .spacing(SPACE_S)
         } else {
             row![
                 search_input,
-                button::icon(icon::from_name("view-refresh-symbolic"))
-                    .on_press(Message::RefreshDevices)
-                    .padding(4)
+                cosmic::widget::tooltip(
+                    button::icon(icon::from_name("view-refresh-symbolic"))
+                        .on_press(Message::RefreshDevices)
+                        .padding(SPACE_XXS),
+                    "Refresh devices",
+                    cosmic::widget::tooltip::Position::Bottom,
+                )
             ]
-            .spacing(8)
+            .spacing(SPACE_S)
         };
 
         // MPRIS media controls section
         let mpris_section = self.mpris_controls_view();
 
-        let content = if self.devices.is_empty() {
-            column![
-                container(icon::from_name("phone-disconnected-symbolic").size(48))
-                    .padding(Padding::from([8, 0, 12, 0])),
-                text("No Devices Found").size(18),
-                text("Make sure:").size(13),
-                text("• CConnect app is installed on your devices").size(12),
-                text("• Devices are on the same network").size(12),
-                text("• Firewall ports 1814-1864 are open").size(12),
-                container(
-                    button::text("Refresh")
-                        .on_press(Message::RefreshDevices)
-                        .padding(8)
-                )
-                .padding(Padding::from([12, 0, 0, 0])),
-            ]
-            .spacing(8)
-            .padding(24)
+        let content: Element<'_, Message> = if self.devices.is_empty() {
+            container(
+                column![
+                    container(icon::from_name("phone-disconnected-symbolic").size(ICON_XL))
+                        .padding(Padding::new(0.0).bottom(SPACE_M)),
+                    cosmic::widget::text::heading("No Devices Connected"),
+                    column![
+                        cosmic::widget::text::body("Make sure your devices are:"),
+                        cosmic::widget::text::caption("• On the same network"),
+                        cosmic::widget::text::caption("• Running the CConnect app"),
+                    ]
+                    .spacing(SPACE_XS)
+                    .align_x(Horizontal::Center),
+                    container(
+                        button::text("Refresh Devices")
+                            .on_press(Message::RefreshDevices)
+                            .padding(SPACE_S)
+                    )
+                    .padding(Padding::new(0.0).top(SPACE_M)),
+                ]
+                .spacing(SPACE_S)
+                .align_x(Horizontal::Center),
+            )
+            .padding(SPACE_XXL)
             .width(Length::Fill)
+            .height(Length::Fill)
             .align_x(Horizontal::Center)
+            .align_y(cosmic::iced::Alignment::Center)
+            .into()
         } else {
             // Group devices by category
             let mut connected = Vec::new();
@@ -1519,13 +2203,13 @@ impl CConnectApplet {
                 }
             }
 
-            let mut device_groups = column![].spacing(0).width(Length::Fill);
+            let mut device_groups = column![].spacing(SPACE_XXS).width(Length::Fill);
 
             // Connected devices section
             if !connected.is_empty() {
                 device_groups = device_groups.push(
-                    container(text("Connected").size(12))
-                        .padding(Padding::from([8.0, 12.0, 4.0, 12.0]))
+                    container(cosmic::widget::text::caption("Connected"))
+                        .padding(Padding::from([SPACE_S, SPACE_M, SPACE_XXS, SPACE_M]))
                         .width(Length::Fill),
                 );
                 for device_state in &connected {
@@ -1539,8 +2223,8 @@ impl CConnectApplet {
                     device_groups = device_groups.push(divider::horizontal::default());
                 }
                 device_groups = device_groups.push(
-                    container(text("Available").size(12))
-                        .padding(Padding::from([8.0, 12.0, 4.0, 12.0]))
+                    container(cosmic::widget::text::caption("Available"))
+                        .padding(Padding::from([SPACE_S, SPACE_M, SPACE_XXS, SPACE_M]))
                         .width(Length::Fill),
                 );
                 for device_state in &available {
@@ -1554,8 +2238,8 @@ impl CConnectApplet {
                     device_groups = device_groups.push(divider::horizontal::default());
                 }
                 device_groups = device_groups.push(
-                    container(text("Offline").size(12))
-                        .padding(Padding::from([8.0, 12.0, 4.0, 12.0]))
+                    container(cosmic::widget::text::caption("Offline"))
+                        .padding(Padding::from([SPACE_S, SPACE_M, SPACE_XXS, SPACE_M]))
                         .width(Length::Fill),
                 );
                 for device_state in &offline {
@@ -1563,15 +2247,17 @@ impl CConnectApplet {
                 }
             }
 
-            device_groups
+            device_groups.into()
         };
+
+        let content = content;
 
         let popup_content = column![
             container(header)
-                .padding(Padding::from([8.0, 12.0]))
+                .padding(Padding::from([SPACE_S, SPACE_M]))
                 .width(Length::Fill),
             container(controls)
-                .padding(Padding::from([0.0, 12.0, 8.0, 12.0]))
+                .padding(Padding::from([0.0, SPACE_M, SPACE_S, SPACE_M]))
                 .width(Length::Fill),
             divider::horizontal::default(),
             mpris_section,
@@ -1600,10 +2286,10 @@ impl CConnectApplet {
 
         // Player name/label
         let player_name = row![
-            icon::from_name("multimedia-player-symbolic").size(16),
-            text(selected_player).size(13),
+            icon::from_name("multimedia-player-symbolic").size(ICON_S),
+            cosmic::widget::text::body(selected_player),
         ]
-        .spacing(6)
+        .spacing(SPACE_XS)
         .align_y(cosmic::iced::Alignment::Center);
 
         // Metadata display
@@ -1613,18 +2299,18 @@ impl CConnectApplet {
 
         if let Some(state) = state {
             if let Some(title) = &state.metadata.title {
-                metadata_col = metadata_col.push(text(title).size(14));
+                metadata_col = metadata_col.push(cosmic::widget::text::body(title));
             }
             if let Some(artist) = &state.metadata.artist {
-                metadata_col = metadata_col.push(text(artist).size(13));
+                metadata_col = metadata_col.push(cosmic::widget::text::body(artist));
             }
             if let Some(album) = &state.metadata.album {
-                metadata_col = metadata_col.push(text(album).size(12));
+                metadata_col = metadata_col.push(cosmic::widget::text::caption(album));
             }
             // Use album art if available (placeholder for now/Url later)
             // If using libcosmic image support
         } else {
-            metadata_col = metadata_col.push(text("Unknown").size(14));
+            metadata_col = metadata_col.push(cosmic::widget::text::body("Unknown"));
         }
 
         // Playback controls
@@ -1643,32 +2329,48 @@ impl CConnectApplet {
         };
 
         let controls = row![
-            button::icon(icon::from_name("media-skip-backward-symbolic").size(16))
-                .on_press(Message::MprisControl(
-                    selected_player.clone(),
-                    "Previous".to_string()
-                ))
-                .padding(6),
-            button::icon(icon::from_name(play_icon).size(16))
-                .on_press(Message::MprisControl(
-                    selected_player.clone(),
-                    play_action.to_string()
-                ))
-                .padding(6),
-            button::icon(icon::from_name("media-playback-stop-symbolic").size(16))
-                .on_press(Message::MprisControl(
-                    selected_player.clone(),
-                    "Stop".to_string()
-                ))
-                .padding(6),
-            button::icon(icon::from_name("media-skip-forward-symbolic").size(16))
-                .on_press(Message::MprisControl(
-                    selected_player.clone(),
-                    "Next".to_string()
-                ))
-                .padding(6),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("media-skip-backward-symbolic").size(ICON_S))
+                    .on_press(Message::MprisControl(
+                        selected_player.clone(),
+                        "Previous".to_string(),
+                    ))
+                    .padding(SPACE_XS),
+                "Previous",
+                cosmic::widget::tooltip::Position::Bottom,
+            ),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name(play_icon).size(ICON_S))
+                    .on_press(Message::MprisControl(
+                        selected_player.clone(),
+                        play_action.to_string()
+                    ))
+                    .padding(SPACE_XS),
+                play_action,
+                cosmic::widget::tooltip::Position::Bottom,
+            ),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("media-playback-stop-symbolic").size(ICON_S))
+                    .on_press(Message::MprisControl(
+                        selected_player.clone(),
+                        "Stop".to_string(),
+                    ))
+                    .padding(SPACE_XS),
+                "Stop",
+                cosmic::widget::tooltip::Position::Bottom,
+            ),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("media-skip-forward-symbolic").size(ICON_S))
+                    .on_press(Message::MprisControl(
+                        selected_player.clone(),
+                        "Next".to_string(),
+                    ))
+                    .padding(SPACE_XS),
+                "Next",
+                cosmic::widget::tooltip::Position::Bottom,
+            ),
         ]
-        .spacing(4)
+        .spacing(SPACE_XXS)
         .align_y(cosmic::iced::Alignment::Center);
 
         let art_handle = self.mpris_album_art.get(selected_player);
@@ -1681,24 +2383,27 @@ impl CConnectApplet {
                     .content_fit(cosmic::iced::ContentFit::Cover),
                 metadata_col
             ]
-            .spacing(12)
+            .spacing(SPACE_M)
             .align_y(cosmic::iced::Alignment::Center)
         } else {
             row![
-                container(icon::from_name("audio-x-generic-symbolic").size(32))
+                container(icon::from_name("audio-x-generic-symbolic").size(ICON_L))
                     .width(Length::Fixed(50.0))
                     .align_x(cosmic::iced::Alignment::Center),
                 metadata_col
             ]
-            .spacing(12)
+            .spacing(SPACE_M)
             .align_y(cosmic::iced::Alignment::Center)
         };
 
         let content = column![player_name, info_row, controls]
-            .spacing(8)
-            .padding(Padding::from([8.0, 12.0]));
+            .spacing(SPACE_S)
+            .padding(Padding::from([SPACE_S, SPACE_M]));
 
-        container(content).width(Length::Fill).into()
+        container(content)
+            .width(Length::Fill)
+            .class(cosmic::theme::Container::Card)
+            .into()
     }
 
     fn device_row<'a>(&'a self, device_state: &'a DeviceState) -> Element<'a, Message> {
@@ -1718,16 +2423,18 @@ impl CConnectApplet {
         let display_name = nickname.unwrap_or(&device.info.device_name);
 
         let mut name_status_col = column![
-            text(display_name).size(16),
+            cosmic::widget::text::heading(display_name),
             connection_status_styled_text(device.connection_state, device.pairing_status),
         ]
-        .spacing(2);
+        .spacing(SPACE_XXXS);
 
         // Add last seen timestamp for disconnected devices
         if !device.is_connected() && device.last_seen > 0 {
             let last_seen_text = format_last_seen(device.last_seen);
-            name_status_col =
-                name_status_col.push(text(format!("Last seen: {}", last_seen_text)).size(10));
+            name_status_col = name_status_col.push(cosmic::widget::text::caption(format!(
+                "Last seen: {}",
+                last_seen_text
+            )));
         }
 
         // Info row with optional battery indicator
@@ -1737,16 +2444,27 @@ impl CConnectApplet {
                 row![
                     name_status_col,
                     row![
-                        icon::from_name(battery_icon).size(14),
-                        text(format!("{}%", level)).size(11),
+                        icon::from_name(battery_icon).size(ICON_14),
+                        cosmic::widget::text::caption(format!("{}%", level)),
                     ]
-                    .spacing(4)
+                    .spacing(SPACE_XXS)
                     .align_y(cosmic::iced::Alignment::Center),
                 ]
             }
-            None => row![name_status_col],
+            None => {
+                if self.loading_battery && device.is_connected() {
+                    row![
+                        name_status_col,
+                        icon::from_name("process-working-symbolic").size(ICON_14)
+                    ]
+                    .spacing(SPACE_S)
+                    .align_y(cosmic::iced::Alignment::Center)
+                } else {
+                    row![name_status_col]
+                }
+            }
         }
-        .spacing(8)
+        .spacing(SPACE_S)
         .align_y(cosmic::iced::Alignment::Center);
 
         // Build actions row
@@ -1755,34 +2473,39 @@ impl CConnectApplet {
         // Main device row layout with connection quality indicator
         let mut content = column![
             row![
-                container(icon::from_name(device_icon).size(28))
+                container(icon::from_name(device_icon).size(ICON_28))
                     .width(Length::Fixed(44.0))
-                    .padding(8),
+                    .padding(SPACE_S),
                 container(
                     column![
-                        icon::from_name(status_icon).size(14),
-                        icon::from_name(quality_icon).size(12),
+                        icon::from_name(status_icon).size(ICON_14),
+                        icon::from_name(quality_icon).size(ICON_XS),
                     ]
-                    .spacing(2)
+                    .spacing(SPACE_XXXS)
                     .align_x(Horizontal::Center)
                 )
                 .width(Length::Fixed(22.0))
-                .padding(Padding::new(0.0).right(4.0)),
+                .padding(Padding::new(0.0).right(SPACE_XXS)),
                 container(info_row)
                     .width(Length::Fill)
                     .align_x(Horizontal::Left)
-                    .padding(Padding::from([4.0, 0.0])),
+                    .padding(Padding::from([SPACE_XXS, 0.0])),
             ]
-            .spacing(4)
+            .spacing(SPACE_XXS)
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill),
             container(actions_row)
                 .width(Length::Fill)
-                .padding(Padding::new(0.0).bottom(4.0).left(66.0).right(12.0))
+                .padding(
+                    Padding::new(0.0)
+                        .bottom(SPACE_XXS)
+                        .left(66.0)
+                        .right(SPACE_M)
+                )
                 .align_x(Horizontal::Left),
         ]
-        .spacing(4)
-        .padding(Padding::from([12.0, 16.0]))
+        .spacing(SPACE_XXS)
+        .padding(Padding::from([SPACE_M, SPACE_L]))
         .width(Length::Fill);
 
         // Add settings panel if this device is expanded
@@ -1790,7 +2513,7 @@ impl CConnectApplet {
             if let Some(config) = self.device_configs.get(device_id) {
                 content = content.push(
                     container(self.device_settings_panel(device_id, device, config))
-                        .padding(Padding::from([8, 0, 0, 66])), // Indent under device name
+                        .padding(Padding::from([SPACE_S, 0.0, 0.0, 66.0])), // Indent under device name
                 );
             }
         }
@@ -1800,12 +2523,23 @@ impl CConnectApplet {
             if let Some(settings) = self.remotedesktop_settings.get(device_id) {
                 content = content.push(
                     container(self.remotedesktop_settings_view(device_id, settings))
-                        .padding(Padding::from([8, 0, 0, 66])), // Indent under device name
+                        .padding(Padding::from([SPACE_S, 0.0, 0.0, 66.0])), // Indent under device name
                 );
             }
         }
 
-        container(content).width(Length::Fill).into()
+        // Add FileSync settings panel if active
+        if self.file_sync_settings_device.as_ref() == Some(device_id) {
+            content = content.push(
+                container(self.file_sync_settings_view(device_id))
+                    .padding(Padding::from([SPACE_S, 0.0, 0.0, 66.0])), // Indent under device name
+            );
+        }
+
+        container(content)
+            .width(Length::Fill)
+            .class(cosmic::theme::Container::Card)
+            .into()
     }
 
     fn build_device_actions<'a>(
@@ -1813,55 +2547,65 @@ impl CConnectApplet {
         device: &'a Device,
         device_id: &str,
     ) -> cosmic::iced::widget::Row<'a, Message, cosmic::Theme> {
-        let mut actions = row![].spacing(8);
+        let mut actions = row![].spacing(SPACE_S);
 
         // Quick actions for connected & paired devices
         if device.is_connected() && device.is_paired() {
-            actions = actions
-                .push(action_button_with_tooltip(
-                    "user-available-symbolic",
-                    "Send ping",
-                    Message::SendPing(device_id.to_string()),
-                ))
-                .push(action_button_with_tooltip(
-                    "document-send-symbolic",
-                    "Send file",
-                    Message::SendFile(device_id.to_string()),
-                ))
-                .push(action_button_with_tooltip(
-                    "insert-text-symbolic",
-                    "Share clipboard text",
-                    Message::ShareText(device_id.to_string()),
-                ));
-
-            // Add Find My Phone if supported (or always for now as capability check might be tricky without exact string)
-            if device.has_incoming_capability("cconnect.findmyphone.request") {
-                actions = actions.push(action_button_with_tooltip(
-                    "find-location-symbolic",
-                    "Ring device",
-                    Message::RingDevice(device_id.to_string()),
-                ));
-            }
-
-            actions = actions.push(action_button_with_tooltip(
-                "send-to-symbolic",
-                "Share URL",
-                Message::ShareUrl(device_id.to_string()),
+            let is_pinging = self
+                .pending_operations
+                .contains(&(device_id.to_string(), OperationType::Ping));
+            actions = actions.push(action_button_with_tooltip_loading(
+                "user-available-symbolic",
+                "Send ping",
+                Message::SendPing(device_id.to_string()),
+                is_pinging,
             ));
 
-            if matches!(device.info.device_type, DeviceType::Phone) {
-                actions = actions.push(action_button_with_tooltip(
+            if device.has_incoming_capability("cconnect.share") {
+                actions = actions
+                    .push(action_button_with_tooltip(
+                        "document-send-symbolic",
+                        "Send file",
+                        Message::SendFile(device_id.to_string()),
+                    ))
+                    .push(action_button_with_tooltip_loading(
+                        "insert-text-symbolic",
+                        "Share clipboard text",
+                        Message::ShareText(device_id.to_string()),
+                        self.pending_operations
+                            .contains(&(device_id.to_string(), OperationType::ShareText)),
+                    ))
+                    .push(action_button_with_tooltip_loading(
+                        "send-to-symbolic",
+                        "Share URL",
+                        Message::ShareUrl(device_id.to_string()),
+                        self.pending_operations
+                            .contains(&(device_id.to_string(), OperationType::ShareUrl)),
+                    ));
+            }
+
+            // Add Find My Phone if supported
+            if device.has_incoming_capability("cconnect.findmyphone.request") {
+                let is_ringing = self
+                    .pending_operations
+                    .contains(&(device_id.to_string(), OperationType::FindPhone));
+                actions = actions.push(action_button_with_tooltip_loading(
                     "find-location-symbolic",
-                    "Find my phone",
+                    "Ring device",
                     Message::FindPhone(device_id.to_string()),
+                    is_ringing,
                 ));
             }
 
             // Battery refresh button
-            actions = actions.push(action_button_with_tooltip(
+            let is_refreshing_battery = self
+                .pending_operations
+                .contains(&(device_id.to_string(), OperationType::Battery));
+            actions = actions.push(action_button_with_tooltip_loading(
                 "view-refresh-symbolic",
                 "Refresh battery status",
                 Message::RequestBatteryUpdate(device_id.to_string()),
+                is_refreshing_battery,
             ));
         }
 
@@ -1875,12 +2619,36 @@ impl CConnectApplet {
         }
 
         // Pair/Unpair button
-        let (label, message) = if device.is_paired() {
-            ("Unpair", Message::UnpairDevice(device_id.to_string()))
+        let (label, message, is_loading) = if device.is_paired() {
+            (
+                "Unpair",
+                Message::UnpairDevice(device_id.to_string()),
+                self.pending_operations
+                    .contains(&(device_id.to_string(), OperationType::Unpair)),
+            )
         } else {
-            ("Pair", Message::PairDevice(device_id.to_string()))
+            (
+                "Pair",
+                Message::PairDevice(device_id.to_string()),
+                self.pending_operations
+                    .contains(&(device_id.to_string(), OperationType::Pair)),
+            )
         };
-        actions = actions.push(button::text(label).on_press(message).padding(6));
+
+        if is_loading {
+            actions = actions.push(cosmic::widget::tooltip(
+                button::icon(icon::from_name("process-working-symbolic").size(ICON_S))
+                    .padding(SPACE_XS),
+                if label == "Pair" {
+                    "Pairing..."
+                } else {
+                    "Unpairing..."
+                },
+                cosmic::widget::tooltip::Position::Bottom,
+            ));
+        } else {
+            actions = actions.push(button::text(label).on_press(message).padding(SPACE_XS));
+        }
         actions
     }
 
@@ -1897,8 +2665,8 @@ impl CConnectApplet {
         let override_count = config.count_plugin_overrides();
 
         // Header with close button
-        let mut header_row = row![text("Plugin Settings").size(14),]
-            .spacing(8)
+        let mut header_row = row![cosmic::widget::text::body("Plugin Settings"),]
+            .spacing(SPACE_S)
             .align_y(cosmic::iced::Alignment::Center);
 
         // Add override count badge if any overrides exist
@@ -1909,16 +2677,20 @@ impl CConnectApplet {
                     override_count,
                     if override_count == 1 { "" } else { "s" }
                 ))
-                .size(12),
+                .size(ICON_XS),
             );
         }
 
         let header = row![
             header_row,
             horizontal_space(),
-            button::icon(icon::from_name("window-close-symbolic").size(14))
-                .on_press(Message::ToggleDeviceSettings(device_id.to_string()))
-                .padding(4)
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
+                    .on_press(Message::ToggleDeviceSettings(device_id.to_string()))
+                    .padding(SPACE_XXS),
+                "Close settings",
+                cosmic::widget::tooltip::Position::Bottom,
+            )
         ]
         .width(Length::Fill)
         .align_y(cosmic::iced::Alignment::Center);
@@ -1929,14 +2701,34 @@ impl CConnectApplet {
                 cosmic::widget::text_input("Nickname", &self.nickname_input)
                     .on_input(Message::UpdateNicknameInput)
                     .width(Length::Fill),
-                button::icon(icon::from_name("emblem-ok-symbolic").size(16))
-                    .on_press(Message::SaveNickname(device_id.to_string()))
-                    .padding(6),
-                button::icon(icon::from_name("process-stop-symbolic").size(16))
-                    .on_press(Message::CancelRenaming)
-                    .padding(6),
+                if self
+                    .pending_operations
+                    .contains(&(device_id.to_string(), OperationType::SaveNickname))
+                {
+                    cosmic::widget::tooltip(
+                        button::icon(icon::from_name("process-working-symbolic").size(ICON_S))
+                            .padding(SPACE_XS),
+                        "Saving...",
+                        cosmic::widget::tooltip::Position::Bottom,
+                    )
+                } else {
+                    cosmic::widget::tooltip(
+                        button::icon(icon::from_name("emblem-ok-symbolic").size(ICON_S))
+                            .on_press(Message::SaveNickname(device_id.to_string()))
+                            .padding(SPACE_XS),
+                        "Save nickname",
+                        cosmic::widget::tooltip::Position::Bottom,
+                    )
+                },
+                cosmic::widget::tooltip(
+                    button::icon(icon::from_name("process-stop-symbolic").size(ICON_S))
+                        .on_press(Message::CancelRenaming)
+                        .padding(SPACE_XS),
+                    "Cancel renaming",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ),
             ]
-            .spacing(8)
+            .spacing(SPACE_S)
             .align_y(cosmic::iced::Alignment::Center)
         } else {
             row![
@@ -1946,18 +2738,22 @@ impl CConnectApplet {
                         .as_deref()
                         .unwrap_or(&device.info.device_name)
                 )
-                .size(14)
+                .size(ICON_14)
                 .width(Length::Fill),
-                button::icon(icon::from_name("document-edit-symbolic").size(14))
-                    .on_press(Message::StartRenaming(device_id.to_string()))
-                    .padding(4)
+                cosmic::widget::tooltip(
+                    button::icon(icon::from_name("document-edit-symbolic").size(ICON_14))
+                        .on_press(Message::StartRenaming(device_id.to_string()))
+                        .padding(SPACE_XXS),
+                    "Edit nickname",
+                    cosmic::widget::tooltip::Position::Bottom,
+                )
             ]
-            .spacing(8)
+            .spacing(SPACE_S)
             .align_y(cosmic::iced::Alignment::Center)
         };
 
         // Build plugin list
-        let mut plugin_list = column![].spacing(8);
+        let mut plugin_list = column![].spacing(SPACE_S);
 
         for plugin_meta in PLUGINS {
             // Check if device supports this plugin
@@ -1970,31 +2766,31 @@ impl CConnectApplet {
 
             // Build plugin row
             let mut plugin_row = row![
-                icon::from_name(plugin_meta.icon).size(16),
-                text(plugin_meta.name).size(12).width(Length::Fill),
+                icon::from_name(plugin_meta.icon).size(ICON_S),
+                cosmic::widget::text::caption(plugin_meta.name).width(Length::Fill),
             ]
-            .spacing(8)
+            .spacing(SPACE_S)
             .align_y(cosmic::iced::Alignment::Center);
 
             // Override indicator (Icon + Text for accessibility)
             if has_override {
                 plugin_row = plugin_row.push(if plugin_enabled {
                     row![
-                        icon::from_name("emblem-ok-symbolic").size(12),
-                        text("Override: On").size(10)
+                        icon::from_name("emblem-ok-symbolic").size(ICON_XS),
+                        cosmic::widget::text::caption("Override: On")
                     ]
-                    .spacing(4)
+                    .spacing(SPACE_XXS)
                     .align_y(cosmic::iced::Alignment::Center)
                 } else {
                     row![
-                        icon::from_name("emblem-important-symbolic").size(12),
-                        text("Override: Off").size(10)
+                        icon::from_name("emblem-important-symbolic").size(ICON_XS),
+                        cosmic::widget::text::caption("Override: Off")
                     ]
-                    .spacing(4)
+                    .spacing(SPACE_XXS)
                     .align_y(cosmic::iced::Alignment::Center)
                 });
             } else {
-                plugin_row = plugin_row.push(text("").size(10));
+                plugin_row = plugin_row.push(cosmic::widget::text::caption(""));
             }
 
             // Toggle switch (only enabled for supported plugins)
@@ -2011,34 +2807,62 @@ impl CConnectApplet {
                     }
                 }));
             } else {
-                // Show disabled toggle for unsupported plugins
-                plugin_row = plugin_row.push(toggler(plugin_enabled));
+                // Show disabled toggle for unsupported plugins with tooltip
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    toggler(plugin_enabled),
+                    cosmic::widget::text::caption(format!(
+                        "{} is not supported by this device",
+                        plugin_meta.name
+                    )),
+                    cosmic::widget::tooltip::Position::Top,
+                ));
             }
 
             // Reset button (if override exists)
             if has_override {
-                plugin_row = plugin_row.push(
-                    button::icon(icon::from_name("view-refresh-symbolic").size(12))
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    button::icon(icon::from_name("view-refresh-symbolic").size(ICON_XS))
                         .on_press({
                             let device_id = device_id.to_string();
                             let plugin_id = plugin_meta.id.to_string();
                             Message::ClearDevicePluginOverride(device_id, plugin_id)
                         })
-                        .padding(4),
-                );
+                        .padding(SPACE_XXS),
+                    "Reset override",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ));
             } else {
                 plugin_row = plugin_row.push(
-                    button::icon(icon::from_name("view-refresh-symbolic").size(12)).padding(4),
+                    button::icon(icon::from_name("view-refresh-symbolic").size(ICON_XS))
+                        .padding(SPACE_XXS),
                 );
             }
 
-            // Settings button (only for RemoteDesktop plugin)
+            // Settings button (only for RemoteDesktop and FileSync plugin)
             if plugin_meta.id == "remotedesktop" {
-                plugin_row = plugin_row.push(
-                    button::icon(icon::from_name("emblem-system-symbolic").size(12))
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    button::icon(icon::from_name("emblem-system-symbolic").size(ICON_XS))
                         .on_press(Message::ShowRemoteDesktopSettings(device_id.to_string()))
-                        .padding(4),
-                );
+                        .padding(SPACE_XXS),
+                    "Configure Remote Input",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ));
+            } else if plugin_meta.id == "filesync" {
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    button::icon(icon::from_name("emblem-system-symbolic").size(ICON_XS))
+                        .on_press(Message::ShowFileSyncSettings(device_id.to_string()))
+                        .padding(SPACE_XXS),
+                    "Configure File Sync",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ));
+            } else if plugin_meta.id == "runcommand" {
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    button::icon(icon::from_name("emblem-system-symbolic").size(ICON_XS))
+                        .on_press(Message::ShowRunCommandSettings(device_id.to_string()))
+                        .padding(SPACE_XXS),
+                    "Configure Run Commands",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ));
             }
 
             // Add to list (grey out if not supported)
@@ -2054,9 +2878,9 @@ impl CConnectApplet {
         let footer = if override_count > 0 {
             button::text("Reset All Overrides")
                 .on_press(Message::ResetAllPluginOverrides(device_id.to_string()))
-                .padding(8)
+                .padding(SPACE_S)
         } else {
-            button::text("Reset All Overrides").padding(8)
+            button::text("Reset All Overrides").padding(SPACE_S)
         };
 
         // Combine everything
@@ -2069,10 +2893,300 @@ impl CConnectApplet {
                 divider::horizontal::default(),
                 footer,
             ]
-            .spacing(8),
+            .spacing(SPACE_S),
         )
-        .padding(12)
+        .padding(SPACE_M)
         .into()
+    }
+
+    /// FileSync settings view
+    fn file_sync_settings_view(&self, device_id: &str) -> Element<'_, Message> {
+        use cosmic::widget::{horizontal_space, text_input};
+
+        // Header with close button
+        let header = row![
+            cosmic::widget::text::body("File Sync Settings"),
+            horizontal_space(),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
+                    .on_press(Message::CloseFileSyncSettings)
+                    .padding(SPACE_XXS),
+                "Close settings",
+                cosmic::widget::tooltip::Position::Bottom,
+            )
+        ]
+        .width(Length::Fill)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        let mut content = column![header].spacing(SPACE_M);
+
+        // List existing sync folders
+        if let Some(folders) = self.sync_folders.get(device_id) {
+            if !folders.is_empty() {
+                let mut list = column![].spacing(SPACE_S);
+                for folder in folders {
+                    let strategy_text = match folder.strategy.as_str() {
+                        "LastModifiedWins" => "Last Modified",
+                        "KeepBoth" => "Keep Both",
+                        "Manual" => "Manual",
+                        s => s,
+                    };
+
+                    let row = row![
+                        column![
+                            cosmic::widget::text::body(&folder.folder_id),
+                            cosmic::widget::text::caption(&folder.path),
+                            cosmic::widget::text::caption(format!("Conflict: {}", strategy_text)),
+                        ]
+                        .spacing(SPACE_XXS),
+                        horizontal_space(),
+                        cosmic::widget::tooltip(
+                            button::icon(icon::from_name("user-trash-symbolic").size(ICON_S))
+                                .on_press(Message::RemoveSyncFolder(
+                                    device_id.to_string(),
+                                    folder.folder_id.clone(),
+                                ))
+                                .padding(SPACE_XS),
+                            "Remove sync folder",
+                            cosmic::widget::tooltip::Position::Bottom,
+                        )
+                    ]
+                    .align_y(cosmic::iced::Alignment::Center)
+                    .width(Length::Fill);
+
+                    list = list.push(
+                        container(row)
+                            .padding(SPACE_S)
+                            .class(cosmic::theme::Container::Card),
+                    );
+                }
+                content = content.push(list);
+            } else {
+                content = content.push(
+                    container(cosmic::widget::text::caption("No sync folders configured"))
+                        .padding(SPACE_S)
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Center),
+                );
+            }
+        } else {
+            content = content.push(
+                container(
+                    row![
+                        icon::from_name("process-working-symbolic").size(ICON_S),
+                        cosmic::widget::text::caption("Loading..."),
+                    ]
+                    .spacing(SPACE_S)
+                    .align_y(cosmic::iced::Alignment::Center),
+                )
+                .padding(SPACE_S)
+                .width(Length::Fill)
+                .align_x(Horizontal::Center),
+            );
+        }
+
+        content = content.push(divider::horizontal::default());
+
+        // Add New Folder Form
+        if self.add_sync_folder_device.as_deref() == Some(device_id) {
+            let strategy_idx = match self.add_sync_folder_strategy.as_str() {
+                "last_modified_wins" => 0,
+                "keep_both" => 1,
+                "manual" => 2,
+                _ => 0,
+            };
+
+            let form = column![
+                cosmic::widget::text::title3("Add Sync Folder"),
+                text_input("Local Path", &self.add_sync_folder_path)
+                    .on_input(Message::UpdateSyncFolderPathInput),
+                text_input("Folder ID", &self.add_sync_folder_id)
+                    .on_input(Message::UpdateSyncFolderIdInput),
+                row![
+                    cosmic::widget::text::body("Conflict Strategy:"),
+                    cosmic::widget::dropdown(
+                        &["Last Modified", "Keep Both", "Manual"],
+                        Some(strategy_idx),
+                        |idx| {
+                            let s = match idx {
+                                0 => "last_modified_wins",
+                                1 => "keep_both",
+                                2 => "manual",
+                                _ => "last_modified_wins",
+                            }
+                            .to_string();
+                            Message::UpdateSyncFolderStrategy(s)
+                        }
+                    )
+                ]
+                .spacing(SPACE_S)
+                .align_y(cosmic::iced::Alignment::Center),
+                row![
+                    button::text("Cancel").on_press(Message::CancelAddSyncFolder),
+                    horizontal_space(),
+                    if self
+                        .pending_operations
+                        .contains(&(device_id.to_string(), OperationType::AddSyncFolder))
+                    {
+                        button::text("Adding...")
+                    } else {
+                        button::text("Add Folder")
+                            .on_press(Message::AddSyncFolder(device_id.to_string()))
+                    }
+                ]
+                .spacing(SPACE_M)
+                .spacing(SPACE_M)
+            ]
+            .spacing(SPACE_S); // Distinct background for form
+
+            content = content.push(
+                container(form)
+                    .padding(SPACE_S)
+                    .class(cosmic::theme::Container::Card),
+            );
+        } else {
+            content = content.push(
+                button::text("Add Synced Folder")
+                    .on_press(Message::StartAddSyncFolder(device_id.to_string()))
+                    .width(Length::Fill),
+            );
+        }
+
+        container(content)
+            .class(cosmic::theme::Container::Card)
+            .padding(SPACE_M)
+            .into()
+    }
+
+    fn run_command_settings_view(&self, device_id: &str) -> Element<'_, Message> {
+        use cosmic::iced::Alignment;
+        use cosmic::widget::{button, container, icon, text, text_input};
+
+        let mut content = column![row![
+            text::title3("Run Commands").width(Length::Fill),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("window-close-symbolic").size(ICON_S))
+                    .on_press(Message::CloseRunCommandSettings)
+                    .padding(SPACE_XS),
+                "Close settings",
+                cosmic::widget::tooltip::Position::Bottom,
+            )
+        ]
+        .align_y(Alignment::Center)]
+        .spacing(SPACE_M);
+
+        // List existing commands
+        if let Some(commands) = self.run_commands.get(device_id) {
+            if !commands.is_empty() {
+                let mut list = column![].spacing(SPACE_S);
+                // Sort by name
+                let mut sorted_cmds: Vec<_> = commands.into_iter().collect();
+                sorted_cmds.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+
+                for (cmd_id, cmd) in sorted_cmds {
+                    let row = row![
+                        column![
+                            text::body(&cmd.name),
+                            text::caption(&cmd.command).class(cosmic::theme::Text::Color(
+                                cosmic::iced::Color::from_rgb(0.5, 0.5, 0.5),
+                            )),
+                        ]
+                        .width(Length::Fill),
+                        cosmic::widget::tooltip(
+                            button::icon(icon::from_name("user-trash-symbolic").size(ICON_S))
+                                .on_press(Message::RemoveRunCommand(
+                                    device_id.to_string(),
+                                    cmd_id.clone(),
+                                ))
+                                .padding(SPACE_XS)
+                                .class(cosmic::theme::Button::Destructive),
+                            "Remove command",
+                            cosmic::widget::tooltip::Position::Bottom,
+                        )
+                    ]
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill);
+
+                    list = list.push(
+                        container(row)
+                            .padding(SPACE_S)
+                            .class(cosmic::theme::Container::Card),
+                    );
+                }
+                content = content.push(list);
+            } else {
+                content = content.push(
+                    container(text::caption("No run commands configured"))
+                        .padding(SPACE_S)
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Center),
+                );
+            }
+        } else {
+            content = content.push(
+                container(text::caption("Loading..."))
+                    .padding(SPACE_S)
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center),
+            );
+        }
+
+        content = content.push(divider::horizontal::default());
+
+        // Add New Command Form
+        if self.add_run_command_device.as_deref() == Some(device_id) {
+            let form = column![
+                text::title3("Add New Command"),
+                text_input("Name (e.g. Lock Screen)", &self.add_run_command_name)
+                    .on_input(Message::UpdateRunCommandNameInput),
+                text_input(
+                    "Command (e.g. loginctl lock-session)",
+                    &self.add_run_command_cmd
+                )
+                .on_input(Message::UpdateRunCommandCmdInput)
+                .on_submit({
+                    let id = device_id.to_string();
+                    move |_| Message::AddRunCommand(id.clone())
+                }),
+                row![
+                    button::text("Cancel")
+                        .on_press(Message::CancelAddRunCommand)
+                        .width(Length::Fill),
+                    if self
+                        .pending_operations
+                        .contains(&(device_id.to_string(), OperationType::AddRunCommand))
+                    {
+                        button::text("Adding...")
+                            .class(cosmic::theme::Button::Suggested)
+                            .width(Length::Fill)
+                    } else {
+                        button::text("Add Command")
+                            .on_press(Message::AddRunCommand(device_id.to_string()))
+                            .class(cosmic::theme::Button::Suggested)
+                            .width(Length::Fill)
+                    }
+                ]
+                .spacing(SPACE_S)
+            ]
+            .spacing(SPACE_S);
+
+            content = content.push(
+                container(form)
+                    .padding(SPACE_S)
+                    .class(cosmic::theme::Container::Card),
+            );
+        } else {
+            content = content.push(
+                button::text("Add Command")
+                    .on_press(Message::StartAddRunCommand(device_id.to_string()))
+                    .width(Length::Fill),
+            );
+        }
+
+        container(content)
+            .class(cosmic::theme::Container::Card)
+            .padding(SPACE_M)
+            .into()
     }
 
     /// RemoteDesktop settings view with quality, FPS, and resolution controls
@@ -2085,11 +3199,15 @@ impl CConnectApplet {
 
         // Header with close button
         let header = row![
-            text("Remote Desktop Settings").size(14),
+            cosmic::widget::text::body("Remote Desktop Settings"),
             horizontal_space(),
-            button::icon(icon::from_name("window-close-symbolic").size(14))
-                .on_press(Message::CloseRemoteDesktopSettings)
-                .padding(4)
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
+                    .on_press(Message::CloseRemoteDesktopSettings)
+                    .padding(SPACE_XXS),
+                "Close settings",
+                cosmic::widget::tooltip::Position::Bottom,
+            )
         ]
         .width(Length::Fill)
         .align_y(cosmic::iced::Alignment::Center);
@@ -2118,7 +3236,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(8)
+        .spacing(SPACE_S)
         .align_y(cosmic::iced::Alignment::Center);
 
         // FPS dropdown
@@ -2144,7 +3262,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(8)
+        .spacing(SPACE_S)
         .align_y(cosmic::iced::Alignment::Center);
 
         // Resolution mode radio buttons
@@ -2179,13 +3297,13 @@ impl CConnectApplet {
                 }
             ),
         ]
-        .spacing(4);
+        .spacing(SPACE_XXS);
 
         let resolution_row = row![
             text("Resolution:").width(Length::Fixed(120.0)),
             resolution_radios
         ]
-        .spacing(8)
+        .spacing(SPACE_S)
         .align_y(cosmic::iced::Alignment::Start);
 
         // Build content
@@ -2196,7 +3314,7 @@ impl CConnectApplet {
             fps_row,
             resolution_row,
         ]
-        .spacing(12);
+        .spacing(SPACE_M);
 
         // Add custom resolution inputs if mode is "custom"
         if settings.resolution_mode == "custom" {
@@ -2215,14 +3333,14 @@ impl CConnectApplet {
                     });
 
             let inputs_row = row![
-                column![text("Width").size(12), width_input]
-                    .spacing(4)
+                column![cosmic::widget::text::caption("Width"), width_input]
+                    .spacing(SPACE_XXS)
                     .width(Length::FillPortion(1)),
-                column![text("Height").size(12), height_input]
-                    .spacing(4)
+                column![cosmic::widget::text::caption("Height"), height_input]
+                    .spacing(SPACE_XXS)
                     .width(Length::FillPortion(1)),
             ]
-            .spacing(12);
+            .spacing(SPACE_M);
 
             content = content.push(inputs_row);
         }
@@ -2233,13 +3351,13 @@ impl CConnectApplet {
         if let Some(error) = &self.remotedesktop_error {
             content = content.push(
                 text(error)
-                    .size(12)
+                    .size(ICON_XS)
                     .class(theme::Text::Color(Color::from_rgb(0.9, 0.2, 0.2))),
             );
         }
 
         // Apply button (disabled if error)
-        let mut apply_btn = button::text("Apply Settings").padding(8);
+        let mut apply_btn = button::text("Apply Settings").padding(SPACE_S);
 
         if self.remotedesktop_error.is_none() {
             apply_btn =
@@ -2248,7 +3366,7 @@ impl CConnectApplet {
 
         content = content.push(apply_btn);
 
-        container(content).padding(12).into()
+        container(content).padding(SPACE_M).into()
     }
     fn transfers_view(&self) -> Element<'_, Message> {
         if self.active_transfers.is_empty() {
@@ -2256,9 +3374,9 @@ impl CConnectApplet {
         }
 
         let mut transfers_col = column![text("Active Transfers")
-            .size(14)
+            .size(ICON_14)
             .class(theme::Text::Color(Color::from_rgb(0.5, 0.5, 1.0))),]
-        .spacing(8);
+        .spacing(SPACE_S);
 
         for (_id, state) in &self.active_transfers {
             let progress = if state.total > 0 {
@@ -2280,15 +3398,15 @@ impl CConnectApplet {
 
             transfers_col = transfers_col.push(
                 column![
-                    text(label).size(12),
+                    cosmic::widget::text::caption(label),
                     progress_bar(0.0..=100.0, progress).height(Length::Fixed(6.0))
                 ]
-                .spacing(4),
+                .spacing(SPACE_XXS),
             );
         }
 
         container(transfers_col)
-            .padding(12)
+            .padding(SPACE_M)
             .width(Length::Fill)
             .into()
     }
@@ -2301,22 +3419,33 @@ fn action_button_with_tooltip(
     message: Message,
 ) -> Element<'static, Message> {
     cosmic::widget::tooltip(
-        button::icon(icon::from_name(icon_name).size(16))
+        button::icon(icon::from_name(icon_name).size(ICON_S))
             .on_press(message)
-            .padding(6),
+            .padding(SPACE_XS),
         tooltip_text,
         cosmic::widget::tooltip::Position::Bottom,
     )
     .into()
 }
 
-/// Creates a small icon button for device quick actions (ping, send file, etc.)
-/// @deprecated Use action_button_with_tooltip instead
-fn action_button(icon_name: &str, message: Message) -> Element<'static, Message> {
-    button::icon(icon::from_name(icon_name).size(16))
-        .on_press(message)
-        .padding(6)
+/// Creates a small icon button with tooltip that supports a loading state
+fn action_button_with_tooltip_loading(
+    icon_name: &str,
+    tooltip_text: &'static str,
+    message: Message,
+    is_loading: bool,
+) -> Element<'static, Message> {
+    if is_loading {
+        cosmic::widget::tooltip(
+            button::icon(icon::from_name("process-working-symbolic").size(ICON_S))
+                .padding(SPACE_XS),
+            "Working...",
+            cosmic::widget::tooltip::Position::Bottom,
+        )
         .into()
+    } else {
+        action_button_with_tooltip(icon_name, tooltip_text, message)
+    }
 }
 
 /// Returns the icon name for a device type

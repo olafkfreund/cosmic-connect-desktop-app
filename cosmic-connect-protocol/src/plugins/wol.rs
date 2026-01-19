@@ -333,7 +333,7 @@ impl Plugin for WolPlugin {
         vec!["cconnect.wol.status".to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("WOL plugin initialized for device {}", device.name());
 
@@ -402,6 +402,7 @@ impl PluginFactory for WolPluginFactory {
 mod tests {
     use super::*;
     use crate::{DeviceInfo, DeviceType};
+    use serde_json::json;
 
     fn create_test_device() -> Device {
         let info = DeviceInfo::new("Test Device", DeviceType::Desktop, 1716);
@@ -435,7 +436,7 @@ mod tests {
         let mut plugin = WolPlugin::new();
         let device = create_test_device();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         plugin.start().await.unwrap();
@@ -515,7 +516,7 @@ mod tests {
     async fn test_handle_wol_config() {
         let mut plugin = WolPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();

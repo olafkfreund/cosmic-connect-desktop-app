@@ -35,7 +35,8 @@ async fn test_battery_plugin_initialization() -> Result<()> {
     let mut plugin = battery::BatteryPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
     assert_eq!(plugin.name(), "battery");
 
     Ok(())
@@ -59,7 +60,8 @@ async fn test_battery_status_query() {
     let mut plugin = battery::BatteryPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await.unwrap();
 
     // Initially no battery status
     assert!(plugin.get_battery_status().is_none());
@@ -92,7 +94,8 @@ async fn test_notification_plugin_initialization() -> Result<()> {
     let mut plugin = notification::NotificationPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
     assert_eq!(plugin.name(), "notification");
     assert_eq!(plugin.notification_count(), 0);
 
@@ -122,7 +125,8 @@ async fn test_ping_plugin_initialization() -> Result<()> {
     let mut plugin = ping::PingPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
     assert_eq!(plugin.name(), "ping");
 
     Ok(())
@@ -171,8 +175,9 @@ async fn test_plugin_manager_battery_query() {
     let device_id = device.info.device_id.clone();
 
     // Initialize plugins for device (they auto-start after init)
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
     manager
-        .init_device_plugins(&device_id, &device)
+        .init_device_plugins(&device_id, &device, tx)
         .await
         .unwrap();
 
@@ -220,7 +225,8 @@ async fn test_multiple_plugins() -> Result<()> {
     let device_id = device.info.device_id.clone();
 
     // Initialize all plugins for device (they auto-start after init)
-    manager.init_device_plugins(&device_id, &device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    manager.init_device_plugins(&device_id, &device, tx).await?;
 
     // All should be working
     Ok(())
@@ -232,7 +238,8 @@ async fn test_plugin_lifecycle() -> Result<()> {
     let device = create_mock_device();
 
     // Test lifecycle: init -> start -> stop
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
     plugin.start().await?;
     plugin.stop().await?;
 
@@ -253,8 +260,10 @@ async fn test_clipboard_sync_between_devices() -> Result<()> {
     let mut device2 = create_mock_device();
     device2.info.device_id = "device2".to_string();
 
-    plugin1.init(&device1).await?;
-    plugin2.init(&device2).await?;
+    let (tx1, _rx1) = tokio::sync::mpsc::channel(100);
+    plugin1.init(&device1, tx1).await?;
+    let (tx2, _rx2) = tokio::sync::mpsc::channel(100);
+    plugin2.init(&device2, tx2).await?;
 
     // Device 1 sends clipboard content
     let test_content = "Hello from device 1!";
@@ -279,7 +288,8 @@ async fn test_clipboard_connect_packet() -> Result<()> {
     let mut plugin = clipboard::ClipboardPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // Test clipboard connect packet (sent on device connection)
     let connect_packet = plugin.create_connect_packet().await;
@@ -296,7 +306,8 @@ async fn test_share_plugin_text() -> Result<()> {
     let mut plugin = share::SharePlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // Test sharing text
     let test_text = "Shared text content";
@@ -355,7 +366,8 @@ async fn test_mpris_plugin_initialization() -> Result<()> {
     let mut plugin = mpris::MprisPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
     assert_eq!(plugin.name(), "mpris");
 
     Ok(())
@@ -398,7 +410,8 @@ async fn test_mpris_player_list() -> Result<()> {
     let mut plugin = mpris::MprisPlugin::new();
     let device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // Create a player list packet
     let players = vec!["spotify".to_string(), "vlc".to_string()];
@@ -419,8 +432,10 @@ async fn test_complete_ping_exchange() -> Result<()> {
     let mut device2 = create_mock_device();
     device2.info.device_id = "device2".to_string();
 
-    plugin1.init(&device1).await?;
-    plugin2.init(&device2).await?;
+    let (tx1, _rx1) = tokio::sync::mpsc::channel(100);
+    plugin1.init(&device1, tx1).await?;
+    let (tx2, _rx2) = tokio::sync::mpsc::channel(100);
+    plugin2.init(&device2, tx2).await?;
 
     // Device 1 sends ping
     let message = Some("Test ping".to_string());
@@ -442,7 +457,8 @@ async fn test_battery_request_response_cycle() -> Result<()> {
     let mut plugin = battery::BatteryPlugin::new();
     let mut device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // Create battery request packet
     let request_packet = plugin.create_battery_request();
@@ -475,7 +491,8 @@ async fn test_notification_send_and_dismiss() -> Result<()> {
     let mut plugin = notification::NotificationPlugin::new();
     let mut device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // Create and send notification
     let notification = notification::Notification::new(
@@ -523,8 +540,14 @@ async fn test_plugin_manager_multi_device() -> Result<()> {
     let device2_id = device2.info.device_id.clone();
 
     // Initialize plugins for both devices
-    manager.init_device_plugins(&device1_id, &device1).await?;
-    manager.init_device_plugins(&device2_id, &device2).await?;
+    let (tx1, _rx1) = tokio::sync::mpsc::channel(100);
+    manager
+        .init_device_plugins(&device1_id, &device1, tx1)
+        .await?;
+    let (tx2, _rx2) = tokio::sync::mpsc::channel(100);
+    manager
+        .init_device_plugins(&device2_id, &device2, tx2)
+        .await?;
 
     // Verify both devices have plugins initialized
     assert!(manager.get_device_plugin(&device1_id, "battery").is_some());
@@ -555,7 +578,8 @@ async fn test_packet_routing_to_correct_plugin() -> Result<()> {
     let device = create_mock_device();
     let device_id = device.info.device_id.clone();
 
-    manager.init_device_plugins(&device_id, &device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    manager.init_device_plugins(&device_id, &device, tx).await?;
 
     // Create packets of different types
     let ping_plugin = ping::PingPlugin::new();
@@ -625,7 +649,8 @@ async fn test_clipboard_timestamp_loop_prevention() -> Result<()> {
     let mut plugin = clipboard::ClipboardPlugin::new();
     let mut device = create_mock_device();
 
-    plugin.init(&device).await?;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    plugin.init(&device, tx).await?;
 
     // First clipboard update
     let content1 = "First content";

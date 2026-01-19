@@ -62,7 +62,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 const PLUGIN_NAME: &str = "mousekeyboardshare";
 const INCOMING_CAPABILITY: &str = "cconnect.mkshare";
@@ -125,6 +125,7 @@ pub struct ScreenGeometry {
     pub scale: f32,
 }
 
+#[allow(dead_code)]
 fn default_scale() -> f32 {
     1.0
 }
@@ -155,6 +156,7 @@ pub struct EdgeMapping {
     pub dead_zone: u32,
 }
 
+#[allow(dead_code)]
 fn default_dead_zone() -> u32 {
     50 // 50 pixels from corners
 }
@@ -190,14 +192,17 @@ pub struct MkShareConfig {
     pub edge_threshold: u32,
 }
 
+#[allow(dead_code)]
 fn default_true() -> bool {
     true
 }
 
+#[allow(dead_code)]
 fn default_hotkey() -> String {
     "Ctrl+Shift+Tab".to_string()
 }
 
+#[allow(dead_code)]
 fn default_edge_threshold() -> u32 {
     5 // 5 pixels from edge
 }
@@ -310,12 +315,13 @@ pub struct KeyboardEvent {
 
 /// Active sharing state
 #[derive(Debug)]
-enum ShareState {
+pub enum ShareState {
     /// Local control (mouse on this screen)
     Local,
     /// Remote control (mouse on remote screen)
     Remote {
         device_id: String,
+        #[allow(dead_code)]
         entry_edge: ScreenEdge,
     },
 }
@@ -496,7 +502,7 @@ impl Plugin for MouseKeyboardSharePlugin {
         vec![OUTGOING_CAPABILITY.to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         info!(
             "Initializing MouseKeyboardShare plugin for device {}",
             device.name()
@@ -753,17 +759,13 @@ mod tests {
         let factory = MouseKeyboardSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let config = MkShareConfig::default();
         let body = serde_json::to_value(&config).unwrap();
 
-        let packet = Packet {
-            id: 1,
-            packet_type: "cconnect.mkshare.config".to_string(),
-            body,
-        };
+        let packet = Packet::new("cconnect.mkshare.config", body);
 
         assert!(plugin.handle_packet(&packet, &mut device).await.is_ok());
     }
@@ -774,7 +776,7 @@ mod tests {
         let factory = MouseKeyboardSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mouse_event = MouseEvent {
@@ -788,11 +790,7 @@ mod tests {
 
         let body = serde_json::to_value(&mouse_event).unwrap();
 
-        let packet = Packet {
-            id: 2,
-            packet_type: "cconnect.mkshare.mouse".to_string(),
-            body,
-        };
+        let packet = Packet::new("cconnect.mkshare.mouse", body);
 
         assert!(plugin.handle_packet(&packet, &mut device).await.is_ok());
     }

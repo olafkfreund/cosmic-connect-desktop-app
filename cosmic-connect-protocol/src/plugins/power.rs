@@ -292,9 +292,9 @@ impl PowerPlugin {
 
         // Query current power state
         // TODO: Implement actual power state detection
-        let state = "running";
-        let battery_present = false;
-        let on_battery = false;
+        let _state = "running";
+        let _battery_present = false;
+        let _on_battery = false;
 
         // TODO: Send status response packet back to device
         // Need to implement packet sending infrastructure
@@ -425,7 +425,7 @@ impl Plugin for PowerPlugin {
         vec!["cconnect.power.status".to_string()]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Power plugin initialized for device {}", device.name());
         Ok(())
@@ -500,15 +500,19 @@ mod tests {
     use crate::{DeviceInfo, DeviceType};
 
     fn create_test_device() -> Device {
-        Device::new(DeviceInfo {
-            id: "test_device".to_string(),
-            name: "Test Device".to_string(),
-            device_type: DeviceType::Desktop,
-            protocol_version: 7,
-            incoming_capabilities: vec!["cconnect.power".to_string()],
-            outgoing_capabilities: vec!["cconnect.power".to_string()],
-            tcp_port: 1716,
-        })
+        Device::new(
+            DeviceInfo {
+                device_id: "test_device".to_string(),
+                device_name: "Test Device".to_string(),
+                device_type: DeviceType::Desktop,
+                protocol_version: 7,
+                incoming_capabilities: vec!["cconnect.power".to_string()],
+                outgoing_capabilities: vec!["cconnect.power".to_string()],
+                tcp_port: 1716,
+            },
+            crate::ConnectionState::Disconnected,
+            crate::PairingStatus::Paired,
+        )
     }
 
     #[test]
@@ -576,7 +580,7 @@ mod tests {
         let mut plugin = PowerPlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert_eq!(plugin.device_id, Some("test_device".to_string()));
 
         assert!(plugin.start().await.is_ok());

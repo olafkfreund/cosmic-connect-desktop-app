@@ -12,9 +12,11 @@ use tracing::{debug, info, warn};
 use zbus::{proxy, Connection};
 
 /// DBus service name
+#[allow(dead_code)]
 pub const SERVICE_NAME: &str = "com.system76.CosmicConnect";
 
 /// DBus object path
+#[allow(dead_code)]
 pub const OBJECT_PATH: &str = "/com/system76/CosmicConnect";
 
 /// Device information from DBus
@@ -101,6 +103,14 @@ pub struct RemoteDesktopSettings {
     pub custom_height: Option<u32>,
 }
 
+/// Sync Folder configuration from DBus
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, zbus::zvariant::Type)]
+pub struct SyncFolderInfo {
+    pub folder_id: String,
+    pub path: String,
+    pub strategy: String,
+}
+
 impl Default for RemoteDesktopSettings {
     fn default() -> Self {
         Self {
@@ -137,6 +147,13 @@ pub struct PlayerMetadata {
     pub album: Option<String>,
     pub album_art_url: Option<String>,
     pub length: i64, // microseconds
+}
+
+/// Run Command definition
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RunCommand {
+    pub name: String,
+    pub command: String,
 }
 
 /// Player state
@@ -234,22 +251,34 @@ pub enum DaemonEvent {
     /// Pairing request received
     PairingRequest { device_id: String },
     /// Pairing status changed
-    PairingStatusChanged { device_id: String, status: String },
+    PairingStatusChanged {
+        #[allow(dead_code)]
+        device_id: String,
+        status: String,
+    },
     /// Plugin event
     PluginEvent {
+        #[allow(dead_code)]
         device_id: String,
+        #[allow(dead_code)]
         plugin: String,
+        #[allow(dead_code)]
         data: String,
     },
     /// Device plugin state changed
     DevicePluginStateChanged {
+        #[allow(dead_code)]
         device_id: String,
+        #[allow(dead_code)]
         plugin_name: String,
+        #[allow(dead_code)]
         enabled: bool,
     },
     /// Daemon disconnected
+    #[allow(dead_code)]
     DaemonDisconnected,
     /// Daemon reconnected
+    #[allow(dead_code)]
     DaemonReconnected,
     /// File transfer progress
     TransferProgress {
@@ -373,6 +402,25 @@ trait CConnect {
         settings_json: &str,
     ) -> zbus::fdo::Result<()>;
 
+    /// Add a folder to sync with a device
+    async fn add_sync_folder(
+        &self,
+        device_id: String,
+        folder_id: String,
+        path: String,
+        strategy: String,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Remove a sync folder from a device
+    async fn remove_sync_folder(
+        &self,
+        device_id: String,
+        folder_id: String,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Get list of synced folders for a device
+    async fn get_sync_folders(&self, device_id: String) -> zbus::fdo::Result<Vec<SyncFolderInfo>>;
+
     /// Signal: Device was added
     #[zbus(signal)]
     fn device_added(device_id: &str, device_info: DeviceInfo) -> zbus::fdo::Result<()>;
@@ -416,6 +464,25 @@ trait CConnect {
         direction: &str,
     ) -> zbus::fdo::Result<()>;
 
+    /// Add a run command
+    async fn add_run_command(
+        &self,
+        device_id: String,
+        command_id: String,
+        name: String,
+        command: String,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Remove a run command
+    async fn remove_run_command(
+        &self,
+        device_id: String,
+        command_id: String,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Get run commands (returns JSON string map of id -> Command)
+    async fn get_run_commands(&self, device_id: String) -> zbus::fdo::Result<String>;
+
     /// Signal: File transfer complete
     #[zbus(signal)]
     fn transfer_complete(
@@ -430,6 +497,7 @@ trait CConnect {
 /// DBus client for communicating with the daemon
 pub struct DbusClient {
     /// DBus connection
+    #[allow(dead_code)]
     connection: Connection,
     /// Proxy to daemon interface
     proxy: CConnectProxy<'static>,
@@ -614,6 +682,7 @@ impl DbusClient {
     }
 
     /// Get information about a specific device
+    #[allow(dead_code)]
     pub async fn get_device(&self, device_id: &str) -> Result<DeviceInfo> {
         debug!("Getting device info for {}", device_id);
         self.proxy
@@ -641,6 +710,7 @@ impl DbusClient {
     }
 
     /// Trigger device discovery
+    #[allow(dead_code)]
     pub async fn refresh_discovery(&self) -> Result<()> {
         debug!("Refreshing device discovery");
         self.proxy
@@ -650,6 +720,7 @@ impl DbusClient {
     }
 
     /// Get device connection state
+    #[allow(dead_code)]
     pub async fn get_device_state(&self, device_id: &str) -> Result<String> {
         debug!("Getting device state for {}", device_id);
         self.proxy
@@ -704,6 +775,7 @@ impl DbusClient {
     }
 
     /// Send a notification to a device
+    #[allow(dead_code)]
     pub async fn send_notification(&self, device_id: &str, title: &str, body: &str) -> Result<()> {
         info!("Sending notification to device {}: {}", device_id, title);
         self.proxy
@@ -905,19 +977,85 @@ impl DbusClient {
     }
 
     /// Check if daemon is available
+    #[allow(dead_code)]
     pub async fn is_daemon_available(&self) -> bool {
         // Try to list devices as a health check
         self.proxy.list_devices().await.is_ok()
+    }
+
+    /// Add a folder to sync with a device
+    pub async fn add_sync_folder(
+        &self,
+        device_id: String,
+        folder_id: String,
+        path: String,
+        strategy: String,
+    ) -> Result<()> {
+        self.proxy
+            .add_sync_folder(device_id, folder_id, path, strategy)
+            .await
+            .context("Failed to call add_sync_folder")
+    }
+
+    /// Remove a sync folder from a device
+    pub async fn remove_sync_folder(&self, device_id: String, folder_id: String) -> Result<()> {
+        self.proxy
+            .remove_sync_folder(device_id, folder_id)
+            .await
+            .context("Failed to call remove_sync_folder")
+    }
+
+    /// Get list of synced folders for a device
+    pub async fn get_sync_folders(&self, device_id: String) -> Result<Vec<SyncFolderInfo>> {
+        self.proxy
+            .get_sync_folders(device_id)
+            .await
+            .context("Failed to call get_sync_folders")
+    }
+
+    /// Add a run command
+    pub async fn add_run_command(
+        &self,
+        device_id: String,
+        command_id: String,
+        name: String,
+        command: String,
+    ) -> Result<()> {
+        self.proxy
+            .add_run_command(device_id, command_id, name, command)
+            .await
+            .context("Failed to call add_run_command")
+    }
+
+    /// Remove a run command
+    pub async fn remove_run_command(&self, device_id: String, command_id: String) -> Result<()> {
+        self.proxy
+            .remove_run_command(device_id, command_id)
+            .await
+            .context("Failed to call remove_run_command")
+    }
+
+    /// Get run commands
+    pub async fn get_run_commands(&self, device_id: String) -> Result<HashMap<String, RunCommand>> {
+        let json = self
+            .proxy
+            .get_run_commands(device_id)
+            .await
+            .context("Failed to call get_run_commands")?;
+
+        serde_json::from_str(&json).context("Failed to parse run commands JSON")
     }
 }
 
 /// Auto-reconnecting DBus client wrapper
 pub struct ReconnectingClient {
     /// Current client (None if disconnected)
+    #[allow(dead_code)]
     client: Option<DbusClient>,
     /// Event receiver
     event_rx: mpsc::UnboundedReceiver<DaemonEvent>,
     /// Event sender for reconnection
+    #[allow(dead_code)]
     reconnect_tx: mpsc::UnboundedSender<DaemonEvent>,
 }
 
@@ -939,11 +1077,13 @@ impl ReconnectingClient {
     /// Get a reference to the current client
     ///
     /// Returns None if disconnected
+    #[allow(dead_code)]
     pub fn client(&self) -> Option<&DbusClient> {
         self.client.as_ref()
     }
 
     /// Attempt to reconnect to the daemon
+    #[allow(dead_code)]
     pub async fn reconnect(&mut self) -> Result<()> {
         info!("Attempting to reconnect to daemon");
 
@@ -973,6 +1113,7 @@ impl ReconnectingClient {
     }
 
     /// Try to receive an event without blocking
+    #[allow(dead_code)]
     pub fn try_recv_event(&mut self) -> Result<DaemonEvent, mpsc::error::TryRecvError> {
         self.event_rx.try_recv()
     }

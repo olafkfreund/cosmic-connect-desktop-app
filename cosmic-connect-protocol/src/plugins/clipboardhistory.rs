@@ -156,16 +156,17 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::any::Any;
-use std::path::PathBuf;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::{Plugin, PluginFactory};
 
 /// Maximum content size (10MB)
+#[allow(dead_code)]
 const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024;
 
 /// Default maximum items to keep
+#[allow(dead_code)]
 const DEFAULT_MAX_ITEMS: usize = 100;
 
 /// Default retention period in days
@@ -268,7 +269,7 @@ impl ClipboardHistoryStorage {
     }
 
     /// Add item to history
-    fn add(&mut self, mut item: ClipboardHistoryItem) -> Result<()> {
+    fn add(&mut self, item: ClipboardHistoryItem) -> Result<()> {
         // Check size limit
         if item.content.len() > self.config.max_item_size {
             return Err(ProtocolError::invalid_state(format!(
@@ -296,6 +297,7 @@ impl ClipboardHistoryStorage {
     }
 
     /// Get item by ID
+    #[allow(dead_code)]
     fn get(&self, id: &str) -> Option<&ClipboardHistoryItem> {
         self.items.iter().find(|item| item.id == id)
     }
@@ -757,7 +759,7 @@ impl Plugin for ClipboardHistoryPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!(
             "ClipboardHistory plugin initialized for device {}",
@@ -979,7 +981,7 @@ mod tests {
         let mut plugin = ClipboardHistoryPlugin::new();
         let device = create_test_device();
 
-        assert!(plugin.init(&device).await.is_ok());
+        assert!(plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.is_ok());
         assert_eq!(plugin.device_id, Some(device.id().to_string()));
 
         assert!(plugin.start().await.is_ok());
@@ -993,7 +995,7 @@ mod tests {
     async fn test_handle_add_packet() {
         let mut plugin = ClipboardHistoryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();
@@ -1017,7 +1019,7 @@ mod tests {
     async fn test_handle_pin_packet() {
         let mut plugin = ClipboardHistoryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let id = plugin.add_item("Test content".to_string()).unwrap();
@@ -1041,7 +1043,7 @@ mod tests {
     async fn test_handle_delete_packet() {
         let mut plugin = ClipboardHistoryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         plugin.start().await.unwrap();
 
         let id = plugin.add_item("Test content".to_string()).unwrap();

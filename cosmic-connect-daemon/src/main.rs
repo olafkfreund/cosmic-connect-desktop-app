@@ -26,11 +26,12 @@ use cosmic_connect_protocol::{
         systemmonitor::SystemMonitorPluginFactory, telephony::TelephonyPluginFactory,
         wol::WolPluginFactory, PluginManager,
     },
-    CertificateInfo, DeviceInfo, DeviceManager, DeviceType, TransportManager,
+    CertificateInfo, DeviceInfo, DeviceManager, DeviceType, Packet, TransportManager,
     TransportManagerConfig, TransportManagerEvent,
 };
 use dbus::DbusServer;
 use diagnostics::{BuildInfo, Cli, DiagnosticCommand, Metrics};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use cosmic_connect_protocol::plugins::remotedesktop::RemoteDesktopPluginFactory;
 use std::sync::Arc;
@@ -93,6 +94,12 @@ struct Daemon {
 
     /// Enable packet dumping (debug mode)
     dump_packets: bool,
+
+    /// Packet sender for plugins
+    packet_sender: Sender<(String, Packet)>,
+
+    /// Packet receiver for plugins (wrapped in Mutex to allow extraction)
+    packet_receiver: Arc<tokio::sync::Mutex<Option<Receiver<(String, Packet)>>>>,
 }
 
 impl Daemon {
@@ -135,6 +142,10 @@ impl Daemon {
 
         // Create plugin manager
         let plugin_manager = Arc::new(RwLock::new(PluginManager::new()));
+
+        // Create packet channel for plugins
+        let (packet_sender, packet_receiver) = channel(100);
+        let packet_receiver = Arc::new(tokio::sync::Mutex::new(Some(packet_receiver)));
 
         // Create device manager
         let device_manager = Arc::new(RwLock::new(
@@ -249,6 +260,8 @@ impl Daemon {
             pending_pairing_requests: Arc::new(RwLock::new(std::collections::HashMap::new())),
             metrics: None,
             dump_packets: false,
+            packet_sender,
+            packet_receiver,
         })
     }
 
@@ -822,6 +835,7 @@ impl Daemon {
             let cosmic_notifier = self.cosmic_notifier.clone();
             let mpris_manager = self.mpris_manager.clone();
             let dump_packets = self.dump_packets;
+            let packet_sender = self.packet_sender.clone();
             tokio::spawn(async move {
                 while let Some(event) = event_rx.recv().await {
                     // Convert TransportManagerEvent to ConnectionEvent
@@ -888,6 +902,7 @@ impl Daemon {
                         &cosmic_notifier,
                         &mpris_manager,
                         dump_packets,
+                        packet_sender.clone(),
                     )
                     .await
                     {
@@ -926,6 +941,7 @@ impl Daemon {
             let cosmic_notifier = self.cosmic_notifier.clone();
             let mpris_manager = self.mpris_manager.clone();
             let dump_packets = self.dump_packets;
+            let packet_sender = self.packet_sender.clone();
             tokio::spawn(async move {
                 while let Some(event) = event_rx.recv().await {
                     if let Err(e) = Self::handle_connection_event(
@@ -939,6 +955,7 @@ impl Daemon {
                         &cosmic_notifier,
                         &mpris_manager,
                         dump_packets,
+                        packet_sender.clone(),
                     )
                     .await
                     {
@@ -1197,6 +1214,7 @@ impl Daemon {
         cosmic_notifier: &Option<Arc<cosmic_notifications::CosmicNotifier>>,
         mpris_manager: &Option<Arc<mpris_manager::MprisManager>>,
         dump_packets: bool,
+        packet_sender: Sender<(String, Packet)>,
     ) -> Result<()> {
         match event {
             ConnectionEvent::Connected {
@@ -1220,8 +1238,9 @@ impl Daemon {
                         // Only initialize plugins for paired/trusted devices
                         if device.is_paired() {
                             let mut plug_manager = plugin_manager.write().await;
-                            if let Err(e) =
-                                plug_manager.init_device_plugins(&device_id, device).await
+                            if let Err(e) = plug_manager
+                                .init_device_plugins(&device_id, device, packet_sender.clone())
+                                .await
                             {
                                 error!(
                                     "Failed to initialize plugins for device {}: {}",
@@ -1955,15 +1974,19 @@ impl Daemon {
         dbus_server: &Option<Arc<DbusServer>>,
     ) -> Result<()> {
         match event {
-            DiscoveryEvent::DeviceDiscovered { info, address, .. } => {
+            DiscoveryEvent::DeviceDiscovered {
+                info,
+                transport_address,
+                ..
+            } => {
                 info!(
                     "Device discovered: {} ({}) at {}",
                     info.device_name,
                     info.device_type.as_str(),
-                    address
+                    transport_address
                 );
                 let mut manager = device_manager.write().await;
-                manager.update_from_discovery(info.clone(), address);
+                manager.update_from_discovery(info.clone(), transport_address);
                 if let Err(e) = manager.save_registry() {
                     warn!("Failed to save device registry: {}", e);
                 }
@@ -1984,10 +2007,17 @@ impl Daemon {
                 //
                 // This prevents reconnection loops where both sides try to connect simultaneously.
             }
-            DiscoveryEvent::DeviceUpdated { info, address, .. } => {
-                debug!("Device updated: {} at {}", info.device_name, address);
+            DiscoveryEvent::DeviceUpdated {
+                info,
+                transport_address,
+                ..
+            } => {
+                debug!(
+                    "Device updated: {} at {}",
+                    info.device_name, transport_address
+                );
                 let mut manager = device_manager.write().await;
-                manager.update_from_discovery(info, address);
+                manager.update_from_discovery(info, transport_address);
             }
             DiscoveryEvent::DeviceTimeout { device_id } => {
                 info!("Device timed out: {}", device_id);
@@ -2025,6 +2055,24 @@ impl Daemon {
         );
         info!("Type: {:?}", self.device_info.device_type);
         info!("Protocol version: {}", self.device_info.protocol_version);
+
+        // Spawn proactive packet handler
+        let packet_receiver_mutex = self.packet_receiver.clone();
+        let connection_manager = self.connection_manager.clone();
+        tokio::spawn(async move {
+            let mut receiver_guard = packet_receiver_mutex.lock().await;
+            if let Some(mut receiver) = receiver_guard.take() {
+                drop(receiver_guard); // Release mutex
+                info!("Started proactive packet handler");
+                while let Some((device_id, packet)) = receiver.recv().await {
+                    let manager = connection_manager.read().await;
+                    if let Err(e) = manager.send_packet(&device_id, &packet).await {
+                        error!("Failed to send proactive packet to {}: {}", device_id, e);
+                    }
+                }
+                info!("Proactive packet handler stopped");
+            }
+        });
 
         // Get capabilities from plugin manager
         let manager = self.plugin_manager.read().await;

@@ -425,7 +425,7 @@ impl Plugin for BatteryPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device) -> Result<()> {
+    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         self.device_id = Some(device.id().to_string());
         info!("Battery plugin initialized for device {}", device.name());
         Ok(())
@@ -547,7 +547,7 @@ mod tests {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
 
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
         assert!(plugin.device_id.is_some());
 
         plugin.start().await.unwrap();
@@ -591,7 +591,7 @@ mod tests {
     async fn test_handle_battery_status() {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let status = BatteryStatus::new(85, false, 0);
@@ -609,7 +609,7 @@ mod tests {
     async fn test_handle_low_battery() {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let status = BatteryStatus::new(15, false, 1);
@@ -625,7 +625,7 @@ mod tests {
     async fn test_handle_no_battery() {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let status = BatteryStatus::no_battery();
@@ -641,7 +641,7 @@ mod tests {
     async fn test_handle_battery_request() {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = plugin.create_battery_request();
@@ -654,7 +654,7 @@ mod tests {
     async fn test_ignore_non_battery_packets() {
         let mut plugin = BatteryPlugin::new();
         let device = create_test_device();
-        plugin.init(&device).await.unwrap();
+        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new("cconnect.ping", json!({}));

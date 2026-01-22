@@ -1687,6 +1687,32 @@ impl CConnectInterface {
         }
     }
 
+    /// Send input event for screen mirroring
+    async fn send_mirror_input(&self, device_id: String, x: f32, y: f32, action: String) -> Result<(), zbus::fdo::Error> {
+        debug!("DBus: SendMirrorInput called for {} (x: {}, y: {}, action: {})", device_id, x, y, action);
+        
+        let device_manager = self.device_manager.read().await;
+        if !device_manager.get_device(&device_id).map(|d| d.is_connected()).unwrap_or(false) {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({
+            "x": x,
+            "y": y,
+            "action": action
+        });
+        let packet = Packet::new("cconnect.screenshare.input", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager.send_packet(&device_id, &packet).await.map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to send input packet: {}", e))
+        })?;
+
+        Ok(())
+    }
+
     /// Get daemon performance metrics
     ///
     /// Returns performance metrics if metrics collection is enabled.

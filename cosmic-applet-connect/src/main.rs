@@ -258,7 +258,7 @@ struct CConnectApplet {
 struct AppNotification {
     message: String,
     kind: NotificationType,
-    action: Option<(String, Message)>,
+    action: Option<(String, Box<Message>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,6 +326,7 @@ enum Message {
     ShowDeviceDetails(String),
     CloseDeviceDetails,
     ShowTransferQueue,
+    LaunchScreenMirror(String), // device_id
 
     // Settings UI
     ToggleDeviceSettings(String),                          // device_id
@@ -360,7 +361,7 @@ enum Message {
     OperationFailed(String, OperationType, String),
     OperationSucceeded(String, OperationType, String),
     ClearNotification,
-    ShowNotification(String, NotificationType),
+    ShowNotification(String, NotificationType, Option<(String, Box<Message>)>),
     // Daemon status
     DaemonConnected,
     DaemonDisconnected,
@@ -393,6 +394,8 @@ enum Message {
     CloseFileSyncSettings,
     // Animation
     Tick(std::time::Instant),
+    // Recursive loop
+    Loop(Box<Message>),
 }
 
 /// Fetches device list from the daemon via D-Bus
@@ -661,6 +664,9 @@ impl cosmic::Application for CConnectApplet {
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
+            Message::Loop(inner) => {
+                return self.update(*inner);
+            }
             Message::PopupClosed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
@@ -768,6 +774,20 @@ impl cosmic::Application for CConnectApplet {
                             device_name: "Unknown".to_string(),
                             details: status.clone(),
                         });
+                    }
+                    dbus_client::DaemonEvent::ScreenShareRequested { device_id } => {
+                        self.history.push(HistoryEvent {
+                            timestamp,
+                            event_type: "Screen Share".to_string(),
+                            device_name: "Unknown".to_string(),
+                            details: format!("Device {} requested screen share", device_id),
+                        });
+
+                        return cosmic::task::message(cosmic::Action::App(Message::ShowNotification(
+                            "Remote device requested screen share".into(),
+                            NotificationType::Info,
+                            Some(("Accept".into(), Box::new(Message::LaunchScreenMirror(device_id.to_string())))),
+                        )));
                     }
                     _ => {}
                 }
@@ -918,6 +938,7 @@ impl cosmic::Application for CConnectApplet {
                         Task::done(cosmic::Action::App(Message::ShowNotification(
                             "Clipboard is empty".into(),
                             NotificationType::Error,
+                            None,
                         )))
                     }
                 }
@@ -1133,27 +1154,31 @@ impl cosmic::Application for CConnectApplet {
             }
 
             Message::ShowDeviceDetails(device_id) => {
-                self.view_mode = ViewMode::DeviceDetails(device_id.clone());
-                // Fetch config for this device
-                let device_id_for_async = device_id.clone();
-                let device_id_for_msg = std::sync::Arc::new(device_id.clone());
-                Task::perform(
-                    async move {
-                        match DbusClient::connect().await {
-                            Ok((client, _)) => client.get_device_config(&device_id_for_async).await,
-                            Err(e) => Err(e),
-                        }
-                    },
-                    move |result| {
-                        let device_id = (*device_id_for_msg).clone();
-                        match result {
-                            Ok(config) => {
-                                cosmic::Action::App(Message::DeviceConfigLoaded(device_id, config))
+                self.view_mode = ViewMode::DeviceDetails(device_id);
+                Task::none()
+            }
+            Message::LaunchScreenMirror(device_id) => {
+                let cmd = "cosmic-connect-mirror";
+                let args = &[&device_id];
+
+                match std::process::Command::new(cmd).args(args).spawn() {
+                    Ok(_) => Task::none(),
+                    Err(_) => {
+                        // Try fallback path for dev
+                        let debug_path = format!("target/debug/{}", cmd);
+                        match std::process::Command::new(&debug_path).args(args).spawn() {
+                            Ok(_) => Task::none(),
+                            Err(e) => {
+                                tracing::error!("Failed to launch mirror app: {}", e);
+                                cosmic::task::message(cosmic::Action::App(Message::ShowNotification(
+                                    format!("Failed to launch mirror: {}", e),
+                                    NotificationType::Error,
+                                    None,
+                                )))
                             }
-                            Err(_) => cosmic::Action::None,
                         }
-                    },
-                )
+                    }
+                }
             }
             Message::CloseDeviceDetails => {
                 self.view_mode = ViewMode::Devices;
@@ -1588,11 +1613,11 @@ impl cosmic::Application for CConnectApplet {
                     |_| cosmic::Action::App(Message::ClearNotification),
                 )
             }
-            Message::ShowNotification(message, kind) => {
+            Message::ShowNotification(message, kind, action) => {
                 self.notification = Some(AppNotification {
                     message,
                     kind,
-                    action: None,
+                    action,
                 });
                 self.notification_progress = 0.0; // Start animation
                 Task::perform(
@@ -2205,7 +2230,7 @@ impl CConnectApplet {
             if let Some((label, msg)) = &notification.action {
                 notification_row = notification_row.push(
                     button::text(label)
-                        .on_press(msg.clone())
+                        .on_press(Message::Loop(msg.clone()))
                         .padding(SPACE_XXS),
                 );
             }
@@ -2876,6 +2901,15 @@ impl CConnectApplet {
                 Message::RequestBatteryUpdate(device_id.to_string()),
                 is_refreshing_battery,
             ));
+
+            // Screen Mirroring button
+            if device.has_outgoing_capability("cconnect.screenshare") {
+                actions = actions.push(action_button_with_tooltip(
+                    "video-display-symbolic",
+                    "Mirror Screen",
+                    Message::LaunchScreenMirror(device_id.to_string()),
+                ));
+            }
         }
 
         // Settings button (for paired devices)

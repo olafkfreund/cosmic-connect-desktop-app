@@ -21,6 +21,14 @@ futures = { workspace = true }
 ashpd = { workspace = true }
 arboard = "3.4"
 
+[lib]
+name = "cosmic_applet_connect"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cosmic-applet-connect"
 path = "src/main.rs"
+
+[[bin]]
+name = "cosmic-connect-mirror"
+path = "src/bin/mirror.rs"

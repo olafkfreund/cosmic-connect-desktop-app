@@ -490,6 +490,9 @@ trait CConnect {
     /// Start screen share
     async fn start_screen_share(&self, device_id: &str, port: u16) -> zbus::fdo::Result<()>;
 
+    /// Send screen mirror input
+    async fn send_mirror_input(&self, device_id: String, x: f32, y: f32, action: String) -> zbus::fdo::Result<()>;
+
     /// Signal: File transfer complete
     #[zbus(signal)]
     fn transfer_complete(
@@ -506,6 +509,7 @@ trait CConnect {
 }
 
 /// DBus client for communicating with the daemon
+#[derive(Clone, Debug)]
 pub struct DbusClient {
     /// DBus connection
     #[allow(dead_code)]
@@ -1063,6 +1067,14 @@ impl DbusClient {
             .start_screen_share(device_id, port)
             .await
             .context("Failed to call start_screen_share")
+    }
+
+    /// Send screen mirror input
+    pub async fn send_mirror_input(&self, device_id: String, x: f32, y: f32, action: String) -> Result<()> {
+        self.proxy
+            .send_mirror_input(device_id, x, y, action)
+            .await
+            .context("Failed to send mirror input")
     }
 
     /// Get run commands

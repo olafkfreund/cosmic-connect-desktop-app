@@ -406,6 +406,12 @@ pub enum ProtocolError {
     /// This error occurs when attempting to use a feature that is not enabled or supported.
     #[error("Unsupported feature: {0}")]
     UnsupportedFeature(String),
+
+    /// Database error
+    ///
+    /// This error occurs during database operations (Contacts sync, etc.).
+    #[error("Database error: {0}")]
+    Database(String),
 }
 
 impl ProtocolError {
@@ -500,6 +506,7 @@ impl ProtocolError {
                 | ProtocolError::PermissionDenied(_)
                 | ProtocolError::Configuration(_)
                 | ProtocolError::ProtocolVersionMismatch(_)
+                | ProtocolError::Database(_)
         )
     }
 
@@ -607,6 +614,9 @@ impl ProtocolError {
             }
             ProtocolError::UnsupportedFeature(msg) => {
                 format!("Feature not available: {}.", msg)
+            }
+            ProtocolError::Database(msg) => {
+                format!("Database error: {}. Contact synchronization may be affected.", msg)
             }
         }
     }

@@ -180,6 +180,16 @@ impl ErrorHandler {
                     .await?;
             }
 
+            ProtocolError::Database(msg) => {
+                notifier
+                    .notify_error_with_recovery(
+                        "Database Error",
+                        &format!("A database error occurred: {}\nContact synchronization may be failing.", msg),
+                        None,
+                    )
+                    .await?;
+            }
+
             _ => {
                 // Generic error notification
                 notifier

@@ -250,12 +250,15 @@ struct CConnectApplet {
     pending_operations: std::collections::HashSet<(String, OperationType)>,
     // Animation state
     notification_progress: f32,
+    // Connection status to daemon
+    daemon_connected: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct AppNotification {
     message: String,
     kind: NotificationType,
+    action: Option<(String, Message)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,6 +361,9 @@ enum Message {
     OperationSucceeded(String, OperationType, String),
     ClearNotification,
     ShowNotification(String, NotificationType),
+    // Daemon status
+    DaemonConnected,
+    DaemonDisconnected,
     // Keyboard events
     KeyPress(
         cosmic::iced::keyboard::Key,
@@ -640,6 +646,7 @@ impl cosmic::Application for CConnectApplet {
             notification: None,
             pending_operations: std::collections::HashSet::new(),
             notification_progress: 0.0,
+            daemon_connected: true,
         };
         (app, Task::none())
     }
@@ -1560,6 +1567,7 @@ impl cosmic::Application for CConnectApplet {
                 self.notification = Some(AppNotification {
                     message,
                     kind: NotificationType::Success,
+                    action: None,
                 });
                 self.notification_progress = 0.0; // Start animation
                 Task::perform(
@@ -1572,6 +1580,7 @@ impl cosmic::Application for CConnectApplet {
                 self.notification = Some(AppNotification {
                     message: format!("Error: {}", error),
                     kind: NotificationType::Error,
+                    action: None,
                 });
                 self.notification_progress = 0.0; // Start animation
                 Task::perform(
@@ -1580,7 +1589,11 @@ impl cosmic::Application for CConnectApplet {
                 )
             }
             Message::ShowNotification(message, kind) => {
-                self.notification = Some(AppNotification { message, kind });
+                self.notification = Some(AppNotification {
+                    message,
+                    kind,
+                    action: None,
+                });
                 self.notification_progress = 0.0; // Start animation
                 Task::perform(
                     async { tokio::time::sleep(std::time::Duration::from_secs(5)).await },
@@ -1589,6 +1602,14 @@ impl cosmic::Application for CConnectApplet {
             }
             Message::ClearNotification => {
                 self.notification = None;
+                Task::none()
+            }
+            Message::DaemonConnected => {
+                self.daemon_connected = true;
+                cosmic::task::message(cosmic::Action::App(Message::RefreshDevices))
+            }
+            Message::DaemonDisconnected => {
+                self.daemon_connected = false;
                 Task::none()
             }
             Message::KeyPress(key, modifiers) => {
@@ -1901,11 +1922,11 @@ impl cosmic::Application for CConnectApplet {
                     let mut client = match client_opt {
                         Some(c) => c,
                         None => match dbus_client::ReconnectingClient::new().await {
-                            Ok(c) => c,
+                            Ok(c) => return Some((Message::DaemonConnected, Some(c))),
                             Err(e) => {
                                 tracing::error!("Failed to connect to DBus: {}", e);
                                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                return Some((Message::RefreshDevices, None)); // Dummy msg to retry
+                                return Some((Message::DaemonDisconnected, None));
                             }
                         },
                     };
@@ -2174,17 +2195,26 @@ impl CConnectApplet {
             // Wait, I can't easily change container background without correct theme support.
             // Let's stick to Card and just change the icon.
 
+            let mut notification_row = row![
+                icon::from_name(icon_name),
+                text(notification.message.clone()).width(Length::Fill),
+            ]
+            .spacing(SPACE_XS)
+            .align_y(cosmic::iced::Alignment::Center);
+
+            if let Some((label, msg)) = &notification.action {
+                notification_row = notification_row.push(
+                    button::text(label)
+                        .on_press(msg.clone())
+                        .padding(SPACE_XXS),
+                );
+            }
+
             column![
                 container(
-                    container(
-                        row![
-                            icon::from_name(icon_name),
-                            text(notification.message.clone())
-                        ]
-                        .spacing(SPACE_XS)
-                    )
-                    .padding(SPACE_S)
-                    .class(cosmic::theme::Container::Card)
+                    container(notification_row)
+                        .padding(SPACE_S)
+                        .class(cosmic::theme::Container::Card)
                 )
                 .height(Length::Fixed(self.notification_progress * 50.0))
                 .clip(true),
@@ -2195,6 +2225,23 @@ impl CConnectApplet {
             } else {
                 0.0
             })
+            .into()
+        } else if !self.daemon_connected {
+            column![
+                container(
+                    row![
+                        icon::from_name("dialog-warning-symbolic").size(ICON_XS),
+                        text("Disconnected from background daemon").size(ICON_XS),
+                    ]
+                    .spacing(SPACE_XS)
+                    .align_y(cosmic::iced::Alignment::Center)
+                )
+                .width(Length::Fill)
+                .padding(SPACE_XXS)
+                .class(cosmic::theme::Container::Card),
+                content
+            ]
+            .spacing(SPACE_XS)
             .into()
         } else {
             content

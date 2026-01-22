@@ -1656,6 +1656,37 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Start screen share session
+    /// 
+    /// Configures the ScreenShare plugin with the local port to receive the stream.
+    /// This triggers sending the ready packet to the remote device.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID
+    /// * `port` - The local TCP port where the stream receiver is listening
+    async fn start_screen_share(&self, device_id: String, port: u16) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StartScreenShare called for {} on port {}", device_id, port);
+        
+        let mut plugin_manager = self.plugin_manager.write().await;
+        
+        if let Some(plugin) = plugin_manager.get_device_plugin_mut(&device_id, "screenshare") {
+            use cosmic_connect_protocol::plugins::screenshare::ScreenSharePlugin;
+            
+            if let Some(screenshare) = plugin.as_any_mut().downcast_mut::<ScreenSharePlugin>() {
+                screenshare.set_local_port(port).await.map_err(|e| {
+                    zbus::fdo::Error::Failed(format!("Failed to set local port: {}", e))
+                })?;
+                
+                info!("Screen share configured for device {}", device_id);
+                Ok(())
+            } else {
+                Err(zbus::fdo::Error::Failed("Plugin is not ScreenSharePlugin".to_string()))
+            }
+        } else {
+            Err(zbus::fdo::Error::Failed("ScreenShare plugin not found".to_string()))
+        }
+    }
+
     /// Get daemon performance metrics
     ///
     /// Returns performance metrics if metrics collection is enabled.
@@ -2327,6 +2358,15 @@ impl CConnectInterface {
         success: bool,
         error_message: &str,
     ) -> zbus::Result<()>;
+
+    /// Signal: Screen share requested
+    ///
+    /// Emitted when a remote device requests to share its screen.
+    #[zbus(signal)]
+    async fn screen_share_requested(
+        signal_emitter: &SignalEmitter<'_>,
+        device_id: &str,
+    ) -> zbus::Result<()>;
 }
 
 /// DBus server for the daemon
@@ -2555,10 +2595,19 @@ impl DbusServer {
         )
         .await?;
 
-        debug!(
-            "Emitted TransferComplete signal: {} - success: {}",
-            transfer_id, success
-        );
+        Ok(())
+    }
+
+    /// Emit a screen_share_requested signal
+    pub async fn emit_screen_share_requested(&self, device_id: &str) -> Result<()> {
+        let object_server = self.connection.object_server();
+        let iface_ref = object_server
+            .interface::<_, CConnectInterface>(OBJECT_PATH)
+            .await?;
+
+        CConnectInterface::screen_share_requested(iface_ref.signal_emitter(), device_id).await?;
+
+        debug!("Emitted ScreenShareRequested signal for {}", device_id);
         Ok(())
     }
 }

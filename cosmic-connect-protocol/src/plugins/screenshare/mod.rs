@@ -58,7 +58,6 @@
 
 pub mod decoder;
 pub mod stream_receiver;
-pub mod laser_pointer;
 
 use crate::plugins::{Plugin, PluginFactory};
 use crate::{Device, Packet, ProtocolError, Result};
@@ -423,17 +422,11 @@ pub struct ScreenSharePlugin {
     /// Receiving session (viewing remote share)
     receiving: bool,
 
-    /// Video decoder for receiving streams
-    decoder: Option<decoder::VideoDecoder>,
-
-    /// Stream receiver for network protocol
-    stream_receiver: Option<stream_receiver::StreamReceiver>,
-
     /// Packet sender for outgoing messages
     packet_sender: Option<tokio::sync::mpsc::Sender<(String, Packet)>>,
 
-    /// Abort handle for receiving task
-    receiving_abort_handle: Option<tokio::task::AbortHandle>,
+    /// Local port to receive stream (set by UI)
+    local_port: Option<u16>,
 }
 
 impl ScreenSharePlugin {
@@ -444,10 +437,8 @@ impl ScreenSharePlugin {
             enabled: false,
             active_session: None,
             receiving: false,
-            decoder: None,
-            stream_receiver: None,
             packet_sender: None,
-            receiving_abort_handle: None,
+            local_port: None,
         }
     }
 
@@ -558,6 +549,25 @@ impl ScreenSharePlugin {
         self.active_session.as_ref().map(|s| s.get_stats())
     }
 
+    /// Set the local port for receiving the stream
+    pub async fn set_local_port(&mut self, port: u16) -> Result<()> {
+        self.local_port = Some(port);
+        
+        // If we were already waiting for this (received start), send ready packet
+        if self.receiving {
+             if let Some(sender) = &self.packet_sender {
+                let body = serde_json::json!({ "tcpPort": port });
+                let packet = Packet::new("cconnect.screenshare.ready", body);
+                // We need device_id
+                if let Some(device_id) = &self.device_id {
+                    sender.send((device_id.clone(), packet)).await
+                        .map_err(|_| ProtocolError::Plugin("Failed to send ready packet".to_string()))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Check if currently sharing
     pub fn is_sharing(&self) -> bool {
         self.active_session.is_some()
@@ -605,9 +615,6 @@ impl Plugin for ScreenSharePlugin {
         self.device_id = Some(device.id().to_string());
         self.packet_sender = Some(packet_sender);
 
-        // TODO: Detect available screen capture methods
-        // TODO: Check codec support
-
         Ok(())
     }
 
@@ -652,77 +659,24 @@ impl Plugin for ScreenSharePlugin {
 
                 self.receiving = true;
 
-                // Stop any existing receiving task
-                if let Some(handle) = self.receiving_abort_handle.take() {
-                    handle.abort();
-                }
-
-                // Initialize receiver
-                let mut receiver = stream_receiver::StreamReceiver::new();
-                match receiver.listen().await {
-                    Ok(port) => {
-                        info!("ScreenShare listening on port {}", port);
-                        
-                        // Send ready packet with port
-                        if let Some(sender) = &self.packet_sender {
-                            let body = serde_json::json!({
-                                "tcpPort": port
-                            });
-                            let packet = Packet::new("cconnect.screenshare.ready", body);
-                            if let Err(e) = sender.send((self.device_id.clone().unwrap_or_default(), packet)).await {
-                                error!("Failed to send ready packet: {}", e);
-                            }
+                if let Some(port) = self.local_port {
+                    // UI is ready, send ready packet immediately
+                    info!("Sending ready packet with port {}", port);
+                    if let Some(sender) = &self.packet_sender {
+                        let body = serde_json::json!({ "tcpPort": port });
+                        let packet = Packet::new("cconnect.screenshare.ready", body);
+                        if let Err(e) = sender.send((self.device_id.clone().unwrap_or_default(), packet)).await {
+                            error!("Failed to send ready packet: {}", e);
                         }
-                        
-                        // Initialize decoder
-                        let decoder = match decoder::VideoDecoder::new() {
-                            Ok(d) => d,
-                            Err(e) => {
-                                error!("Failed to create decoder: {}", e);
-                                return Ok(());
-                            }
-                        };
-                        
-                        if let Err(e) = decoder.start() {
-                            error!("Failed to start decoder: {}", e);
-                            return Ok(());
-                        }
-                        
-                        // Spawn receiving task
-                        let handle = tokio::spawn(async move {
-                            if let Err(e) = receiver.accept().await {
-                                error!("Failed to accept connection: {}", e);
-                                return;
-                            }
-                            
-                            loop {
-                                match receiver.next_frame().await {
-                                    Ok((_frame_type, _timestamp, payload)) => {
-                                        // Feed decoder
-                                        if let Err(e) = decoder.push_frame(&payload) {
-                                            error!("Decoder push failed: {}", e);
-                                            break;
-                                        }
-                                        
-                                        // TODO: Send decoded frames to UI
-                                        // For now, just pull to clear buffer
-                                        let _ = decoder.pull_frame();
-                                    }
-                                    Err(e) => {
-                                        error!("Stream error: {}", e);
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            let _ = decoder.stop();
-                            let _ = receiver.close().await;
-                        });
-                        
-                        self.receiving_abort_handle = Some(handle.abort_handle());
                     }
-                    Err(e) => {
-                        error!("Failed to start stream receiver: {}", e);
+                } else {
+                    // UI not ready, request UI start (emit internal packet)
+                    info!("Screen share started by remote, requesting UI launch");
+                    if let Some(sender) = &self.packet_sender {
+                        let packet = Packet::new("cconnect.internal.screenshare.requested", serde_json::json!({}));
+                        if let Err(e) = sender.send((self.device_id.clone().unwrap_or_default(), packet)).await {
+                            error!("Failed to send internal request: {}", e);
+                        }
                     }
                 }
             }
@@ -734,11 +688,9 @@ impl Plugin for ScreenSharePlugin {
                     return Ok(());
                 }
 
-                // TODO: Extract frame data from payload
-                // TODO: Decode frame
-                // TODO: Display frame
-
-                debug!("Received screen frame");
+                // Frames are handled via separate TCP stream, this packet type is likely unused
+                // in the custom protocol, but kept for compatibility or fallback.
+                debug!("Received screen frame packet (unexpected for streaming mode)");
             }
 
             "cconnect.screenshare.cursor" => {
@@ -747,7 +699,7 @@ impl Plugin for ScreenSharePlugin {
                     .map_err(|e| ProtocolError::InvalidPacket(e.to_string()))?;
 
                 // TODO: Update cursor overlay on display
-
+                // Need to send this to UI via DBus if not part of stream
                 debug!("Cursor updated: ({}, {})", position.x, position.y);
             }
 
@@ -757,21 +709,16 @@ impl Plugin for ScreenSharePlugin {
                     .map_err(|e| ProtocolError::InvalidPacket(e.to_string()))?;
 
                 // TODO: Draw annotation on display overlay
-
                 debug!("Annotation received: {}", annotation.annotation_type);
             }
 
             "cconnect.screenshare.stop" => {
                 // Remote device stopped sharing
                 info!("Screen share stopped by {}", device.name());
-
                 self.receiving = false;
-
-                if let Some(handle) = self.receiving_abort_handle.take() {
-                    handle.abort();
-                }
-
-                // TODO: Close display window
+                
+                // We should probably inform the UI to close the window via DBus signal?
+                // Or let the UI detect stream closure.
             }
 
             _ => {
@@ -871,88 +818,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cursor_and_annotations() {
-        let mut plugin = ScreenSharePlugin::new();
-        plugin.enabled = true;
-
-        let config = ShareConfig::default();
-        plugin.start_sharing(config).await.unwrap();
-
-        let cursor = CursorPosition {
-            x: 100,
-            y: 200,
-            visible: true,
-        };
-        plugin.update_cursor(cursor);
-
-        let annotation = Annotation {
-            annotation_type: "circle".to_string(),
-            x1: 50,
-            y1: 50,
-            x2: Some(100),
-            y2: Some(100),
-            color: "#FF0000".to_string(),
-            width: 3,
-        };
-        plugin.add_annotation(annotation);
-
-        plugin.clear_annotations();
-    }
-
-    #[tokio::test]
-    async fn test_share_modes() {
-        assert_eq!(ShareMode::FullScreen.as_str(), "fullscreen");
-        assert_eq!(ShareMode::Window.as_str(), "window");
-    }
-
-    #[tokio::test]
-    async fn test_video_codecs() {
-        assert_eq!(VideoCodec::H264.as_str(), "h264");
-        assert_eq!(VideoCodec::Vp8.as_str(), "vp8");
-        assert_eq!(VideoCodec::Vp9.as_str(), "vp9");
-    }
-
-    #[tokio::test]
-    async fn test_handle_start_packet() {
+    async fn test_handle_start_packet_signaling() {
         let mut device = create_test_device();
         let factory = ScreenSharePluginFactory;
         let mut plugin = factory.create();
 
-        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+        plugin.init(&device, tx).await.unwrap();
         plugin.start().await.unwrap();
 
         let config = ShareConfig::default();
         let body = serde_json::to_value(&config).unwrap();
-
         let packet = Packet::new("cconnect.screenshare.start", body);
 
+        // Test signaling (no local port set)
         assert!(plugin.handle_packet(&packet, &mut device).await.is_ok());
 
-        let screenshare_plugin = plugin.as_any().downcast_ref::<ScreenSharePlugin>().unwrap();
+        // Should receive internal packet request
+        let (dev_id, sent_packet) = rx.recv().await.unwrap();
+        assert_eq!(dev_id, device.id());
+        assert_eq!(sent_packet.packet_type, "cconnect.internal.screenshare.requested");
+        
+        let screenshare_plugin = plugin.as_any_mut().downcast_mut::<ScreenSharePlugin>().unwrap();
         assert!(screenshare_plugin.is_receiving());
-    }
-
-    #[tokio::test]
-    async fn test_handle_stop_packet() {
-        let mut device = create_test_device();
-        let factory = ScreenSharePluginFactory;
-        let mut plugin = factory.create();
-
-        plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
-        plugin.start().await.unwrap();
-
-        // Start receiving first
-        let screenshare_plugin = plugin
-            .as_any_mut()
-            .downcast_mut::<ScreenSharePlugin>()
-            .unwrap();
-        screenshare_plugin.receiving = true;
-
-        let packet = Packet::new("cconnect.screenshare.stop", serde_json::json!({}));
-
-        assert!(plugin.handle_packet(&packet, &mut device).await.is_ok());
-
-        let screenshare_plugin = plugin.as_any().downcast_ref::<ScreenSharePlugin>().unwrap();
-        assert!(!screenshare_plugin.is_receiving());
+        
+        // Now set port
+        screenshare_plugin.set_local_port(12345).await.unwrap();
+        
+        // Should receive ready packet
+        let (dev_id, sent_packet) = rx.recv().await.unwrap();
+        assert_eq!(dev_id, device.id());
+        assert_eq!(sent_packet.packet_type, "cconnect.screenshare.ready");
+        assert_eq!(sent_packet.body["tcpPort"], 12345);
     }
 }

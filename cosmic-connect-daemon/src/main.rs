@@ -2156,12 +2156,24 @@ impl Daemon {
         // Spawn proactive packet handler
         let packet_receiver_mutex = self.packet_receiver.clone();
         let connection_manager = self.connection_manager.clone();
+        let dbus_server = self.dbus_server.clone();
+
         tokio::spawn(async move {
             let mut receiver_guard = packet_receiver_mutex.lock().await;
             if let Some(mut receiver) = receiver_guard.take() {
                 drop(receiver_guard); // Release mutex
                 info!("Started proactive packet handler");
                 while let Some((device_id, packet)) = receiver.recv().await {
+                    // Intercept internal signaling packets
+                    if packet.packet_type == "cconnect.internal.screenshare.requested" {
+                        if let Some(dbus) = &dbus_server {
+                            if let Err(e) = dbus.emit_screen_share_requested(&device_id).await {
+                                error!("Failed to emit screen_share_requested signal: {}", e);
+                            }
+                        }
+                        continue;
+                    }
+
                     let manager = connection_manager.read().await;
                     if let Err(e) = manager.send_packet(&device_id, &packet).await {
                         error!("Failed to send proactive packet to {}: {}", device_id, e);

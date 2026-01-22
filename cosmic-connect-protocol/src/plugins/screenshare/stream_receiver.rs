@@ -3,10 +3,9 @@
 //! Handles the custom binary protocol for video streaming.
 
 use crate::Result;
-use std::io::Cursor;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
 // Magic header "CSMR" (Cosmic Screen Mirroring)
 const MAGIC_HEADER: &[u8; 4] = b"CSMR";

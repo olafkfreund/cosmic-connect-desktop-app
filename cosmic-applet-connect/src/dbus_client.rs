@@ -297,6 +297,10 @@ pub enum DaemonEvent {
         success: bool,
         error: String,
     },
+    /// Screen share requested by remote device
+    ScreenShareRequested {
+        device_id: String,
+    },
 }
 
 /// DBus proxy for COSMIC Connect daemon interface
@@ -483,6 +487,9 @@ trait CConnect {
     /// Get run commands (returns JSON string map of id -> Command)
     async fn get_run_commands(&self, device_id: String) -> zbus::fdo::Result<String>;
 
+    /// Start screen share
+    async fn start_screen_share(&self, device_id: &str, port: u16) -> zbus::fdo::Result<()>;
+
     /// Signal: File transfer complete
     #[zbus(signal)]
     fn transfer_complete(
@@ -492,6 +499,10 @@ trait CConnect {
         success: bool,
         error: &str,
     ) -> zbus::fdo::Result<()>;
+
+    /// Signal: Screen share requested
+    #[zbus(signal)]
+    fn screen_share_requested(device_id: &str) -> zbus::fdo::Result<()>;
 }
 
 /// DBus client for communicating with the daemon
@@ -664,6 +675,17 @@ impl DbusClient {
                         success: *args.success(),
                         error: args.error().to_string(),
                     });
+                }
+            }
+        });
+
+        let event_tx = self.event_tx.clone();
+        let mut screen_share_stream = self.proxy.receive_screen_share_requested().await?;
+        tokio::spawn(async move {
+            while let Some(signal) = screen_share_stream.next().await {
+                if let Ok(args) = signal.args() {
+                    let device_id = args.device_id().to_string();
+                    let _ = event_tx.send(DaemonEvent::ScreenShareRequested { device_id });
                 }
             }
         });
@@ -1033,6 +1055,14 @@ impl DbusClient {
             .remove_run_command(device_id, command_id)
             .await
             .context("Failed to call remove_run_command")
+    }
+
+    /// Start screen share
+    pub async fn start_screen_share(&self, device_id: &str, port: u16) -> Result<()> {
+        self.proxy
+            .start_screen_share(device_id, port)
+            .await
+            .context("Failed to call start_screen_share")
     }
 
     /// Get run commands

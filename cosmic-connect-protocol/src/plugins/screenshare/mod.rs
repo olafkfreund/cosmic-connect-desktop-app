@@ -57,6 +57,8 @@
 //! TODO: Multiple viewer management
 
 pub mod decoder;
+pub mod stream_receiver;
+pub mod laser_pointer;
 
 use crate::plugins::{Plugin, PluginFactory};
 use crate::{Device, Packet, ProtocolError, Result};
@@ -423,6 +425,15 @@ pub struct ScreenSharePlugin {
 
     /// Video decoder for receiving streams
     decoder: Option<decoder::VideoDecoder>,
+
+    /// Stream receiver for network protocol
+    stream_receiver: Option<stream_receiver::StreamReceiver>,
+
+    /// Packet sender for outgoing messages
+    packet_sender: Option<tokio::sync::mpsc::Sender<(String, Packet)>>,
+
+    /// Abort handle for receiving task
+    receiving_abort_handle: Option<tokio::task::AbortHandle>,
 }
 
 impl ScreenSharePlugin {
@@ -434,6 +445,9 @@ impl ScreenSharePlugin {
             active_session: None,
             receiving: false,
             decoder: None,
+            stream_receiver: None,
+            packet_sender: None,
+            receiving_abort_handle: None,
         }
     }
 
@@ -583,12 +597,13 @@ impl Plugin for ScreenSharePlugin {
         vec![OUTGOING_CAPABILITY.to_string()]
     }
 
-    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
+    async fn init(&mut self, device: &Device, packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
         info!(
             "Initializing ScreenShare plugin for device {}",
             device.name()
         );
         self.device_id = Some(device.id().to_string());
+        self.packet_sender = Some(packet_sender);
 
         // TODO: Detect available screen capture methods
         // TODO: Check codec support
@@ -637,22 +652,79 @@ impl Plugin for ScreenSharePlugin {
 
                 self.receiving = true;
 
-                // Initialize video decoder
-                match decoder::VideoDecoder::new() {
-                    Ok(dec) => {
-                        if let Err(e) = dec.start() {
-                            error!("Failed to start video decoder: {}", e);
-                        } else {
-                            info!("Video decoder started");
-                            self.decoder = Some(dec);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to initialize video decoder: {}", e);
-                    }
+                // Stop any existing receiving task
+                if let Some(handle) = self.receiving_abort_handle.take() {
+                    handle.abort();
                 }
 
-                // TODO: Setup display window
+                // Initialize receiver
+                let mut receiver = stream_receiver::StreamReceiver::new();
+                match receiver.listen().await {
+                    Ok(port) => {
+                        info!("ScreenShare listening on port {}", port);
+                        
+                        // Send ready packet with port
+                        if let Some(sender) = &self.packet_sender {
+                            let body = serde_json::json!({
+                                "tcpPort": port
+                            });
+                            let packet = Packet::new("cconnect.screenshare.ready", body);
+                            if let Err(e) = sender.send((self.device_id.clone().unwrap_or_default(), packet)).await {
+                                error!("Failed to send ready packet: {}", e);
+                            }
+                        }
+                        
+                        // Initialize decoder
+                        let decoder = match decoder::VideoDecoder::new() {
+                            Ok(d) => d,
+                            Err(e) => {
+                                error!("Failed to create decoder: {}", e);
+                                return Ok(());
+                            }
+                        };
+                        
+                        if let Err(e) = decoder.start() {
+                            error!("Failed to start decoder: {}", e);
+                            return Ok(());
+                        }
+                        
+                        // Spawn receiving task
+                        let handle = tokio::spawn(async move {
+                            if let Err(e) = receiver.accept().await {
+                                error!("Failed to accept connection: {}", e);
+                                return;
+                            }
+                            
+                            loop {
+                                match receiver.next_frame().await {
+                                    Ok((_frame_type, _timestamp, payload)) => {
+                                        // Feed decoder
+                                        if let Err(e) = decoder.push_frame(&payload) {
+                                            error!("Decoder push failed: {}", e);
+                                            break;
+                                        }
+                                        
+                                        // TODO: Send decoded frames to UI
+                                        // For now, just pull to clear buffer
+                                        let _ = decoder.pull_frame();
+                                    }
+                                    Err(e) => {
+                                        error!("Stream error: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            let _ = decoder.stop();
+                            let _ = receiver.close().await;
+                        });
+                        
+                        self.receiving_abort_handle = Some(handle.abort_handle());
+                    }
+                    Err(e) => {
+                        error!("Failed to start stream receiver: {}", e);
+                    }
+                }
             }
 
             "cconnect.screenshare.frame" => {
@@ -695,10 +767,8 @@ impl Plugin for ScreenSharePlugin {
 
                 self.receiving = false;
 
-                if let Some(decoder) = self.decoder.take() {
-                    if let Err(e) = decoder.stop() {
-                        warn!("Failed to stop decoder: {}", e);
-                    }
+                if let Some(handle) = self.receiving_abort_handle.take() {
+                    handle.abort();
                 }
 
                 // TODO: Close display window

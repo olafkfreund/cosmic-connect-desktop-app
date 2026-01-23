@@ -268,6 +268,14 @@ impl Notification {
             request_reply_id: None,
             actions: None,
             payload_hash: None,
+            is_messaging_app: false,
+            package_name: None,
+            web_url: None,
+            conversation_id: None,
+            is_group_chat: false,
+            group_name: None,
+            has_reply_action: false,
+            sender_avatar: None,
         }
     }
 
@@ -956,5 +964,31 @@ mod tests {
         assert_eq!(json["title"], "Title");
         assert_eq!(json["text"], "Text");
         assert_eq!(json["isClearable"], true);
+    }
+
+    #[test]
+    fn test_messaging_notification_serialization() {
+        let mut notif = Notification::new("123", "App", "Title", "Text", true);
+        notif.is_messaging_app = true;
+        notif.package_name = Some("com.whatsapp".to_string());
+        notif.web_url = Some("https://web.whatsapp.com".to_string());
+        notif.conversation_id = Some("conv_123".to_string());
+        notif.is_group_chat = true;
+        notif.group_name = Some("Family".to_string());
+        notif.has_reply_action = true;
+
+        let json = serde_json::to_value(&notif).unwrap();
+
+        assert_eq!(json["isMessagingApp"], true);
+        assert_eq!(json["packageName"], "com.whatsapp");
+        assert_eq!(json["webUrl"], "https://web.whatsapp.com");
+        assert_eq!(json["conversationId"], "conv_123");
+        assert_eq!(json["isGroupChat"], true);
+        assert_eq!(json["groupName"], "Family");
+        assert_eq!(json["hasReplyAction"], true);
+
+        // Round trip
+        let deserialized: Notification = serde_json::from_value(json).unwrap();
+        assert_eq!(notif, deserialized);
     }
 }

@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use cosmic_connect_protocol::{
     connection::{ConnectionConfig, ConnectionEvent, ConnectionManager},
-    discovery::{DiscoveryConfig, DiscoveryEvent, DiscoveryService},
+    discovery::{default_additional_broadcast_addrs, DiscoveryConfig, DiscoveryEvent, DiscoveryService},
     pairing::{PairingConfig, PairingEvent, PairingService, PairingStatus},
     plugins::{
         audiostream::AudioStreamPluginFactory, battery::BatteryPluginFactory,
@@ -542,6 +542,7 @@ impl Daemon {
             broadcast_interval: Duration::from_secs(config.network.discovery_interval),
             device_timeout: Duration::from_secs(config.network.device_timeout),
             enable_timeout_check: true,
+            additional_broadcast_addrs: default_additional_broadcast_addrs(),
         };
         drop(config);
 

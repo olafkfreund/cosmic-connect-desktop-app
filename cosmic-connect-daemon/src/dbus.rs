@@ -1407,11 +1407,9 @@ impl CConnectInterface {
     async fn get_device_config(&self, device_id: String) -> Result<String, zbus::fdo::Error> {
         debug!("DBus: GetDeviceConfig called for {}", device_id);
 
-        let registry = self.device_config_registry.read().await;
-
-        let config = registry.get(&device_id).ok_or_else(|| {
-            zbus::fdo::Error::Failed(format!("No config found for device: {}", device_id))
-        })?;
+        // Use write lock and get_or_create to ensure a default config exists
+        let mut registry = self.device_config_registry.write().await;
+        let config = registry.get_or_create(&device_id);
 
         let json = serde_json::to_string_pretty(&config)
             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to serialize config: {}", e)))?;

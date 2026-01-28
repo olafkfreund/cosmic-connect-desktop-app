@@ -73,8 +73,9 @@ pub use bluetooth::{
 };
 pub use events::DiscoveryEvent;
 pub use service::{
-    DiscoveryConfig, DiscoveryService, BROADCAST_ADDR, DEFAULT_BROADCAST_INTERVAL,
-    DEFAULT_DEVICE_TIMEOUT, DISCOVERY_PORT, PORT_RANGE_END, PORT_RANGE_START,
+    default_additional_broadcast_addrs, DiscoveryConfig, DiscoveryService, BROADCAST_ADDR,
+    DEFAULT_BROADCAST_INTERVAL, DEFAULT_DEVICE_TIMEOUT, DISCOVERY_PORT, PORT_RANGE_END,
+    PORT_RANGE_START,
 };
 pub use unified::{UnifiedDiscoveryConfig, UnifiedDiscoveryService};
 

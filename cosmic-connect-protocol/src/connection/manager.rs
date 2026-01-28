@@ -645,21 +645,42 @@ impl ConnectionManager {
             // Clean up
             info!("Connection handler for {} stopping", device_id);
 
-            // Remove from active connections
+            // Remove from active connections ONLY if this is still our connection
+            // (prevents socket replacement race condition where old connection cleanup
+            // removes the new connection)
             let mut conns = connections.write().await;
-            conns.remove(&device_id);
+            let should_mark_disconnected = if let Some(active) = conns.get(&device_id) {
+                // Only remove if this connection matches (same remote address)
+                if active.remote_addr == remote_addr {
+                    conns.remove(&device_id);
+                    true
+                } else {
+                    // Socket was replaced - new connection exists, don't mark disconnected
+                    info!(
+                        "Connection for {} was replaced by new connection from {}, skipping disconnect",
+                        device_id, active.remote_addr
+                    );
+                    false
+                }
+            } else {
+                // Already removed (e.g., by socket replacement), still mark disconnected
+                // in case device manager state is inconsistent
+                true
+            };
             drop(conns);
 
-            // Update device manager
-            let mut dm = device_manager.write().await;
-            let _ = dm.mark_disconnected(&device_id);
-            drop(dm);
+            // Update device manager only if this was the active connection
+            if should_mark_disconnected {
+                let mut dm = device_manager.write().await;
+                let _ = dm.mark_disconnected(&device_id);
+                drop(dm);
 
-            // Emit disconnected event
-            let _ = event_tx.send(ConnectionEvent::Disconnected {
-                device_id: device_id.clone(),
-                reason: Some("Connection closed".to_string()),
-            });
+                // Emit disconnected event
+                let _ = event_tx.send(ConnectionEvent::Disconnected {
+                    device_id: device_id.clone(),
+                    reason: Some("Connection closed".to_string()),
+                });
+            }
 
             // Close connection
             let _ = connection.close().await;

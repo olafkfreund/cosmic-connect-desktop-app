@@ -22,8 +22,9 @@ use crate::transport::{
 };
 use crate::{Packet, ProtocolError, Result};
 use async_trait::async_trait;
-use bluer::rfcomm::{Listener, SocketAddr, Stream};
+use bluer::rfcomm::{Listener, Profile, ProfileHandle, SocketAddr, Stream};
 use bluer::{Address, Session};
+use futures::StreamExt;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -363,6 +364,119 @@ impl std::fmt::Debug for BluetoothListener {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BluetoothListener")
             .field("channel", &self.local_addr.channel)
+            .finish()
+    }
+}
+
+/// Profile-based Bluetooth service for SDP registration
+///
+/// This registers an SDP service record with our UUID so that Android
+/// devices can discover and connect to us via `createRfcommSocketToServiceRecord()`.
+pub struct BluetoothProfileService {
+    /// BlueZ session
+    session: Session,
+
+    /// Profile handle (keeps the profile registered)
+    profile_handle: ProfileHandle,
+
+    /// RFCOMM channel being used
+    channel: u8,
+}
+
+impl BluetoothProfileService {
+    /// Register the CConnect Bluetooth profile and start accepting connections
+    ///
+    /// This creates an SDP service record that Android can discover.
+    pub async fn register() -> Result<Self> {
+        info!("Registering CConnect Bluetooth profile for SDP discovery...");
+
+        let session = Session::new()
+            .await
+            .map_err(|e| ProtocolError::Io(std::io::Error::other(e)))?;
+
+        // Create the profile with our service UUID
+        let profile = Profile {
+            uuid: CCONNECT_SERVICE_UUID,
+            name: Some("COSMIC Connect".to_string()),
+            channel: Some(RFCOMM_CHANNEL as u16),
+            require_authentication: Some(true), // Require pairing
+            require_authorization: Some(false),
+            auto_connect: Some(false),
+            ..Default::default()
+        };
+
+        debug!("Registering RFCOMM profile with UUID: {}", CCONNECT_SERVICE_UUID);
+
+        // Register the profile
+        let profile_handle = session
+            .register_profile(profile)
+            .await
+            .map_err(|e| {
+                error!("Failed to register Bluetooth profile: {}", e);
+                ProtocolError::Io(std::io::Error::other(e))
+            })?;
+
+        info!(
+            "Bluetooth profile registered successfully on channel {}",
+            RFCOMM_CHANNEL
+        );
+        info!("SDP service record created with UUID: {}", CCONNECT_SERVICE_UUID);
+
+        Ok(Self {
+            session,
+            profile_handle,
+            channel: RFCOMM_CHANNEL,
+        })
+    }
+
+    /// Accept an incoming connection from the profile
+    ///
+    /// This waits for Android devices to connect via SDP lookup.
+    pub async fn accept(&mut self) -> Result<(BluetoothConnection, Address)> {
+        debug!("Waiting for incoming connection via SDP profile...");
+
+        // Wait for a connection request
+        let req = self
+            .profile_handle
+            .next()
+            .await
+            .ok_or_else(|| {
+                ProtocolError::Io(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Profile handle closed",
+                ))
+            })?;
+
+        let device_addr = req.device();
+        info!("Connection request from device: {}", device_addr);
+
+        // Accept the connection
+        let stream = req
+            .accept()
+            .map_err(|e| ProtocolError::Io(std::io::Error::other(e)))?;
+
+        info!("Accepted connection from {}", device_addr);
+
+        let connection = BluetoothConnection::from_stream(stream, device_addr);
+        Ok((connection, device_addr))
+    }
+
+    /// Get the RFCOMM channel
+    pub fn channel(&self) -> u8 {
+        self.channel
+    }
+
+    /// Get the service UUID
+    pub fn service_uuid(&self) -> Uuid {
+        CCONNECT_SERVICE_UUID
+    }
+}
+
+impl std::fmt::Debug for BluetoothProfileService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BluetoothProfileService")
+            .field("channel", &self.channel)
+            .field("uuid", &CCONNECT_SERVICE_UUID.to_string())
             .finish()
     }
 }

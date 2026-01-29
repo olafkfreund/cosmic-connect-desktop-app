@@ -6,7 +6,7 @@
 //! Uses RFCOMM (Bluetooth Classic) for compatibility with Android's BluetoothSocket.
 
 use crate::{
-    transport::{BluetoothConnection, BluetoothListener, Transport},
+    transport::{BluetoothConnection, BluetoothListener, BluetoothProfileService, Transport},
     transport_manager::TransportManagerEvent,
     Packet, ProtocolError, Result,
 };
@@ -81,22 +81,83 @@ impl BluetoothConnectionManager {
 
     /// Start the Bluetooth connection manager
     ///
-    /// This binds an RFCOMM listener to accept incoming connections from
-    /// Android devices. The listener runs on a background task.
+    /// This registers an SDP service profile for Android discovery and accepts
+    /// incoming connections. Falls back to raw listener if profile registration fails.
     pub async fn start(&self) -> Result<()> {
         info!("Starting Bluetooth RFCOMM connection manager...");
 
-        // Try to bind a listener on the default RFCOMM channel
+        // Try to register SDP profile first (preferred - allows Android discovery)
+        match BluetoothProfileService::register().await {
+            Ok(mut profile_service) => {
+                info!(
+                    "SDP profile registered successfully on channel {}",
+                    profile_service.channel()
+                );
+
+                // Store the channel
+                {
+                    let mut channel = self.rfcomm_channel.write().await;
+                    *channel = Some(profile_service.channel());
+                }
+
+                // Spawn the profile listener task
+                let connections = self.connections.clone();
+                let event_tx = self.event_tx.clone();
+
+                let task = tokio::spawn(async move {
+                    info!("Bluetooth SDP profile listener task started");
+
+                    loop {
+                        match profile_service.accept().await {
+                            Ok((connection, remote_addr)) => {
+                                info!(
+                                    "Accepted Bluetooth connection from {} via SDP",
+                                    remote_addr
+                                );
+
+                                let bt_address = remote_addr.to_string();
+                                let temp_device_id = format!("bt_{}", bt_address.replace(':', "_"));
+
+                                Self::spawn_connection_handler(
+                                    connection,
+                                    temp_device_id,
+                                    bt_address,
+                                    event_tx.clone(),
+                                    connections.clone(),
+                                );
+                            }
+                            Err(e) => {
+                                error!("Error accepting Bluetooth connection via profile: {}", e);
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
+                        }
+                    }
+                });
+
+                // Store the task handle
+                {
+                    let mut listener_task = self.listener_task.write().await;
+                    *listener_task = Some(task);
+                }
+
+                info!("Bluetooth RFCOMM connection manager started with SDP profile");
+                return Ok(());
+            }
+            Err(e) => {
+                warn!("Failed to register SDP profile: {}, falling back to raw listener", e);
+            }
+        }
+
+        // Fallback: Try raw RFCOMM listener (no SDP, but still accepts direct connections)
         let listener = match BluetoothListener::bind(Some(DEFAULT_RFCOMM_CHANNEL)).await {
             Ok(l) => {
                 info!(
-                    "Bluetooth RFCOMM listener bound on channel {}",
+                    "Bluetooth RFCOMM listener bound on channel {} (no SDP)",
                     l.channel()
                 );
                 l
             }
             Err(e) => {
-                // Try with any available channel
                 warn!(
                     "Failed to bind RFCOMM on channel {}: {}, trying any available channel",
                     DEFAULT_RFCOMM_CHANNEL, e
@@ -104,14 +165,13 @@ impl BluetoothConnectionManager {
                 match BluetoothListener::bind(None).await {
                     Ok(l) => {
                         info!(
-                            "Bluetooth RFCOMM listener bound on channel {}",
+                            "Bluetooth RFCOMM listener bound on channel {} (no SDP)",
                             l.channel()
                         );
                         l
                     }
                     Err(e2) => {
                         error!("Failed to bind RFCOMM listener: {}", e2);
-                        // Continue without listener - outgoing connections still work
                         info!("Bluetooth RFCOMM connection manager started (outgoing only)");
                         return Ok(());
                     }
@@ -119,18 +179,18 @@ impl BluetoothConnectionManager {
             }
         };
 
-        // Store the channel we're listening on
+        // Store the channel
         {
             let mut channel = self.rfcomm_channel.write().await;
             *channel = Some(listener.channel());
         }
 
-        // Spawn the listener task
+        // Spawn the raw listener task
         let connections = self.connections.clone();
         let event_tx = self.event_tx.clone();
 
         let task = tokio::spawn(async move {
-            info!("Bluetooth RFCOMM listener task started");
+            info!("Bluetooth RFCOMM raw listener task started");
 
             loop {
                 match listener.accept().await {
@@ -140,12 +200,9 @@ impl BluetoothConnectionManager {
                             remote_addr
                         );
 
-                        // Generate a device ID from the Bluetooth address
-                        // The actual device ID will be determined during identity exchange
                         let bt_address = remote_addr.to_string();
                         let temp_device_id = format!("bt_{}", bt_address.replace(':', "_"));
 
-                        // Spawn connection handler
                         Self::spawn_connection_handler(
                             connection,
                             temp_device_id,
@@ -156,7 +213,6 @@ impl BluetoothConnectionManager {
                     }
                     Err(e) => {
                         error!("Error accepting Bluetooth connection: {}", e);
-                        // Small delay to avoid tight loop on persistent errors
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
                 }
@@ -169,8 +225,7 @@ impl BluetoothConnectionManager {
             *listener_task = Some(task);
         }
 
-        info!("Bluetooth RFCOMM connection manager started (listening on channel {})",
-              self.rfcomm_channel.read().await.unwrap_or(0));
+        info!("Bluetooth RFCOMM connection manager started (raw listener, no SDP)");
         Ok(())
     }
 

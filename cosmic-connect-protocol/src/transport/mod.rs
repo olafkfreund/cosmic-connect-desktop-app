@@ -16,8 +16,8 @@ mod r#trait;
 // pub mod tls_config;
 
 pub use bluetooth::{
-    BluetoothConnection, BluetoothListener, BluetoothTransportFactory, CCONNECT_SERVICE_UUID,
-    RFCOMM_READ_CHAR_UUID, RFCOMM_WRITE_CHAR_UUID,
+    BluetoothConnection, BluetoothListener, BluetoothProfileService, BluetoothTransportFactory,
+    CCONNECT_SERVICE_UUID, RFCOMM_READ_CHAR_UUID, RFCOMM_WRITE_CHAR_UUID,
 };
 pub use r#trait::{
     LatencyCategory, Transport, TransportAddress, TransportCapabilities, TransportFactory,

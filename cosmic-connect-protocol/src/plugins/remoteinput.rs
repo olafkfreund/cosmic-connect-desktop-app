@@ -386,7 +386,10 @@ impl Plugin for RemoteInputPlugin {
     }
 
     fn incoming_capabilities(&self) -> Vec<String> {
-        vec![PACKET_TYPE_MOUSEPAD_REQUEST.to_string()]
+        vec![
+            PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
+            "kdeconnect.mousepad.request".to_string(),
+        ]
     }
 
     fn outgoing_capabilities(&self) -> Vec<String> {
@@ -413,7 +416,7 @@ impl Plugin for RemoteInputPlugin {
     }
 
     async fn handle_packet(&mut self, packet: &Packet, _device: &mut Device) -> Result<()> {
-        if packet.is_type(PACKET_TYPE_MOUSEPAD_REQUEST) {
+        if packet.is_type(PACKET_TYPE_MOUSEPAD_REQUEST) || packet.is_type("kdeconnect.mousepad.request") {
             debug!("Received remote input request");
             self.handle_request(packet).await
         } else {

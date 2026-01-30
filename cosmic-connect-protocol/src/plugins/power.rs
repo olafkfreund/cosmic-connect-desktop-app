@@ -106,12 +106,22 @@ use crate::{Device, Packet, Result};
 use async_trait::async_trait;
 use serde_json::json;
 use std::any::Any;
+use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 use super::logind_backend::LogindBackend;
 use super::systemd_inhibitor::{InhibitMode, InhibitType, InhibitorLock, SystemdInhibitor};
 use super::upower_backend::UPowerBackend;
 use super::{Plugin, PluginFactory};
+
+/// Inhibition state for thread-safe access
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InhibitionState {
+    /// Whether sleep is currently inhibited
+    pub inhibited: bool,
+    /// Reason for inhibition
+    pub reason: Option<String>,
+}
 
 /// Power management plugin for remote power control
 pub struct PowerPlugin {
@@ -121,11 +131,8 @@ pub struct PowerPlugin {
     /// Whether the plugin is enabled
     enabled: bool,
 
-    /// Whether sleep is currently inhibited
-    sleep_inhibited: bool,
-
-    /// Inhibition reason
-    inhibit_reason: Option<String>,
+    /// Thread-safe inhibition state
+    inhibition_state: Arc<RwLock<InhibitionState>>,
 
     /// Systemd inhibitor manager
     inhibitor: SystemdInhibitor,
@@ -146,14 +153,71 @@ impl PowerPlugin {
         Self {
             device_id: None,
             enabled: false,
-            sleep_inhibited: false,
-            inhibit_reason: None,
+            inhibition_state: Arc::new(RwLock::new(InhibitionState::default())),
             inhibitor: SystemdInhibitor::new(),
             inhibitor_lock: None,
             upower: UPowerBackend::new(),
             logind: LogindBackend::new(),
         }
     }
+
+    // ========== Public API for UI Integration ==========
+
+    /// Check if sleep is currently inhibited
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_protocol::plugins::power::PowerPlugin;
+    ///
+    /// let plugin = PowerPlugin::new();
+    /// if plugin.is_sleep_inhibited() {
+    ///     println!("Sleep is inhibited");
+    /// }
+    /// ```
+    pub fn is_sleep_inhibited(&self) -> bool {
+        self.inhibition_state
+            .read()
+            .map(|state| state.inhibited)
+            .unwrap_or(false)
+    }
+
+    /// Get the inhibition reason if sleep is inhibited
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_protocol::plugins::power::PowerPlugin;
+    ///
+    /// let plugin = PowerPlugin::new();
+    /// if let Some(reason) = plugin.get_inhibit_reason() {
+    ///     println!("Sleep inhibited: {}", reason);
+    /// }
+    /// ```
+    pub fn get_inhibit_reason(&self) -> Option<String> {
+        self.inhibition_state
+            .read()
+            .ok()
+            .and_then(|state| state.reason.clone())
+    }
+
+    /// Get the inhibition state Arc for external monitoring
+    ///
+    /// This allows external code to hold a reference to the inhibition state
+    /// and receive updates when the state changes.
+    pub fn get_inhibition_state(&self) -> Arc<RwLock<InhibitionState>> {
+        Arc::clone(&self.inhibition_state)
+    }
+
+    /// Update the inhibition state
+    fn set_inhibition_state(&self, inhibited: bool, reason: Option<String>) {
+        if let Ok(mut state) = self.inhibition_state.write() {
+            state.inhibited = inhibited;
+            state.reason = reason;
+        }
+    }
+
+    // ========== Packet Creation ==========
 
     /// Create a power action request packet
     ///
@@ -307,15 +371,13 @@ impl PowerPlugin {
                 {
                     Ok(lock) => {
                         self.inhibitor_lock = Some(lock);
-                        self.sleep_inhibited = true;
-                        self.inhibit_reason = Some(reason.to_string());
+                        self.set_inhibition_state(true, Some(reason.to_string()));
                         info!("Sleep inhibited via systemd: {}", reason);
                     }
                     Err(e) => {
                         warn!("Failed to acquire systemd inhibitor lock: {}", e);
                         // Still track the request even if lock fails
-                        self.sleep_inhibited = true;
-                        self.inhibit_reason = Some(reason.to_string());
+                        self.set_inhibition_state(true, Some(reason.to_string()));
                     }
                 }
             } else {
@@ -323,8 +385,7 @@ impl PowerPlugin {
                 if self.inhibitor_lock.take().is_some() {
                     info!("Sleep inhibition removed via systemd");
                 }
-                self.sleep_inhibited = false;
-                self.inhibit_reason = None;
+                self.set_inhibition_state(false, None);
             }
         }
 
@@ -371,7 +432,7 @@ impl PowerPlugin {
         // Create status response packet
         let _response = self.create_status_response(
             state,
-            self.sleep_inhibited,
+            self.is_sleep_inhibited(),
             battery_present,
             on_battery,
             battery_percentage,
@@ -491,12 +552,11 @@ impl Plugin for PowerPlugin {
         self.enabled = false;
 
         // Release any sleep inhibitors
-        if self.sleep_inhibited {
+        if self.is_sleep_inhibited() {
             if self.inhibitor_lock.take().is_some() {
                 info!("Released systemd inhibitor lock on plugin stop");
             }
-            self.sleep_inhibited = false;
-            self.inhibit_reason = None;
+            self.set_inhibition_state(false, None);
         }
 
         Ok(())
@@ -514,8 +574,7 @@ impl Plugin for PowerPlugin {
             || packet.is_type("kdeconnect.power.inhibit")
         {
             self.handle_inhibit_request(packet, device).await
-        } else if packet.is_type("cconnect.power.query")
-            || packet.is_type("kdeconnect.power.query")
+        } else if packet.is_type("cconnect.power.query") || packet.is_type("kdeconnect.power.query")
         {
             self.handle_status_query(packet, device).await
         } else {
@@ -668,5 +727,78 @@ mod tests {
 
         assert!(plugin.stop().await.is_ok());
         assert!(!plugin.enabled);
+    }
+
+    #[test]
+    fn test_inhibition_state_initial() {
+        let plugin = PowerPlugin::new();
+
+        // Initially not inhibited
+        assert!(!plugin.is_sleep_inhibited());
+        assert!(plugin.get_inhibit_reason().is_none());
+    }
+
+    #[test]
+    fn test_inhibition_state_updates() {
+        let plugin = PowerPlugin::new();
+
+        // Set inhibited with reason
+        plugin.set_inhibition_state(true, Some("File transfer".to_string()));
+        assert!(plugin.is_sleep_inhibited());
+        assert_eq!(plugin.get_inhibit_reason(), Some("File transfer".to_string()));
+
+        // Clear inhibition
+        plugin.set_inhibition_state(false, None);
+        assert!(!plugin.is_sleep_inhibited());
+        assert!(plugin.get_inhibit_reason().is_none());
+    }
+
+    #[test]
+    fn test_get_inhibition_state_arc() {
+        let plugin = PowerPlugin::new();
+        let state = plugin.get_inhibition_state();
+
+        // Initial state should be default
+        assert_eq!(*state.read().unwrap(), InhibitionState::default());
+
+        // Update via plugin
+        plugin.set_inhibition_state(true, Some("Test reason".to_string()));
+
+        // Arc should reflect the change
+        let expected = InhibitionState {
+            inhibited: true,
+            reason: Some("Test reason".to_string()),
+        };
+        assert_eq!(*state.read().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_inhibition_state_thread_safety() {
+        use std::thread;
+
+        let plugin = PowerPlugin::new();
+        let state = plugin.get_inhibition_state();
+
+        // Spawn reader threads
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let state_clone = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..100 {
+                        let _inhibited = state_clone.read().unwrap().inhibited;
+                    }
+                })
+            })
+            .collect();
+
+        // Update state concurrently while threads read
+        for i in 0..100 {
+            plugin.set_inhibition_state(i % 2 == 0, Some(format!("Reason {i}")));
+        }
+
+        // Wait for all reader threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }

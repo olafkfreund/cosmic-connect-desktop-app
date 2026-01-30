@@ -103,6 +103,7 @@ pub mod audio_backend;
 pub mod audiostream;
 pub mod battery;
 pub mod chat;
+pub mod chat_storage;
 pub mod clipboard;
 pub mod clipboardhistory;
 pub mod connectivity_report;

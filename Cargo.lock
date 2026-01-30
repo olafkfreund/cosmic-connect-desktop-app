@@ -1708,6 +1708,7 @@ dependencies = [
  "bluer",
  "chrono",
  "cosmic-connect-core",
+ "dirs",
  "futures",
  "gstreamer",
  "gstreamer-app",

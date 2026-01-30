@@ -94,7 +94,7 @@
 //!
 //! ## Storage
 //!
-//! - Messages stored in-memory (TODO: SQLite)
+//! - Messages stored in SQLite with in-memory fallback
 //! - Configurable message retention
 //! - Per-device chat rooms
 //! - Database path: `~/.local/share/cosmic-connect/chat.db`
@@ -131,9 +131,10 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use super::chat_storage::ChatSqliteStorage;
 use super::{Plugin, PluginFactory};
 
 /// Maximum messages to keep per device
@@ -297,9 +298,12 @@ impl ChatStorage {
         }
     }
 
-    /// Get unread count
+    /// Get unread count (only received messages, not sent)
     fn unread_count(&self) -> usize {
-        self.messages.iter().filter(|msg| !msg.read).count()
+        self.messages
+            .iter()
+            .filter(|msg| !msg.read && !msg.from_me)
+            .count()
     }
 }
 
@@ -311,8 +315,14 @@ pub struct ChatPlugin {
     /// Whether the plugin is enabled
     enabled: bool,
 
-    /// Message storage (TODO: SQLite)
-    storage: Arc<RwLock<ChatStorage>>,
+    /// In-memory storage (fallback if SQLite fails)
+    memory_storage: Arc<RwLock<ChatStorage>>,
+
+    /// SQLite persistent storage (initialized on init)
+    sqlite_storage: Option<ChatSqliteStorage>,
+
+    /// Configuration
+    config: ChatConfig,
 
     /// Whether remote user is currently typing
     remote_typing: Arc<RwLock<bool>>,
@@ -334,9 +344,97 @@ impl ChatPlugin {
         Self {
             device_id: None,
             enabled: false,
-            storage: Arc::new(RwLock::new(ChatStorage::new(config))),
+            memory_storage: Arc::new(RwLock::new(ChatStorage::new(config.clone()))),
+            sqlite_storage: None,
+            config,
             remote_typing: Arc::new(RwLock::new(false)),
         }
+    }
+
+    /// Initialize SQLite storage for the device
+    fn init_sqlite_storage(&mut self, device_id: &str) {
+        match ChatSqliteStorage::new(device_id, self.config.clone()) {
+            Ok(storage) => {
+                info!("Initialized SQLite chat storage for device {}", device_id);
+                self.sqlite_storage = Some(storage);
+            }
+            Err(e) => {
+                error!(
+                    "Failed to initialize SQLite storage, using in-memory fallback: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Add message to storage (SQLite or memory fallback)
+    fn add_message(&mut self, message: ChatMessage) {
+        if let Some(ref sqlite) = self.sqlite_storage {
+            if let Err(e) = sqlite.add(&message) {
+                warn!("SQLite add failed, using memory: {}", e);
+                // Fallback handled below
+            } else {
+                return;
+            }
+        }
+        // Fallback to memory storage (blocking acquire for sync context)
+        if let Ok(mut storage) = self.memory_storage.try_write() {
+            storage.add(message);
+        }
+    }
+
+    /// Get message from storage
+    #[allow(dead_code)]
+    fn get_message_sync(&self, message_id: &str) -> Option<ChatMessage> {
+        if let Some(ref sqlite) = self.sqlite_storage {
+            if let Ok(Some(msg)) = sqlite.get(message_id) {
+                return Some(msg);
+            }
+        }
+        self.memory_storage
+            .try_read()
+            .ok()
+            .and_then(|storage| storage.get(message_id).cloned())
+    }
+
+    /// Mark message as read in storage
+    fn mark_read_sync(&self, message_id: &str) -> Result<()> {
+        if let Some(ref sqlite) = self.sqlite_storage {
+            sqlite
+                .mark_read(message_id)
+                .map(|_| ())
+                .map_err(|e| ProtocolError::invalid_state(format!("Failed to mark read: {}", e)))
+        } else if let Ok(mut storage) = self.memory_storage.try_write() {
+            storage.mark_read(message_id)
+        } else {
+            Err(ProtocolError::invalid_state("Storage unavailable"))
+        }
+    }
+
+    /// Get history from storage
+    fn get_history_sync(&self, limit: usize, before_timestamp: Option<i64>) -> Vec<ChatMessage> {
+        if let Some(ref sqlite) = self.sqlite_storage {
+            if let Ok(messages) = sqlite.get_history(limit, before_timestamp) {
+                return messages;
+            }
+        }
+        if let Ok(storage) = self.memory_storage.try_read() {
+            return storage.get_history(limit, before_timestamp);
+        }
+        Vec::new()
+    }
+
+    /// Get unread count from storage
+    fn unread_count_sync(&self) -> usize {
+        if let Some(ref sqlite) = self.sqlite_storage {
+            if let Ok(count) = sqlite.unread_count() {
+                return count;
+            }
+        }
+        if let Ok(storage) = self.memory_storage.try_read() {
+            return storage.unread_count();
+        }
+        0
     }
 
     /// Send a message
@@ -344,7 +442,7 @@ impl ChatPlugin {
         let message = ChatMessage::new(text, true);
         let message_id = message.message_id.clone();
 
-        self.storage.write().await.add(message);
+        self.add_message(message);
 
         info!("Sent chat message: {}", message_id);
         Ok(message_id)
@@ -352,7 +450,7 @@ impl ChatPlugin {
 
     /// Get message history
     pub async fn get_history(&self, limit: usize) -> Vec<ChatMessage> {
-        self.storage.read().await.get_history(limit, None)
+        self.get_history_sync(limit, None)
     }
 
     /// Get history before timestamp
@@ -361,22 +459,19 @@ impl ChatPlugin {
         limit: usize,
         before_timestamp: i64,
     ) -> Vec<ChatMessage> {
-        self.storage
-            .read()
-            .await
-            .get_history(limit, Some(before_timestamp))
+        self.get_history_sync(limit, Some(before_timestamp))
     }
 
     /// Mark message as read
     pub async fn mark_read(&mut self, message_id: &str) -> Result<()> {
-        self.storage.write().await.mark_read(message_id)?;
+        self.mark_read_sync(message_id)?;
         info!("Marked message as read: {}", message_id);
         Ok(())
     }
 
     /// Get unread message count
     pub async fn unread_count(&self) -> usize {
-        self.storage.read().await.unread_count()
+        self.unread_count_sync()
     }
 
     /// Set typing indicator
@@ -482,7 +577,7 @@ impl ChatPlugin {
             false, // from_me = false (received)
         );
 
-        self.storage.write().await.add(message);
+        self.add_message(message);
 
         // TODO: Send notification if enabled
         // Need notification plugin integration
@@ -604,7 +699,12 @@ impl Plugin for ChatPlugin {
     }
 
     async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
-        self.device_id = Some(device.id().to_string());
+        let device_id = device.id().to_string();
+        self.device_id = Some(device_id.clone());
+
+        // Initialize SQLite storage
+        self.init_sqlite_storage(&device_id);
+
         info!("Chat plugin initialized for device {}", device.name());
         Ok(())
     }
@@ -614,7 +714,13 @@ impl Plugin for ChatPlugin {
         self.enabled = true;
 
         // Cleanup on start
-        self.storage.write().await.cleanup();
+        if let Some(ref sqlite) = self.sqlite_storage {
+            if let Err(e) = sqlite.cleanup() {
+                warn!("Failed to cleanup chat storage: {}", e);
+            }
+        } else if let Ok(mut storage) = self.memory_storage.try_write() {
+            storage.cleanup();
+        }
 
         Ok(())
     }
@@ -631,16 +737,20 @@ impl Plugin for ChatPlugin {
             return Ok(());
         }
 
-        if packet.is_type("cconnect.chat.message") {
-            self.handle_message(packet, device).await
-        } else if packet.is_type("cconnect.chat.typing") {
-            self.handle_typing(packet, device).await
-        } else if packet.is_type("cconnect.chat.read") {
-            self.handle_read(packet, device).await
-        } else if packet.is_type("cconnect.chat.history") {
-            self.handle_history_request(packet, device).await
-        } else {
-            Ok(())
+        match packet.packet_type.as_str() {
+            "cconnect.chat.message" | "kdeconnect.chat.message" => {
+                self.handle_message(packet, device).await
+            }
+            "cconnect.chat.typing" | "kdeconnect.chat.typing" => {
+                self.handle_typing(packet, device).await
+            }
+            "cconnect.chat.read" | "kdeconnect.chat.read" => {
+                self.handle_read(packet, device).await
+            }
+            "cconnect.chat.history" | "kdeconnect.chat.history" => {
+                self.handle_history_request(packet, device).await
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -743,12 +853,21 @@ mod tests {
     async fn test_unread_count() {
         let mut plugin = ChatPlugin::new();
 
-        let msg1 = plugin.send_message("Message 1".to_string()).await.unwrap();
-        plugin.send_message("Message 2".to_string()).await.unwrap();
+        // Add received messages (from_me = false) to test unread count
+        let msg1 = ChatMessage::new("Received 1".to_string(), false);
+        let msg1_id = msg1.message_id.clone();
+        plugin.add_message(msg1);
 
+        let msg2 = ChatMessage::new("Received 2".to_string(), false);
+        plugin.add_message(msg2);
+
+        // Sent messages should not count as unread
+        plugin.send_message("Sent 1".to_string()).await.unwrap();
+
+        // Only received messages count as unread
         assert_eq!(plugin.unread_count().await, 2);
 
-        plugin.mark_read(&msg1).await.unwrap();
+        plugin.mark_read(&msg1_id).await.unwrap();
 
         assert_eq!(plugin.unread_count().await, 1);
     }

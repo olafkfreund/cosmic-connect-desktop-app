@@ -444,10 +444,10 @@ impl Plugin for TelephonyPlugin {
     }
 
     async fn handle_packet(&mut self, packet: &Packet, _device: &mut Device) -> Result<()> {
-        if packet.is_type(PACKET_TYPE_TELEPHONY) {
+        if packet.is_type(PACKET_TYPE_TELEPHONY) || packet.is_type("kdeconnect.telephony") {
             debug!("Received telephony event");
             self.handle_telephony_event(packet).await
-        } else if packet.is_type(PACKET_TYPE_SMS_MESSAGES) {
+        } else if packet.is_type(PACKET_TYPE_SMS_MESSAGES) || packet.is_type("kdeconnect.sms.messages") {
             debug!("Received SMS messages");
             self.handle_sms_messages(packet).await
         } else {

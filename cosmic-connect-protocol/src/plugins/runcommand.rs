@@ -669,13 +669,16 @@ mod tests {
         let plugin = RunCommandPlugin::new();
 
         let incoming = plugin.incoming_capabilities();
-        assert_eq!(incoming.len(), 2);
+        assert_eq!(incoming.len(), 4);
         assert!(incoming.contains(&"cconnect.runcommand.request".to_string()));
         assert!(incoming.contains(&"kdeconnect.runcommand.request".to_string()));
+        assert!(incoming.contains(&"cconnect.runcommand".to_string()));
+        assert!(incoming.contains(&"kdeconnect.runcommand".to_string()));
 
         let outgoing = plugin.outgoing_capabilities();
-        assert_eq!(outgoing.len(), 1);
-        assert_eq!(outgoing[0], "cconnect.runcommand");
+        assert_eq!(outgoing.len(), 2);
+        assert!(outgoing.contains(&"cconnect.runcommand".to_string()));
+        assert!(outgoing.contains(&"cconnect.runcommand.request".to_string()));
     }
 
     #[test]

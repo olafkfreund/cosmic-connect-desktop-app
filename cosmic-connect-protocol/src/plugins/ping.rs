@@ -273,7 +273,7 @@ impl Plugin for PingPlugin {
     }
 
     async fn handle_packet(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
-        if packet.is_type("cconnect.ping") {
+        if packet.is_type("cconnect.ping") || packet.is_type("kdeconnect.ping") {
             self.handle_ping(packet, device);
         }
         Ok(())

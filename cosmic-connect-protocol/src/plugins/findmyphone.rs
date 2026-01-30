@@ -84,14 +84,52 @@ impl FindMyPhonePlugin {
         }
     }
 
+    /// Check if the device is currently ringing
+    ///
+    /// Returns true if a ring sound is currently playing.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_protocol::plugins::findmyphone::FindMyPhonePlugin;
+    ///
+    /// let plugin = FindMyPhonePlugin::new();
+    /// if plugin.is_ringing() {
+    ///     println!("Device is ringing!");
+    /// }
+    /// ```
+    pub fn is_ringing(&self) -> bool {
+        self.is_ringing.load(Ordering::SeqCst)
+    }
+
+    /// Get the ringing state Arc for external monitoring
+    ///
+    /// This allows external code to hold a reference to the ringing state
+    /// and receive updates when the state changes.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_protocol::plugins::findmyphone::FindMyPhonePlugin;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// let plugin = FindMyPhonePlugin::new();
+    /// let ringing_state = plugin.get_ringing_state();
+    /// // Can be cloned and passed to UI components
+    /// let is_ringing = ringing_state.load(Ordering::SeqCst);
+    /// ```
+    pub fn get_ringing_state(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.is_ringing)
+    }
+
     /// Create a ring request packet
     ///
     /// This packet makes the remote device ring. Sending it again cancels the ring.
     ///
-    /// # Examples
+    /// # Example
     ///
     /// ```rust
-    /// use cosmic_connect_core::plugins::findmyphone::FindMyPhonePlugin;
+    /// use cosmic_connect_protocol::plugins::findmyphone::FindMyPhonePlugin;
     ///
     /// let plugin = FindMyPhonePlugin::new();
     /// let packet = plugin.create_ring_request();
@@ -467,5 +505,39 @@ mod tests {
         // Clean up
         plugin.stop_ringing();
         assert!(!plugin.is_ringing.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_is_ringing() {
+        let plugin = FindMyPhonePlugin::new();
+
+        assert!(!plugin.is_ringing());
+
+        plugin.is_ringing.store(true, Ordering::SeqCst);
+        assert!(plugin.is_ringing());
+    }
+
+    #[test]
+    fn test_get_ringing_state() {
+        let plugin = FindMyPhonePlugin::new();
+        let state = plugin.get_ringing_state();
+
+        assert!(!state.load(Ordering::SeqCst));
+
+        plugin.is_ringing.store(true, Ordering::SeqCst);
+        assert!(state.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_ringing_state_shared() {
+        let plugin = FindMyPhonePlugin::new();
+        let state1 = plugin.get_ringing_state();
+        let state2 = plugin.get_ringing_state();
+
+        plugin.is_ringing.store(true, Ordering::SeqCst);
+
+        // Both clones see the same state
+        assert!(state1.load(Ordering::SeqCst));
+        assert!(state2.load(Ordering::SeqCst));
     }
 }

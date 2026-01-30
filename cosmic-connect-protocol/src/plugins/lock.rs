@@ -82,6 +82,7 @@ use serde_json::json;
 use std::any::Any;
 use tracing::{debug, info, warn};
 
+use super::logind_backend::LogindBackend;
 use super::{Plugin, PluginFactory};
 
 /// Lock plugin for remote desktop lock/unlock
@@ -94,6 +95,9 @@ pub struct LockPlugin {
 
     /// Current lock state (cached)
     is_locked: bool,
+
+    /// Logind DBus backend for screen lock control
+    logind_backend: LogindBackend,
 }
 
 impl LockPlugin {
@@ -103,6 +107,7 @@ impl LockPlugin {
             device_id: None,
             enabled: false,
             is_locked: false,
+            logind_backend: LogindBackend::new(),
         }
     }
 
@@ -192,67 +197,72 @@ impl LockPlugin {
     async fn handle_lock_request(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
         // Check if this is a lock/unlock request
         if let Some(set_locked) = packet.body.get("setLocked").and_then(|v| v.as_bool()) {
-            info!(
-                "Received lock request from {} ({}): {}",
-                device.name(),
-                device.id(),
-                if set_locked { "lock" } else { "unlock" }
-            );
-
-            // Execute lock/unlock command
-            let result = if set_locked {
-                self.lock_desktop().await
-            } else {
-                self.unlock_desktop().await
-            };
-
-            match result {
-                Ok(()) => {
-                    self.is_locked = set_locked;
-                    info!(
-                        "Desktop {} successfully",
-                        if set_locked { "locked" } else { "unlocked" }
-                    );
-
-                    // TODO: Send state update back to device
-                    // Need to implement packet sending infrastructure
-                    // let state_packet = self.create_lock_state(set_locked);
-                    // device.send_packet(&state_packet).await?;
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to {} desktop: {}",
-                        if set_locked { "lock" } else { "unlock" },
-                        e
-                    );
-                }
-            }
+            self.handle_set_locked(set_locked, device).await?;
+            return Ok(());
         }
+
         // Check if this is a state query
-        else if packet
+        let is_state_query = packet
             .body
             .get("requestLocked")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            info!(
-                "Received lock state query from {} ({})",
-                device.name(),
-                device.id()
-            );
+            .unwrap_or(false);
 
-            // Query current lock state
-            match self.query_lock_state().await {
-                Ok(locked) => {
-                    self.is_locked = locked;
-                    // TODO: Send state update back to device
-                    // Need to implement packet sending infrastructure
-                    // let state_packet = self.create_lock_state(locked);
-                    // device.send_packet(&state_packet).await?;
-                }
-                Err(e) => {
-                    warn!("Failed to query lock state: {}", e);
-                }
+        if is_state_query {
+            self.handle_lock_state_query(device).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Handle a set locked request
+    async fn handle_set_locked(&mut self, set_locked: bool, device: &Device) -> Result<()> {
+        let action = if set_locked { "lock" } else { "unlock" };
+        info!(
+            "Received {} request from {} ({})",
+            action,
+            device.name(),
+            device.id()
+        );
+
+        let result = if set_locked {
+            self.lock_desktop().await
+        } else {
+            self.unlock_desktop().await
+        };
+
+        match result {
+            Ok(()) => {
+                self.is_locked = set_locked;
+                // TODO: Send state update back to device
+                // let state_packet = self.create_lock_state(set_locked);
+                // device.send_packet(&state_packet).await?;
+            }
+            Err(e) => {
+                warn!("Failed to {} desktop: {}", action, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a lock state query request
+    async fn handle_lock_state_query(&mut self, device: &Device) -> Result<()> {
+        info!(
+            "Received lock state query from {} ({})",
+            device.name(),
+            device.id()
+        );
+
+        match self.query_lock_state().await {
+            Ok(locked) => {
+                self.is_locked = locked;
+                // TODO: Send state update back to device
+                // let state_packet = self.create_lock_state(locked);
+                // device.send_packet(&state_packet).await?;
+            }
+            Err(e) => {
+                warn!("Failed to query lock state: {}", e);
             }
         }
 
@@ -273,70 +283,31 @@ impl LockPlugin {
         Ok(())
     }
 
-    /// Lock the desktop using COSMIC session manager
-    async fn lock_desktop(&self) -> Result<()> {
-        info!("Locking desktop via loginctl");
-
-        // Use loginctl to lock the session
-        let output = tokio::process::Command::new("loginctl")
-            .arg("lock-session")
-            .output()
+    /// Lock the desktop using logind DBus
+    async fn lock_desktop(&mut self) -> Result<()> {
+        self.logind_backend
+            .lock()
             .await
-            .map_err(crate::ProtocolError::Io)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("loginctl lock-session failed: {}", stderr);
-            return Err(crate::ProtocolError::invalid_state(format!(
-                "Failed to lock desktop: {}",
-                stderr
-            )));
-        }
-
-        Ok(())
+            .map_err(|e| crate::ProtocolError::invalid_state(format!("Failed to lock desktop: {}", e)))
     }
 
-    /// Unlock the desktop using COSMIC session manager
-    async fn unlock_desktop(&self) -> Result<()> {
-        info!("Unlocking desktop via loginctl");
-
-        // Use loginctl to unlock the session
-        let output = tokio::process::Command::new("loginctl")
-            .arg("unlock-session")
-            .output()
+    /// Unlock the desktop using logind DBus
+    async fn unlock_desktop(&mut self) -> Result<()> {
+        self.logind_backend
+            .unlock()
             .await
-            .map_err(crate::ProtocolError::Io)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("loginctl unlock-session failed: {}", stderr);
-            return Err(crate::ProtocolError::invalid_state(format!(
-                "Failed to unlock desktop: {}",
-                stderr
-            )));
-        }
-
-        Ok(())
+            .map_err(|e| crate::ProtocolError::invalid_state(format!("Failed to unlock desktop: {}", e)))
     }
 
-    /// Query current lock state from session manager
-    async fn query_lock_state(&self) -> Result<bool> {
-        debug!("Querying lock state via loginctl");
+    /// Query current lock state from logind DBus
+    async fn query_lock_state(&mut self) -> Result<bool> {
+        debug!("Querying lock state via logind DBus");
 
-        // Check if session is locked using loginctl
-        let output = tokio::process::Command::new("loginctl")
-            .arg("show-session")
-            .arg("--property=LockedHint")
-            .output()
+        let is_locked = self
+            .logind_backend
+            .is_locked()
             .await
-            .map_err(crate::ProtocolError::Io)?;
-
-        if !output.status.success() {
-            return Ok(false); // Default to unlocked if we can't determine
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let is_locked = stdout.contains("LockedHint=yes");
+            .unwrap_or(false);
 
         debug!("Current lock state: {}", is_locked);
         Ok(is_locked)
@@ -389,6 +360,12 @@ impl Plugin for LockPlugin {
         info!("Lock plugin started");
         self.enabled = true;
 
+        // Connect to logind DBus
+        if let Err(e) = self.logind_backend.connect().await {
+            warn!("Failed to connect to logind DBus: {}", e);
+            // Continue anyway - will try to connect on first use
+        }
+
         // Query initial lock state
         if let Ok(locked) = self.query_lock_state().await {
             self.is_locked = locked;
@@ -410,12 +387,14 @@ impl Plugin for LockPlugin {
             return Ok(());
         }
 
-        if packet.is_type("cconnect.lock.request") {
-            self.handle_lock_request(packet, device).await
-        } else if packet.is_type("cconnect.lock") {
-            self.handle_lock_state(packet, device).await
-        } else {
-            Ok(())
+        match packet.packet_type.as_str() {
+            "cconnect.lock.request" | "kdeconnect.lock.request" => {
+                self.handle_lock_request(packet, device).await
+            }
+            "cconnect.lock" | "kdeconnect.lock" => {
+                self.handle_lock_state(packet, device).await
+            }
+            _ => Ok(()),
         }
     }
 }

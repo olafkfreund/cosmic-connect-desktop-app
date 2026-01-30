@@ -112,6 +112,7 @@ pub mod contacts;
 pub mod filesync;
 pub mod findmyphone;
 pub mod lock;
+pub mod logind_backend;
 pub mod r#macro;
 pub mod mousekeyboardshare;
 pub mod mpris;

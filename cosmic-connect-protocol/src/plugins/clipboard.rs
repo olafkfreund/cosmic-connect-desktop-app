@@ -51,6 +51,12 @@
 //! 4. Incoming updates with timestamp > local timestamp are **accepted**
 //! 5. Connect packets with timestamp `0` are ignored (no content)
 //!
+//! ## System Clipboard Access
+//!
+//! The plugin uses system commands for clipboard access:
+//! - Wayland: `wl-copy`, `wl-paste` (from wl-clipboard package)
+//! - X11: `xclip` (from xclip package)
+//!
 //! ## Workflow
 //!
 //! ### Sending Updates
@@ -104,9 +110,11 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::json;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
+use super::clipboard_backend::ClipboardBackend;
 use super::{Plugin, PluginFactory};
 
 /// Clipboard state with content and timestamp
@@ -240,6 +248,7 @@ impl Default for ClipboardState {
 /// - Device connection sync
 /// - UTF-8 text content support
 /// - Thread-safe state management
+/// - System clipboard integration (Wayland/X11)
 ///
 /// ## Example
 ///
@@ -250,19 +259,27 @@ impl Default for ClipboardState {
 /// let plugin = ClipboardPlugin::new();
 /// assert_eq!(plugin.name(), "clipboard");
 /// ```
-#[derive(Debug)]
 pub struct ClipboardPlugin {
     /// Device ID this plugin is attached to
     device_id: Option<String>,
 
+    /// Whether the plugin is enabled
+    enabled: bool,
+
     /// Current clipboard state (content + timestamp)
     state: Arc<RwLock<ClipboardState>>,
+
+    /// System clipboard backend
+    backend: ClipboardBackend,
+
+    /// Packet sender for proactive updates
+    packet_sender: Option<Sender<(String, Packet)>>,
 }
 
 impl ClipboardPlugin {
     /// Create a new clipboard plugin
     ///
-    /// Initializes with empty clipboard state.
+    /// Initializes with empty clipboard state and system clipboard backend.
     ///
     /// # Example
     ///
@@ -274,7 +291,10 @@ impl ClipboardPlugin {
     pub fn new() -> Self {
         Self {
             device_id: None,
+            enabled: false,
             state: Arc::new(RwLock::new(ClipboardState::empty())),
+            backend: ClipboardBackend::new(),
+            packet_sender: None,
         }
     }
 
@@ -432,7 +452,8 @@ impl ClipboardPlugin {
     ///
     /// Processes standard clipboard updates (without timestamp).
     /// Always applies the update since standard packets don't include timestamp.
-    async fn handle_clipboard_update(&self, packet: &Packet, device: &Device) {
+    /// Writes the content to the system clipboard.
+    async fn handle_clipboard_update(&mut self, packet: &Packet, device: &Device) {
         let content = packet
             .body
             .get("content")
@@ -455,8 +476,17 @@ impl ClipboardPlugin {
             content.len()
         );
 
-        // Standard updates always applied (no timestamp validation)
+        // Update internal state
         self.set_content(content.to_string()).await;
+
+        // Write to system clipboard
+        if !self.backend.write(content).await {
+            warn!(
+                "Failed to write clipboard content from {} ({}) to system clipboard",
+                device.name(),
+                device.id()
+            );
+        }
 
         debug!(
             "Clipboard updated - timestamp: {}",
@@ -468,7 +498,8 @@ impl ClipboardPlugin {
     ///
     /// Processes clipboard sync on device connection.
     /// Validates timestamp to prevent applying older content.
-    async fn handle_clipboard_connect(&self, packet: &Packet, device: &Device) {
+    /// Writes accepted content to the system clipboard.
+    async fn handle_clipboard_connect(&mut self, packet: &Packet, device: &Device) {
         let content = packet
             .body
             .get("content")
@@ -503,8 +534,18 @@ impl ClipboardPlugin {
                 timestamp
             );
 
+            // Update internal state
             self.set_content_with_timestamp(content.to_string(), timestamp)
                 .await;
+
+            // Write to system clipboard
+            if !self.backend.write(content).await {
+                warn!(
+                    "Failed to write clipboard content from {} ({}) to system clipboard",
+                    device.name(),
+                    device.id()
+                );
+            }
 
             debug!(
                 "Clipboard synced - new timestamp: {}",
@@ -519,6 +560,54 @@ impl ClipboardPlugin {
                 current_state.timestamp
             );
         }
+    }
+
+    /// Send current system clipboard to connected device
+    ///
+    /// Reads the system clipboard and sends it as a clipboard update packet.
+    /// Returns `true` if the packet was sent successfully.
+    pub async fn send_local_clipboard(&mut self) -> bool {
+        let device_id = match &self.device_id {
+            Some(id) => id.clone(),
+            None => {
+                warn!("Cannot send clipboard - plugin not initialized");
+                return false;
+            }
+        };
+
+        let packet_sender = match &self.packet_sender {
+            Some(sender) => sender.clone(),
+            None => {
+                warn!("Cannot send clipboard - no packet sender");
+                return false;
+            }
+        };
+
+        // Read system clipboard
+        let content = match self.backend.read().await {
+            Some(content) => content,
+            None => {
+                debug!("System clipboard is empty or unreadable");
+                return false;
+            }
+        };
+
+        // Check if content changed
+        let current_state = self.state.read().await.clone();
+        if content == current_state.content {
+            debug!("Clipboard content unchanged, skipping send");
+            return false;
+        }
+
+        // Create and send packet
+        let packet = self.create_clipboard_packet(content).await;
+        if let Err(e) = packet_sender.send((device_id, packet)).await {
+            warn!("Failed to send clipboard packet: {}", e);
+            return false;
+        }
+
+        info!("Sent local clipboard to device");
+        true
     }
 }
 
@@ -558,18 +647,41 @@ impl Plugin for ClipboardPlugin {
         ]
     }
 
-    async fn init(&mut self, device: &Device, _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>) -> Result<()> {
+    async fn init(
+        &mut self,
+        device: &Device,
+        packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>,
+    ) -> Result<()> {
         self.device_id = Some(device.id().to_string());
+        self.packet_sender = Some(packet_sender);
         info!("Clipboard plugin initialized for device {}", device.name());
         Ok(())
     }
 
     async fn start(&mut self) -> Result<()> {
+        self.enabled = true;
+
+        // Check if clipboard backend is available
+        if !self.backend.is_available().await {
+            warn!(
+                "Clipboard backend not available - install wl-clipboard (Wayland) or xclip (X11)"
+            );
+        }
+
+        // Read initial system clipboard and update state
+        if let Some(content) = self.backend.read().await {
+            if !content.is_empty() {
+                self.set_content(content).await;
+                debug!("Initialized clipboard state from system clipboard");
+            }
+        }
+
         info!("Clipboard plugin started");
         Ok(())
     }
 
     async fn stop(&mut self) -> Result<()> {
+        self.enabled = false;
         let state = self.state.read().await;
         info!(
             "Clipboard plugin stopped - last timestamp: {}",
@@ -579,9 +691,16 @@ impl Plugin for ClipboardPlugin {
     }
 
     async fn handle_packet(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
-        if packet.is_type("cconnect.clipboard") {
+        if !self.enabled {
+            debug!("Clipboard plugin disabled, ignoring packet");
+            return Ok(());
+        }
+
+        if packet.is_type("cconnect.clipboard") || packet.is_type("kdeconnect.clipboard") {
             self.handle_clipboard_update(packet, device).await;
-        } else if packet.is_type("cconnect.clipboard.connect") {
+        } else if packet.is_type("cconnect.clipboard.connect")
+            || packet.is_type("kdeconnect.clipboard.connect")
+        {
             self.handle_clipboard_connect(packet, device).await;
         }
         Ok(())
@@ -777,6 +896,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         let mut device = create_test_device();
         let packet = Packet::new(
@@ -795,6 +915,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         // Set old content
         plugin
@@ -824,6 +945,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         // Set current content
         plugin
@@ -853,6 +975,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         // Set current content
         plugin
@@ -882,6 +1005,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         // Set initial content
         plugin.set_content("Initial".to_string()).await;
@@ -902,6 +1026,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         let mut device = create_test_device();
 
@@ -925,6 +1050,7 @@ mod tests {
         let mut plugin = ClipboardPlugin::new();
         let device = create_test_device();
         plugin.init(&device, tokio::sync::mpsc::channel(100).0).await.unwrap();
+        plugin.start().await.unwrap();
 
         // Set current state
         plugin

@@ -4156,6 +4156,20 @@ impl CConnectApplet {
                     "f" => cosmic::task::message(cosmic::Action::App(Message::SetFocus(
                         FocusTarget::Search,
                     ))),
+                    "," => {
+                        match self.get_settings_device_id() {
+                            Some(id) => cosmic::task::message(cosmic::Action::App(
+                                Message::ToggleDeviceSettings(id),
+                            )),
+                            None => cosmic::task::message(cosmic::Action::App(
+                                Message::ShowNotification(
+                                    "No paired devices available".into(),
+                                    NotificationType::Info,
+                                    None,
+                                ),
+                            )),
+                        }
+                    }
                     _ => Task::none(),
                 };
             }
@@ -4267,6 +4281,18 @@ impl CConnectApplet {
             | FocusTarget::DeviceSettings(idx) => Some(*idx),
             _ => None,
         }
+    }
+
+    /// Get device ID for opening settings: uses focused device or falls back to first paired device
+    fn get_settings_device_id(&self) -> Option<String> {
+        self.focused_device_index()
+            .and_then(|idx| self.filtered_devices().get(idx).map(|d| d.device.id().to_string()))
+            .or_else(|| {
+                self.devices
+                    .iter()
+                    .find(|d| d.device.is_paired())
+                    .map(|d| d.device.id().to_string())
+            })
     }
 
     /// Move focus up (within device list)

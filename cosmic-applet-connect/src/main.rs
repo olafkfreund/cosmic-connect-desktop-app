@@ -365,6 +365,8 @@ struct CConnectApplet {
     show_onboarding: bool,
     onboarding_step: u8,
     last_screen_share_stats_poll: Option<std::time::Instant>, // Last time we polled screen share stats
+    // Settings window state
+    settings_window: Option<(window::Id, String)>, // (window_id, device_id)
 }
 
 /// Active screen share session information
@@ -609,6 +611,8 @@ enum Message {
     Tick(std::time::Instant),
     // Recursive loop
     Loop(Box<Message>),
+    // Settings window
+    CloseSettingsWindow,
 }
 
 /// Fetches device list from the daemon via D-Bus
@@ -943,6 +947,7 @@ impl cosmic::Application for CConnectApplet {
             show_onboarding,
             onboarding_step: 0,
             last_screen_share_stats_poll: None,
+            settings_window: None,
         };
         (app, Task::none())
     }
@@ -1545,6 +1550,13 @@ impl cosmic::Application for CConnectApplet {
                 tracing::debug!("Closing RemoteDesktop settings");
                 self.remotedesktop_settings_device = None;
                 Task::none()
+            }
+            Message::CloseSettingsWindow => {
+                if let Some((id, _)) = self.settings_window.take() {
+                    window::close(id)
+                } else {
+                    Task::none()
+                }
             }
             Message::RemoteDesktopSettingsLoaded(device_id, settings) => {
                 tracing::debug!("RemoteDesktop settings loaded for {}", device_id);
@@ -2454,7 +2466,14 @@ impl cosmic::Application for CConnectApplet {
         ))
     }
 
-    fn view_window(&self, _id: window::Id) -> Element<'_, Self::Message> {
+    fn view_window(&self, id: window::Id) -> Element<'_, Self::Message> {
+        // Check if this is the settings window
+        if let Some((settings_id, ref device_id)) = self.settings_window {
+            if id == settings_id {
+                return self.view_settings_window(device_id);
+            }
+        }
+
         text("CConnect").into()
     }
 
@@ -2476,6 +2495,45 @@ impl CConnectApplet {
             }
         }
     }
+
+    /// Renders the device settings window
+    fn view_settings_window(&self, device_id: &str) -> Element<'_, Message> {
+        // Get device info
+        let device = self.devices.iter().find(|d| d.device.id() == device_id);
+        let device_name = device.map(|d| d.device.name()).unwrap_or("Unknown Device");
+
+        // Header with device name and close button
+        let header = row![
+            text(format!("Settings: {}", device_name)).size(18.0),
+            horizontal_space(),
+            button::icon(icon::from_name("window-close-symbolic"))
+                .on_press(Message::CloseSettingsWindow)
+                .padding(SPACE_XXS)
+        ]
+        .spacing(SPACE_S)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        // Create content sections for different settings
+        let content = column![
+            header,
+            divider::horizontal::default(),
+            // TODO: Add the actual settings panels here
+            text("Device settings will be moved here:"),
+            text("• RemoteDesktop configuration"),
+            text("• File Sync folder management"),
+            text("• Run Command setup"),
+            text("• Plugin overrides"),
+            text("• Notification preferences"),
+        ]
+        .spacing(SPACE_M)
+        .padding(SPACE_M);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
 
     /// Formats a duration into a human-readable relative time string.
     fn format_elapsed(elapsed: std::time::Duration) -> String {

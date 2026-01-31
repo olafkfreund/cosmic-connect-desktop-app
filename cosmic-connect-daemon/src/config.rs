@@ -25,6 +25,10 @@ pub struct Config {
     /// Plugin configuration
     pub plugins: PluginConfig,
 
+    /// Notification listener configuration
+    #[serde(default)]
+    pub notification_listener: NotificationListenerConfig,
+
     /// Storage paths
     pub paths: PathConfig,
 }
@@ -135,6 +139,50 @@ impl From<TransportPreferenceConfig> for TransportPreference {
             }
         }
     }
+}
+
+/// Notification listener configuration
+///
+/// Configuration for the notification listener that monitors and sends desktop notifications
+/// to connected devices.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationListenerConfig {
+    /// Enable the notification listener
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+
+    /// Applications to exclude from notification syncing (by app name)
+    ///
+    /// Use this to prevent specific applications from sending their notifications
+    /// to connected devices. For example: ["Spotify", "Slack"]
+    #[serde(default)]
+    pub excluded_apps: Vec<String>,
+
+    /// Applications to include for notification syncing (by app name)
+    ///
+    /// If non-empty, only notifications from these applications will be synced.
+    /// If empty, all applications are included (except those in excluded_apps).
+    /// For example: ["Firefox", "Thunderbird"]
+    #[serde(default)]
+    pub included_apps: Vec<String>,
+
+    /// Include transient notifications (e.g., temporary notifications that auto-dismiss)
+    #[serde(default = "default_false")]
+    pub include_transient: bool,
+
+    /// Include low urgency notifications
+    ///
+    /// Low urgency notifications are typically less important and may be filtered
+    /// to reduce noise on connected devices.
+    #[serde(default = "default_true")]
+    pub include_low_urgency: bool,
+
+    /// Maximum notification body length
+    ///
+    /// Notification bodies longer than this will be truncated to reduce network
+    /// traffic and improve performance on mobile devices.
+    #[serde(default = "default_max_body_length")]
+    pub max_body_length: usize,
 }
 
 /// Plugin configuration
@@ -294,6 +342,10 @@ fn default_false() -> bool {
     false
 }
 
+fn default_max_body_length() -> usize {
+    2000
+}
+
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
@@ -302,6 +354,19 @@ impl Default for NetworkConfig {
             transfer_port_end: default_transfer_port_end(),
             discovery_interval: default_discovery_interval(),
             device_timeout: default_device_timeout(),
+        }
+    }
+}
+
+impl Default for NotificationListenerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            excluded_apps: Vec::new(),
+            included_apps: Vec::new(),
+            include_transient: false,
+            include_low_urgency: true,
+            max_body_length: default_max_body_length(),
         }
     }
 }
@@ -419,6 +484,7 @@ impl Default for Config {
             network: NetworkConfig::default(),
             transport: TransportConfig::default(),
             plugins: PluginConfig::default(),
+            notification_listener: NotificationListenerConfig::default(),
             paths: PathConfig {
                 config_dir,
                 data_dir,
@@ -595,5 +661,42 @@ mod tests {
 
         let pref: TransportPreference = TransportPreferenceConfig::BluetoothFirst.into();
         assert_eq!(pref, TransportPreference::BluetoothFirst);
+    }
+
+    #[test]
+    fn test_notification_listener_config_defaults() {
+        let config = NotificationListenerConfig::default();
+        assert!(!config.enabled);
+        assert!(config.excluded_apps.is_empty());
+        assert!(config.included_apps.is_empty());
+        assert!(!config.include_transient);
+        assert!(config.include_low_urgency);
+        assert_eq!(config.max_body_length, 2000);
+    }
+
+    #[test]
+    fn test_notification_listener_config_serialization() {
+        let mut config = NotificationListenerConfig::default();
+        config.enabled = true;
+        config.excluded_apps = vec!["Spotify".to_string(), "Slack".to_string()];
+        config.included_apps = vec!["Firefox".to_string()];
+        config.include_transient = true;
+        config.max_body_length = 1500;
+
+        let toml_str = toml::to_string(&config).unwrap();
+        let parsed: NotificationListenerConfig = toml::from_str(&toml_str).unwrap();
+
+        assert!(parsed.enabled);
+        assert_eq!(parsed.excluded_apps.len(), 2);
+        assert_eq!(parsed.included_apps.len(), 1);
+        assert!(parsed.include_transient);
+        assert_eq!(parsed.max_body_length, 1500);
+    }
+
+    #[test]
+    fn test_config_with_notification_listener() {
+        let config = Config::default();
+        assert!(!config.notification_listener.enabled);
+        assert_eq!(config.notification_listener.max_body_length, 2000);
     }
 }

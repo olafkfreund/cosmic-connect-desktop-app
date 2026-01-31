@@ -671,6 +671,96 @@ impl NotificationPlugin {
         Packet::new("cconnect.notification.request", body)
     }
 
+    /// Create a notification packet from a captured desktop notification
+    ///
+    /// Creates a notification packet suitable for sending desktop notifications to
+    /// connected devices. This is used when capturing notifications from the local
+    /// desktop notification system and forwarding them to remote devices.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_name` - Name of the application that generated the notification
+    /// * `summary` - Notification title/summary text
+    /// * `body` - Notification body text (will be truncated if >2000 chars)
+    /// * `timestamp` - UNIX timestamp in milliseconds
+    /// * `image_data` - Optional notification image as raw bytes (will be base64 encoded)
+    /// * `actions` - Optional list of action (key, label) pairs
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cosmic_connect_core::plugins::notification::NotificationPlugin;
+    ///
+    /// let plugin = NotificationPlugin::new();
+    /// let packet = NotificationPlugin::create_desktop_notification_packet(
+    ///     "Thunderbird",
+    ///     "New Email",
+    ///     "You have 3 new messages",
+    ///     1704067200000,
+    ///     None,
+    ///     &[("reply".to_string(), "Reply".to_string())]
+    /// );
+    ///
+    /// assert_eq!(packet.packet_type, "cconnect.notification");
+    /// ```
+    pub fn create_desktop_notification_packet(
+        app_name: &str,
+        summary: &str,
+        body: &str,
+        timestamp: i64,
+        image_data: Option<&[u8]>,
+        actions: &[(String, String)],
+    ) -> Packet {
+        use base64::{Engine as _, engine::general_purpose};
+
+        // Generate unique ID from app name and timestamp
+        let id = format!("desktop-{}-{}", app_name, timestamp);
+
+        // Truncate body if too long
+        const MAX_BODY_LENGTH: usize = 2000;
+        let truncated_body = if body.len() > MAX_BODY_LENGTH {
+            format!("{}...", &body[..MAX_BODY_LENGTH])
+        } else {
+            body.to_string()
+        };
+
+        // Create ticker (combined title and text)
+        let ticker = format!("{}: {} - {}", app_name, summary, truncated_body);
+
+        // Encode image data as base64 if provided
+        let encoded_image = image_data.map(|data| general_purpose::STANDARD.encode(data));
+
+        // Extract action labels if provided
+        let action_labels = if !actions.is_empty() {
+            Some(actions.iter().map(|(_, label)| label.clone()).collect::<Vec<_>>())
+        } else {
+            None
+        };
+
+        // Build notification JSON body
+        let mut notification_body = json!({
+            "id": id,
+            "appName": app_name,
+            "title": summary,
+            "text": truncated_body,
+            "ticker": ticker,
+            "isClearable": true,
+            "time": timestamp.to_string(),
+            "silent": "false"
+        });
+
+        // Add optional fields
+        if let Some(image) = encoded_image {
+            notification_body["imageData"] = json!(image);
+        }
+
+        if let Some(actions) = action_labels {
+            notification_body["actions"] = json!(actions);
+        }
+
+        Packet::new("cconnect.notification", notification_body)
+    }
+
     /// Handle incoming notification
     fn handle_notification(&self, packet: &Packet, device: &Device) {
         // Check for cancel
@@ -1361,5 +1451,124 @@ mod tests {
         assert!(stored.has_rich_content());
         assert!(stored.has_image());
         assert!(stored.has_links());
+    }
+
+    #[test]
+    fn test_create_desktop_notification_packet_basic() {
+        let packet = NotificationPlugin::create_desktop_notification_packet(
+            "Thunderbird",
+            "New Email",
+            "You have a new message",
+            1704067200000,
+            None,
+            &[],
+        );
+
+        assert_eq!(packet.packet_type, "cconnect.notification");
+        assert_eq!(packet.body["appName"], "Thunderbird");
+        assert_eq!(packet.body["title"], "New Email");
+        assert_eq!(packet.body["text"], "You have a new message");
+        assert_eq!(packet.body["isClearable"], true);
+        assert_eq!(packet.body["silent"], "false");
+        assert_eq!(packet.body["time"], "1704067200000");
+
+        // Check ID format
+        let id = packet.body["id"].as_str().unwrap();
+        assert!(id.starts_with("desktop-Thunderbird-"));
+
+        // Check ticker format
+        let ticker = packet.body["ticker"].as_str().unwrap();
+        assert!(ticker.contains("Thunderbird"));
+        assert!(ticker.contains("New Email"));
+        assert!(ticker.contains("You have a new message"));
+    }
+
+    #[test]
+    fn test_create_desktop_notification_packet_truncation() {
+        let long_body = "a".repeat(2500);
+        let packet = NotificationPlugin::create_desktop_notification_packet(
+            "App",
+            "Title",
+            &long_body,
+            1704067200000,
+            None,
+            &[],
+        );
+
+        let text = packet.body["text"].as_str().unwrap();
+        assert_eq!(text.len(), 2003); // 2000 + "..."
+        assert!(text.ends_with("..."));
+    }
+
+    #[test]
+    fn test_create_desktop_notification_packet_with_image() {
+        use base64::{Engine as _, engine::general_purpose};
+
+        let image_data = b"fake image data";
+        let packet = NotificationPlugin::create_desktop_notification_packet(
+            "App",
+            "Title",
+            "Body",
+            1704067200000,
+            Some(image_data),
+            &[],
+        );
+
+        assert!(packet.body["imageData"].is_string());
+        let encoded = packet.body["imageData"].as_str().unwrap();
+        let decoded = general_purpose::STANDARD.decode(encoded).unwrap();
+        assert_eq!(decoded, image_data);
+    }
+
+    #[test]
+    fn test_create_desktop_notification_packet_with_actions() {
+        let actions = vec![
+            ("reply".to_string(), "Reply".to_string()),
+            ("mark_read".to_string(), "Mark as Read".to_string()),
+        ];
+
+        let packet = NotificationPlugin::create_desktop_notification_packet(
+            "App",
+            "Title",
+            "Body",
+            1704067200000,
+            None,
+            &actions,
+        );
+
+        assert!(packet.body["actions"].is_array());
+        let action_labels = packet.body["actions"].as_array().unwrap();
+        assert_eq!(action_labels.len(), 2);
+        assert_eq!(action_labels[0], "Reply");
+        assert_eq!(action_labels[1], "Mark as Read");
+    }
+
+    #[test]
+    fn test_create_desktop_notification_packet_complete() {
+        use base64::{Engine as _, engine::general_purpose};
+
+        let image_data = b"image bytes";
+        let actions = vec![("reply".to_string(), "Reply".to_string())];
+
+        let packet = NotificationPlugin::create_desktop_notification_packet(
+            "Signal",
+            "New Message",
+            "Hello from Signal",
+            1704067200000,
+            Some(image_data),
+            &actions,
+        );
+
+        assert_eq!(packet.packet_type, "cconnect.notification");
+        assert_eq!(packet.body["appName"], "Signal");
+        assert_eq!(packet.body["title"], "New Message");
+        assert_eq!(packet.body["text"], "Hello from Signal");
+        assert!(packet.body["imageData"].is_string());
+        assert!(packet.body["actions"].is_array());
+
+        // Verify image can be decoded
+        let encoded = packet.body["imageData"].as_str().unwrap();
+        let decoded = general_purpose::STANDARD.decode(encoded).unwrap();
+        assert_eq!(decoded, image_data);
     }
 }

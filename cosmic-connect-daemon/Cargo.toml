@@ -26,6 +26,7 @@ hostname = "0.4"
 arboard = "3.4"
 regex = { workspace = true }
 open = { workspace = true }
+serde_bytes = "0.11"
 
 [build-dependencies]
 chrono = { workspace = true }

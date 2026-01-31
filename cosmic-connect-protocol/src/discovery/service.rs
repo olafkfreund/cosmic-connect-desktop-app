@@ -124,7 +124,7 @@ impl DiscoveryService {
 
     pub async fn subscribe(&self) -> mpsc::UnboundedReceiver<DiscoveryEvent> {
         let mut rx = self.event_rx.write().await;
-        let (tx, new_rx) = mpsc::unbounded_channel();
+        let (_tx, new_rx) = mpsc::unbounded_channel();
         let old_rx = std::mem::replace(&mut *rx, new_rx);
         drop(rx);
         old_rx

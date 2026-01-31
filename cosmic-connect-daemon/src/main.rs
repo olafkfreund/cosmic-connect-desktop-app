@@ -5,6 +5,7 @@ mod device_config;
 mod diagnostics;
 mod error_handler;
 mod mpris_manager;
+mod notification_listener;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -55,11 +56,13 @@ use cosmic_connect_protocol::plugins::remotedesktop::RemoteDesktopPluginFactory;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use config::Config;
 
 use error_handler::ErrorHandler;
+
+use notification_listener::{CapturedNotification, NotificationListener};
 
 /// Main daemon state
 struct Daemon {
@@ -129,6 +132,12 @@ struct Daemon {
 
     /// Track connection attempts for exponential backoff (device_id -> (last_attempt, failure_count))
     connection_attempts: Arc<RwLock<std::collections::HashMap<String, (std::time::Instant, u32)>>>,
+
+    /// Notification listener for capturing desktop notifications
+    notification_listener: Option<Arc<NotificationListener>>,
+
+    /// Receiver for captured notifications
+    notification_receiver: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<CapturedNotification>>>>,
 }
 
 impl Daemon {
@@ -314,6 +323,8 @@ impl Daemon {
             packet_sender,
             packet_receiver,
             connection_attempts: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            notification_listener: None,
+            notification_receiver: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -1336,6 +1347,142 @@ impl Daemon {
                     }
                 }
             });
+        }
+
+        Ok(())
+    }
+
+    /// Start notification listener
+    async fn start_notification_listener(&mut self) -> Result<()> {
+        let config = self.config.read().await;
+
+        if !config.notification_listener.enabled {
+            info!("Notification listener is disabled");
+            return Ok(());
+        }
+
+        info!("Starting notification listener...");
+
+        // Create channel for captured notifications
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Initialize notification listener
+        let listener_config = notification_listener::NotificationListenerConfig {
+            enabled: config.notification_listener.enabled,
+            excluded_apps: config.notification_listener.excluded_apps.clone(),
+            included_apps: config.notification_listener.included_apps.clone(),
+            include_transient: config.notification_listener.include_transient,
+            include_low_urgency: config.notification_listener.include_low_urgency,
+            max_body_length: config.notification_listener.max_body_length,
+        };
+
+        match NotificationListener::new(listener_config, tx).await {
+            Ok(listener) => {
+                info!("Notification listener initialized successfully");
+                self.notification_listener = Some(Arc::new(listener));
+
+                // Store receiver for event loop
+                let mut receiver_guard = self.notification_receiver.lock().await;
+                *receiver_guard = Some(rx);
+                drop(receiver_guard);
+                drop(config);
+
+                // Spawn notification forwarding task
+                let device_manager = self.device_manager.clone();
+                let plugin_manager = self.plugin_manager.clone();
+                let connection_manager = self.connection_manager.clone();
+                let notification_receiver_mutex = self.notification_receiver.clone();
+
+                tokio::spawn(async move {
+                    let mut receiver_guard = notification_receiver_mutex.lock().await;
+                    let Some(mut receiver) = receiver_guard.take() else {
+                        return;
+                    };
+                    drop(receiver_guard);
+
+                    info!("Notification forwarding task started");
+
+                    while let Some(notification) = receiver.recv().await {
+                        debug!(
+                            "Captured notification: app={}, summary={}, body={}",
+                            notification.app_name,
+                            notification.summary,
+                            notification.body.chars().take(50).collect::<String>()
+                        );
+
+                        // Get list of paired and connected devices
+                        let devices = {
+                            let dev_manager = device_manager.read().await;
+                            dev_manager
+                                .devices()
+                                .filter(|d| d.is_paired() && d.is_connected())
+                                .map(|d| d.id().to_string())
+                                .collect::<Vec<_>>()
+                        };
+
+                        if devices.is_empty() {
+                            trace!("No paired+connected devices to forward notification to");
+                            continue;
+                        }
+
+                        // Actions are already in the correct format
+                        let actions = &notification.actions;
+
+                        // Convert image data if present
+                        let image_data = notification.image_data().map(|_img_data| {
+                            // For now, we don't have the raw bytes, so pass None
+                            // In the future, this could be enhanced to convert ImageData to bytes
+                            None::<&[u8]>
+                        }).unwrap_or(None);
+
+                        // Create notification packet using NotificationPlugin
+                        use cosmic_connect_protocol::plugins::notification::NotificationPlugin;
+                        let packet = NotificationPlugin::create_desktop_notification_packet(
+                            &notification.app_name,
+                            &notification.summary,
+                            &notification.body,
+                            notification.timestamp as i64,
+                            image_data,
+                            &actions,
+                        );
+
+                        // Forward to each device that supports notifications
+                        for device_id in &devices {
+                            // Check if device supports notification capability
+                            let supports_notifications = {
+                                let plug_manager = plugin_manager.read().await;
+                                plug_manager
+                                    .get_device_plugin(device_id, "cconnect.notification")
+                                    .is_some()
+                            };
+
+                            if !supports_notifications {
+                                trace!("Device {} does not support notifications, skipping", device_id);
+                                continue;
+                            }
+
+                            // Send packet
+                            let conn_manager = connection_manager.read().await;
+                            if let Err(e) = conn_manager.send_packet(device_id, &packet).await {
+                                error!(
+                                    "Failed to forward notification to device {}: {}",
+                                    device_id, e
+                                );
+                            } else {
+                                debug!("Forwarded notification to device {}", device_id);
+                            }
+                        }
+                    }
+
+                    info!("Notification forwarding task stopped");
+                });
+
+                info!("Notification listener started successfully");
+            }
+            Err(e) => {
+                warn!("Failed to initialize notification listener: {}", e);
+                warn!("Desktop notification forwarding will be disabled");
+            }
         }
 
         Ok(())
@@ -2893,6 +3040,12 @@ async fn main() -> Result<()> {
         .start_clipboard_monitor()
         .await
         .context("Failed to start clipboard monitor")?;
+
+    // Start notification listener
+    daemon
+        .start_notification_listener()
+        .await
+        .context("Failed to start notification listener")?;
 
     // Start MPRIS monitoring
     daemon

@@ -4,6 +4,7 @@
   fetchFromGitHub,
   pkg-config,
   cmake,
+  makeWrapper,
   openssl,
   libxkbcommon,
   wayland,
@@ -68,6 +69,7 @@ rustPlatform.buildRustPackage rec {
   nativeBuildInputs = [
     pkg-config
     cmake
+    makeWrapper
     rustPlatform.bindgenHook # Automatically configures bindgen for PipeWire
   ];
 
@@ -210,6 +212,19 @@ rustPlatform.buildRustPackage rec {
     X-CosmicApplet=true
     X-CosmicHoverPopup=Auto
     EOF
+  '';
+
+  # Wrap binaries with required runtime library paths
+  # The applet needs wayland, libGL, and other graphics libraries at runtime
+  postFixup = ''
+    wrapProgram $out/bin/cosmic-applet-connect \
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
+        wayland
+        libxkbcommon
+        libGL
+        libglvnd
+        mesa
+      ]}"
   '';
 
   # Don't strip binaries in debug mode

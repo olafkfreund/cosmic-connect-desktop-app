@@ -1,17 +1,17 @@
 # NixOS Packaging
 
-This directory contains NixOS packaging files for COSMIC KDE Connect.
+This directory contains NixOS packaging files for COSMIC Connect.
 
 ## Files
 
-- **package.nix** - Package derivation for building cosmic-applet-kdeconnect
+- **package.nix** - Package derivation for building cosmic-connect
 - **module.nix** - NixOS module with configuration options
 - **tests.nix** - NixOS VM tests for the package and module
 - **README.md** - This file
 
-## Usage
+## Quick Start
 
-### Using the Flake
+### Using the Flake (Recommended)
 
 Add to your `flake.nix`:
 
@@ -19,16 +19,16 @@ Add to your `flake.nix`:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    cosmic-kdeconnect.url = "github:olafkfreund/cosmic-applet-kdeconnect";
+    cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
   };
 
-  outputs = { self, nixpkgs, cosmic-kdeconnect }: {
+  outputs = { self, nixpkgs, cosmic-connect }: {
     nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        cosmic-kdeconnect.nixosModules.default
+        cosmic-connect.nixosModules.default
         {
-          services.cosmic-kdeconnect = {
+          services.cosmic-connect = {
             enable = true;
             openFirewall = true;
           };
@@ -39,18 +39,24 @@ Add to your `flake.nix`:
 }
 ```
 
+Then rebuild:
+
+```bash
+sudo nixos-rebuild switch --flake .#your-hostname
+```
+
 ### Using the Overlay
 
 ```nix
 {
-  inputs.cosmic-kdeconnect.url = "github:olafkfreund/cosmic-applet-kdeconnect";
+  inputs.cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
 
-  outputs = { nixpkgs, cosmic-kdeconnect, ... }: {
+  outputs = { nixpkgs, cosmic-connect, ... }: {
     nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [{
-        nixpkgs.overlays = [ cosmic-kdeconnect.overlays.default ];
-        environment.systemPackages = [ pkgs.cosmic-applet-kdeconnect ];
+        nixpkgs.overlays = [ cosmic-connect.overlays.default ];
+        environment.systemPackages = [ pkgs.cosmic-connect ];
       }];
     };
   };
@@ -65,36 +71,36 @@ If not using flakes, copy the files to your configuration:
 { config, pkgs, ... }:
 
 {
-  imports = [ /path/to/cosmic-applet-kdeconnect/nix/module.nix ];
+  imports = [ /path/to/cosmic-connect-desktop-app/nix/module.nix ];
 
-  services.cosmic-kdeconnect = {
+  services.cosmic-connect = {
     enable = true;
     openFirewall = true;
   };
 }
 ```
 
-## Module Options
+## Module Options Reference
 
 ### Basic Options
 
 ```nix
-services.cosmic-kdeconnect = {
+services.cosmic-connect = {
   # Enable the service
   enable = true;
 
-  # Open firewall ports (1714-1764 TCP/UDP)
+  # Open firewall ports (1814-1864 TCP/UDP for CConnect protocol)
   openFirewall = true;
 
-  # Package to use
-  package = pkgs.cosmic-applet-kdeconnect;
+  # Package to use (normally auto-detected)
+  package = pkgs.cosmic-connect;
 };
 ```
 
 ### Daemon Configuration
 
 ```nix
-services.cosmic-kdeconnect.daemon = {
+services.cosmic-connect.daemon = {
   # Enable daemon service
   enable = true;
 
@@ -104,14 +110,11 @@ services.cosmic-kdeconnect.daemon = {
   # Logging level: "error" | "warn" | "info" | "debug" | "trace"
   logLevel = "info";
 
-  # Custom settings (written to config.toml)
+  # Custom settings (written to daemon.toml)
   settings = {
     discovery = {
       broadcast_interval = 5000;
-      listen_port = 1716;
-    };
-    security = {
-      certificate_dir = "~/.config/kdeconnect/certs";
+      listen_port = 1816;
     };
   };
 };
@@ -119,23 +122,52 @@ services.cosmic-kdeconnect.daemon = {
 
 ### Plugin Configuration
 
+All plugins can be enabled/disabled individually:
+
 ```nix
-services.cosmic-kdeconnect.plugins = {
-  battery = true;        # Battery monitoring
-  clipboard = true;      # Clipboard sync
-  notification = true;   # Notification mirroring
-  share = true;          # File sharing
-  mpris = true;          # Media control
+services.cosmic-connect.plugins = {
+  # Core Communication
   ping = true;           # Connectivity testing
+  battery = true;        # Battery monitoring
+  notification = true;   # Notification mirroring
+  share = true;          # File/text/URL sharing
+  clipboard = true;      # Clipboard sync
+  telephony = true;      # Call & SMS notifications
+  contacts = false;      # Contact sync (opt-in)
+
+  # Control
+  mpris = true;          # Media player control
+  remoteinput = true;    # Mouse & keyboard control
+  runcommand = false;    # Remote command execution (security: opt-in)
+  findmyphone = true;    # Ring device
+  presenter = false;     # Presentation mode (opt-in)
+
+  # System
+  systemmonitor = true;  # CPU/RAM stats sharing
+  lock = true;           # Remote lock/unlock
+  wol = true;            # Wake-on-LAN
+  screenshot = true;     # Screen capture
+
+  # Advanced (security-sensitive, disabled by default)
+  remotedesktop = false; # VNC screen sharing
+};
+```
+
+### Applet Configuration
+
+```nix
+services.cosmic-connect.applet = {
+  # Enable COSMIC panel applet
+  enable = true;
 };
 ```
 
 ### Security Options
 
 ```nix
-services.cosmic-kdeconnect.security = {
+services.cosmic-connect.security = {
   # Certificate storage directory
-  certificateDirectory = "~/.config/kdeconnect/certs";
+  certificateDirectory = "~/.config/cosmic-connect/certs";
 
   # Trust on first pair (disable for enhanced security)
   trustOnFirstPair = true;
@@ -145,12 +177,12 @@ services.cosmic-kdeconnect.security = {
 ### Storage Options
 
 ```nix
-services.cosmic-kdeconnect.storage = {
+services.cosmic-connect.storage = {
   # Where received files are stored
-  downloadDirectory = "~/.local/share/kdeconnect/downloads";
+  downloadDirectory = "~/Downloads";
 
   # Base data directory
-  dataDirectory = "~/.local/share/kdeconnect";
+  dataDirectory = "~/.local/share/cosmic-connect";
 };
 ```
 
@@ -160,9 +192,7 @@ services.cosmic-kdeconnect.storage = {
 { config, pkgs, ... }:
 
 {
-  imports = [ ./nix/module.nix ];
-
-  services.cosmic-kdeconnect = {
+  services.cosmic-connect = {
     enable = true;
     openFirewall = true;
 
@@ -172,13 +202,22 @@ services.cosmic-kdeconnect.storage = {
       logLevel = "info";
     };
 
+    applet.enable = true;
+
     plugins = {
+      # Enable core features
       battery = true;
       clipboard = true;
       notification = true;
       share = true;
       mpris = true;
       ping = true;
+      findmyphone = true;
+      lock = true;
+
+      # Disable security-sensitive plugins
+      runcommand = false;
+      remotedesktop = false;
     };
 
     security = {
@@ -186,20 +225,39 @@ services.cosmic-kdeconnect.storage = {
     };
 
     storage = {
-      downloadDirectory = "~/Downloads/KDEConnect";
+      downloadDirectory = "~/Downloads/CosmicConnect";
     };
   };
-
-  # Additional firewall configuration if needed
-  networking.firewall = {
-    allowedTCPPortRanges = [
-      { from = 1714; to = 1764; }
-    ];
-    allowedUDPPortRanges = [
-      { from = 1714; to = 1764; }
-    ];
-  };
 }
+```
+
+## Network Configuration
+
+### Firewall Ports
+
+COSMIC Connect uses the **CConnect protocol** (port 1816) which runs side-by-side with KDE Connect:
+
+| Protocol | Ports | Purpose |
+|----------|-------|---------|
+| CConnect Discovery | 1814-1864 TCP/UDP | Device discovery |
+| File Transfer | 1739-1764 TCP | File sharing |
+
+The `openFirewall = true` option automatically configures these ports.
+
+### Manual Firewall Configuration
+
+If you need manual control:
+
+```nix
+networking.firewall = {
+  allowedTCPPortRanges = [
+    { from = 1814; to = 1864; }  # CConnect discovery
+    { from = 1739; to = 1764; }  # File transfer
+  ];
+  allowedUDPPortRanges = [
+    { from = 1814; to = 1864; }  # CConnect discovery
+  ];
+};
 ```
 
 ## Building the Package
@@ -208,26 +266,34 @@ services.cosmic-kdeconnect.storage = {
 
 ```bash
 # Build the package
-nix build .#cosmic-applet-kdeconnect
-
-# Or just
-nix build
+nix build .#default
 
 # Install to user profile
-nix profile install .#cosmic-applet-kdeconnect
+nix profile install .#default
 
-# Run directly
-nix run .#cosmic-applet-kdeconnect
+# Run directly without installing
+nix run .#default
+
+# Enter development shell
+nix develop
 ```
 
-### Traditional Nix
+### Development Shell Features
+
+The dev shell provides:
+- Rust toolchain with rust-analyzer and clippy
+- All build dependencies (libcosmic, GStreamer, PipeWire, etc.)
+- Development tools (just, git, etc.)
+- Automatic PKG_CONFIG_PATH configuration
+- Verification of critical dependencies
 
 ```bash
-# Build package
-nix-build -A cosmic-applet-kdeconnect
-
-# Install to profile
-nix-env -if nix/package.nix
+nix develop
+# Output shows:
+# 🚀 COSMIC Connect Development Environment
+# ✓ dbus-1 found
+# ✓ openssl found
+# ✓ gstreamer found
 ```
 
 ## Running Tests
@@ -250,100 +316,23 @@ nix build .#checks.x86_64-linux.module-basic
 # Custom config test
 nix build .#checks.x86_64-linux.module-custom-config
 
-# Firewall test
-nix build .#checks.x86_64-linux.module-no-firewall
-
-# Two machines test
+# Two machines communication test
 nix build .#checks.x86_64-linux.two-machines
 
-# Plugin test
-nix build .#checks.x86_64-linux.plugin-test
-
-# Service recovery test
-nix build .#checks.x86_64-linux.service-recovery
-
-# Security test
+# Security hardening test
 nix build .#checks.x86_64-linux.security-test
 ```
 
-### Interactive Test Debugging
+### Available Test Cases
 
-```bash
-# Run a test interactively
-nix build .#checks.x86_64-linux.module-basic --keep-going -L
-
-# Or use nixos-test-driver
-nix-build nix/tests.nix -A module-basic
-./result/bin/nixos-test-driver
-```
-
-## Development
-
-### Enter Development Shell
-
-```bash
-nix develop
-```
-
-This provides:
-- Rust toolchain with rust-analyzer
-- All build dependencies
-- Development tools (just, etc.)
-
-### Update Dependencies
-
-```bash
-# Update flake inputs
-nix flake update
-
-# Or update specific input
-nix flake lock --update-input nixpkgs
-```
-
-### Testing Module Changes
-
-```bash
-# Build a test VM with your configuration
-nixos-rebuild build-vm --flake .#
-
-# Run the VM
-./result/bin/run-*-vm
-```
-
-## Package Maintenance
-
-### Updating Version
-
-1. Update `version` in `nix/package.nix`
-2. Update `Cargo.toml` workspace version
-3. Update `flake.nix` if needed
-4. Run tests: `nix flake check`
-5. Commit and tag: `git tag v0.2.0`
-
-### Updating Dependencies
-
-The package uses `cargoLock.lockFile` to pin Rust dependencies:
-
-```bash
-# Update Cargo.lock
-cargo update
-
-# Rebuild package
-nix build .#cosmic-applet-kdeconnect
-```
-
-### Submitting to nixpkgs
-
-To submit this package to nixpkgs:
-
-1. **Fork nixpkgs**: Fork github.com/NixOS/nixpkgs
-2. **Add package**: Copy `nix/package.nix` to `pkgs/by-name/co/cosmic-applet-kdeconnect/package.nix`
-3. **Add module**: Copy `nix/module.nix` to `nixos/modules/services/desktop-managers/cosmic/kdeconnect.nix`
-4. **Add to all-packages**: Update `nixos/modules/module-list.nix`
-5. **Test**: Run `nix-build -A cosmic-applet-kdeconnect`
-6. **Create PR**: Submit to nixpkgs with description
-
-See: https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md
+1. **package-build** - Verifies package builds correctly
+2. **module-basic** - Basic module configuration
+3. **module-custom-config** - Custom settings and plugins
+4. **module-no-firewall** - Firewall disabled configuration
+5. **two-machines** - Device discovery between machines
+6. **plugin-test** - Plugin enable/disable functionality
+7. **service-recovery** - Service restart on failure
+8. **security-test** - Systemd security hardening
 
 ## Troubleshooting
 
@@ -351,19 +340,27 @@ See: https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md
 
 ```bash
 # Check build logs
-nix log .#cosmic-applet-kdeconnect
+nix log .#default
 
 # Build with verbose output
-nix build .#cosmic-applet-kdeconnect --print-build-logs
+nix build .#default --print-build-logs
+
+# Check for missing dependencies
+nix develop --command bash -c "cargo check 2>&1 | head -50"
 ```
 
-### Missing Dependencies
+### Service Issues
 
-If build fails due to missing libraries:
+```bash
+# Check daemon status
+systemctl --user status cosmic-connect-daemon
 
-1. Check `buildInputs` in `nix/package.nix`
-2. Add missing dependencies
-3. Test build: `nix build .#cosmic-applet-kdeconnect`
+# View daemon logs
+journalctl --user -u cosmic-connect-daemon -f
+
+# Restart daemon
+systemctl --user restart cosmic-connect-daemon
+```
 
 ### Module Errors
 
@@ -371,25 +368,24 @@ If build fails due to missing libraries:
 # Check module options
 nix eval .#nixosModules.default.options --json | jq
 
-# Test module configuration
-nixos-rebuild dry-build --flake .#
+# Test module configuration (dry run)
+nixos-rebuild dry-build --flake .#your-hostname
 ```
 
-### Test Failures
+### Common Issues
 
-```bash
-# Run test with debugging
-nix build .#checks.x86_64-linux.module-basic --show-trace
-
-# Check test output
-cat result
-```
+| Issue | Solution |
+|-------|----------|
+| "Device not discovered" | Check `openFirewall = true` and that both devices are on same network |
+| "Pairing failed" | Ensure certificates directory is writable |
+| "Plugin not working" | Verify plugin is enabled in config |
+| "DBus error" | Check `services.dbus.packages` includes the package |
 
 ## Resources
 
+- [COSMIC Connect Repository](https://github.com/olafkfreund/cosmic-connect-desktop-app)
 - [NixOS Manual - Packaging](https://nixos.org/manual/nixpkgs/stable/#chap-stdenv)
 - [NixOS Manual - Modules](https://nixos.org/manual/nixos/stable/#sec-writing-modules)
-- [NixOS Wiki - Packaging](https://nixos.wiki/wiki/Packaging)
 - [Rust in Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/rust.section.md)
 
 ## License

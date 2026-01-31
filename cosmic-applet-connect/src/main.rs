@@ -355,12 +355,10 @@ struct CConnectApplet {
     active_screen_share: Option<ActiveScreenShare>, // Currently active screen share session
     // Pinned devices config
     pinned_devices_config: pinned_devices_config::PinnedDevicesConfig,
-    // Camera state (TODO: uncomment when camera module is implemented)
-    // camera_settings_device: Option<String>, // device_id showing Camera settings
-    // camera_capabilities: HashMap<String, CameraCapability>, // device_id -> capabilities
-    // camera_streaming: HashMap<String, CameraStreamingState>, // device_id -> streaming state
-    // camera_stats: HashMap<String, StreamStats>, // device_id -> stream statistics
-    // v4l2loopback_available: bool,           // Whether v4l2loopback kernel module is loaded
+    // Camera state
+    camera_settings_device: Option<String>,              // device_id showing Camera settings
+    camera_stats: HashMap<String, CameraStats>,          // device_id -> stream statistics
+    v4l2loopback_available: bool,                        // Whether v4l2loopback kernel module is loaded
     // Onboarding state
     show_onboarding: bool,
     onboarding_step: u8,
@@ -446,6 +444,21 @@ struct HistoryEvent {
     details: String,
 }
 
+/// Camera streaming statistics
+#[derive(Debug, Clone)]
+struct CameraStats {
+    /// Current frames per second
+    fps: u32,
+    /// Current bitrate in kbps
+    bitrate: u32,
+    /// Is currently streaming
+    is_streaming: bool,
+    /// Current camera ID
+    camera_id: u32,
+    /// Current resolution (e.g., "720p")
+    resolution: String,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum Message {
@@ -478,6 +491,13 @@ enum Message {
     MprisSeek(String, i64),       // player, offset_microseconds
     MprisStateUpdated(String, dbus_client::PlayerState),
     MprisAlbumArtLoaded(String, cosmic::iced::widget::image::Handle),
+
+    // Camera streaming controls
+    ToggleCameraStreaming(String),         // device_id
+    SelectCamera(String, u32),             // device_id, camera_id
+    SelectCameraResolution(String, String), // device_id, resolution ("480p", "720p", "1080p")
+    CameraStatsUpdated(String, CameraStats), // device_id, stats
+
     // Renaming
     StartRenaming(String), // device_id
     CancelRenaming,
@@ -938,12 +958,10 @@ impl cosmic::Application for CConnectApplet {
             context_menu_mpris: false,
             active_screen_share: None,
             pinned_devices_config,
-            // Camera (TODO: uncomment when camera module is implemented)
-            // camera_settings_device: None,
-            // camera_capabilities: HashMap::new(),
-            // camera_streaming: HashMap::new(),
-            // camera_stats: HashMap::new(),
-            // v4l2loopback_available: check_v4l2loopback(),
+            // Camera state initialization
+            camera_settings_device: None,
+            camera_stats: HashMap::new(),
+            v4l2loopback_available: check_v4l2loopback(),
             show_onboarding,
             onboarding_step: 0,
             last_screen_share_stats_poll: None,
@@ -1238,6 +1256,39 @@ impl cosmic::Application for CConnectApplet {
             }
             Message::MprisAlbumArtLoaded(_, _) => Task::none(),
             Message::MprisControl(player, action) => self.handle_mpris_control(player, action),
+
+            // Camera streaming controls
+            Message::ToggleCameraStreaming(_device_id) => {
+                // TODO: Implement camera streaming toggle via DBus
+                // Check if currently streaming for this device
+                // let is_streaming = self.camera_stats.get(&device_id).map_or(false, |s| s.is_streaming);
+                // if is_streaming {
+                //     // Stop streaming
+                //     Task::perform(async move { /* call daemon.stop_camera_streaming(device_id) */ }, |_| cosmic::Action::None)
+                // } else {
+                //     // Start streaming with default settings (720p, back camera)
+                //     Task::perform(async move { /* call daemon.start_camera_streaming(device_id, settings) */ }, |_| cosmic::Action::None)
+                // }
+                tracing::warn!("Camera streaming toggle not yet implemented - requires DBus integration");
+                Task::none()
+            }
+            Message::SelectCamera(device_id, camera_id) => {
+                // TODO: Implement camera selection via DBus
+                // Task::perform(async move { /* call daemon.set_camera(device_id, camera_id) */ }, |_| cosmic::Action::None)
+                tracing::info!("Camera selection: device={}, camera_id={} (not yet implemented)", device_id, camera_id);
+                Task::none()
+            }
+            Message::SelectCameraResolution(device_id, resolution) => {
+                // TODO: Implement resolution change via DBus
+                // Task::perform(async move { /* call daemon.set_camera_resolution(device_id, resolution) */ }, |_| cosmic::Action::None)
+                tracing::info!("Camera resolution: device={}, resolution={} (not yet implemented)", device_id, resolution);
+                Task::none()
+            }
+            Message::CameraStatsUpdated(device_id, stats) => {
+                self.camera_stats.insert(device_id, stats);
+                Task::none()
+            }
+
             Message::StartRenaming(device_id) => {
                 // Pre-fill input with current nickname if relevant
                 let nickname = self
@@ -3294,6 +3345,9 @@ impl CConnectApplet {
         // MPRIS media controls section
         let mpris_section = self.mpris_controls_view();
 
+        // Camera streaming controls section
+        let camera_section = self.camera_controls_view();
+
         let content: Element<'_, Message> = if self.devices.is_empty() {
             container(
                 column![
@@ -3431,6 +3485,7 @@ impl CConnectApplet {
                 .width(Length::Fill),
             divider::horizontal::default(),
             mpris_section,
+            camera_section,
             self.transfers_view(),
             divider::horizontal::default(),
             scrollable(content).height(Length::Fill),
@@ -3620,6 +3675,111 @@ impl CConnectApplet {
         }
 
         container(content)
+            .width(Length::Fill)
+            .class(cosmic::theme::Container::Card)
+            .into()
+    }
+
+    /// Camera streaming controls view
+    fn camera_controls_view(&self) -> Element<'_, Message> {
+        // Check if v4l2loopback is available
+        if !self.v4l2loopback_available {
+            return Element::from(cosmic::iced::widget::Space::new(0, 0));
+        }
+
+        // Find devices with camera capability
+        let camera_devices: Vec<_> = self
+            .devices
+            .iter()
+            .filter(|d| {
+                d.device
+                    .info
+                    .incoming_capabilities
+                    .iter()
+                    .any(|cap| cap == "cconnect.camera")
+            })
+            .collect();
+
+        if camera_devices.is_empty() {
+            return Element::from(cosmic::iced::widget::Space::new(0, 0));
+        }
+
+        // For now, show UI for the first camera-capable device
+        // TODO: Support multiple devices or device selection
+        let device_state = camera_devices[0];
+        let device_id = &device_state.device.info.device_id;
+        let device_name = &device_state.device.info.device_name;
+
+        // Get camera stats if available
+        let stats = self.camera_stats.get(device_id);
+        let is_streaming = stats.map_or(false, |s| s.is_streaming);
+
+        // Camera header with toggle
+        let camera_header = row![
+            icon::from_name("camera-web-symbolic").size(ICON_S),
+            cosmic::widget::text::body(format!("Camera: {}", device_name)),
+            horizontal_space(),
+            cosmic::widget::toggler(is_streaming)
+                .on_toggle(move |_| Message::ToggleCameraStreaming(device_id.clone()))
+        ]
+        .spacing(SPACE_XS)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        let mut content_col = column![camera_header].spacing(SPACE_S);
+
+        // Show controls only when streaming
+        if is_streaming {
+            if let Some(stats) = stats {
+                // Camera selection dropdown (mock for now)
+                let camera_label = row![
+                    cosmic::widget::text::caption("Camera:"),
+                    horizontal_space(),
+                    cosmic::widget::text::caption(if stats.camera_id == 0 {
+                        "Back"
+                    } else {
+                        "Front"
+                    }),
+                ]
+                .spacing(SPACE_XS);
+
+                // Resolution display
+                let resolution_label = row![
+                    cosmic::widget::text::caption("Resolution:"),
+                    horizontal_space(),
+                    cosmic::widget::text::caption(&stats.resolution),
+                ]
+                .spacing(SPACE_XS);
+
+                // Statistics
+                let stats_row = row![
+                    column![
+                        cosmic::widget::text::caption("FPS:"),
+                        cosmic::widget::text::body(format!("{}", stats.fps)),
+                    ]
+                    .spacing(SPACE_XXS),
+                    horizontal_space(),
+                    column![
+                        cosmic::widget::text::caption("Bitrate:"),
+                        cosmic::widget::text::body(format!("{} kbps", stats.bitrate)),
+                    ]
+                    .spacing(SPACE_XXS),
+                ]
+                .spacing(SPACE_M);
+
+                content_col = content_col.push(divider::horizontal::default());
+                content_col = content_col.push(camera_label);
+                content_col = content_col.push(resolution_label);
+                content_col = content_col.push(stats_row);
+            }
+        } else {
+            // Show helper text when not streaming
+            let helper_text = cosmic::widget::text::caption(
+                "Toggle to use phone camera as webcam (/dev/video10)"
+            );
+            content_col = content_col.push(helper_text);
+        }
+
+        container(content_col.padding(Padding::from([SPACE_S, SPACE_M])))
             .width(Length::Fill)
             .class(cosmic::theme::Container::Card)
             .into()

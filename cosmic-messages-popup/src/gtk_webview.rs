@@ -46,6 +46,7 @@ pub enum GtkCommand {
 static GTK_SENDER: OnceLock<Sender<GtkCommand>> = OnceLock::new();
 
 /// Initialize GTK if not already initialized
+#[allow(dead_code)]
 pub fn ensure_gtk_init() -> Result<()> {
     let initialized = GTK_INITIALIZED.get_or_init(|| {
         match gtk::init() {
@@ -70,6 +71,9 @@ pub fn ensure_gtk_init() -> Result<()> {
 /// Start the GTK event loop in a background thread
 ///
 /// Returns the thread handle and a sender for commands
+///
+/// NOTE: GTK must be initialized ON the thread where it will be used.
+/// This function initializes GTK inside the spawned thread.
 pub fn start_gtk_event_loop() -> JoinHandle<()> {
     let (tx, rx): (Sender<GtkCommand>, Receiver<GtkCommand>) = mpsc::channel();
 
@@ -77,6 +81,12 @@ pub fn start_gtk_event_loop() -> JoinHandle<()> {
     let _ = GTK_SENDER.set(tx);
 
     thread::spawn(move || {
+        // Initialize GTK on THIS thread (GTK requires all ops on same thread)
+        if let Err(e) = gtk::init() {
+            error!("Failed to initialize GTK on event loop thread: {}", e);
+            return;
+        }
+        info!("GTK initialized on event loop thread");
         info!("GTK event loop thread started");
 
         // Track windows by messenger ID

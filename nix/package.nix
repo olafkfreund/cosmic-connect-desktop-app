@@ -212,12 +212,36 @@ rustPlatform.buildRustPackage rec {
     X-CosmicApplet=true
     X-CosmicHoverPopup=Auto
     EOF
+
+    # Install desktop entry for manager (standalone window application)
+    cat > $out/share/applications/cosmic-connect-manager.desktop << EOF
+    [Desktop Entry]
+    Type=Application
+    Name=COSMIC Connect Manager
+    Comment=Manage connected devices for COSMIC Desktop
+    GenericName=Device Manager
+    Keywords=Cosmic;Iced;connect;phone;device;sync;manager;
+    Icon=cosmic-applet-connect-symbolic
+    Exec=$out/bin/cosmic-connect-manager
+    Categories=Settings;HardwareSettings;
+    Terminal=false
+    StartupNotify=true
+    EOF
   '';
 
   # Wrap binaries with required runtime library paths
-  # The applet needs wayland, libGL, and other graphics libraries at runtime
+  # COSMIC apps need wayland, libGL, and other graphics libraries at runtime
   postFixup = ''
     wrapProgram $out/bin/cosmic-applet-connect \
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
+        wayland
+        libxkbcommon
+        libGL
+        libglvnd
+        mesa
+      ]}"
+
+    wrapProgram $out/bin/cosmic-connect-manager \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
         wayland
         libxkbcommon
@@ -247,8 +271,9 @@ rustPlatform.buildRustPackage rec {
       - CConnect protocol (port 1816, side-by-side with KDE Connect)
 
       This package includes:
-      - cosmic-applet-connect: Panel applet for COSMIC
-      - cosmic-connect-daemon: Background service (DBus, systemd)
+      - cosmic-applet-connect: Panel applet for COSMIC (quick status)
+      - cosmic-connect-manager: Standalone device manager window
+      - cosmic-connect-daemon: Background service (DBus, systemd autostart)
 
       Built with RemoteDesktop plugin support (requires PipeWire).
     '';

@@ -337,26 +337,15 @@ in
         RestartSec = 5;
 
         # Security hardening
+        # Note: ProtectHome is NOT used because this is a user service that needs
+        # write access to ~/.config/cosmic and ~/.local/share/cosmic for config files.
+        # ProtectHome=true + ReadWritePaths doesn't reliably allow directory creation.
         NoNewPrivileges = true;
         ProtectSystem = "strict";
-        ProtectHome = true;
         PrivateTmp = true;
         ProtectKernelTunables = true;
         ProtectControlGroups = true;
         RestrictSUIDSGID = true;
-        RestrictRealtime = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        SystemCallArchitectures = "native";
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        RestrictNamespaces = true;
-
-        # File system access
-        ReadWritePaths = [
-          "%h/.config/cosmic/cosmic-connect"
-          "%h/.local/share/cosmic/cosmic-connect"
-        ];
 
         # Network access required
         PrivateNetwork = false;

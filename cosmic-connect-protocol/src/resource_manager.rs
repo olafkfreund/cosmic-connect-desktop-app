@@ -594,9 +594,13 @@ mod tests {
         // Unregister one transfer
         manager.unregister_transfer("t1").await;
 
-        // Now third transfer should succeed (but would exceed total size)
+        // Now transfer should succeed (total size: 800 + 500 = 1300 < 2000)
         let transfer4 = TransferInfo::new("t4".to_string(), "device-3".to_string(), 500);
-        assert!(manager.register_transfer(transfer4).await.is_err()); // Total size: 800 + 500 > 2000
+        assert!(manager.register_transfer(transfer4).await.is_ok());
+
+        // But a large transfer would exceed total size limit
+        let transfer5 = TransferInfo::new("t5".to_string(), "device-4".to_string(), 800);
+        assert!(manager.register_transfer(transfer5).await.is_err()); // Total: 800 + 500 + 800 = 2100 > 2000
     }
 
     #[tokio::test]

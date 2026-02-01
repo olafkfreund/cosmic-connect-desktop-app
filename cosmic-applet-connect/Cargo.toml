@@ -22,6 +22,7 @@ ashpd = { workspace = true }
 arboard = "3.4"
 dirs = "5.0"
 toml = "0.8"
+chrono = { workspace = true }
 
 [lib]
 name = "cosmic_applet_connect"

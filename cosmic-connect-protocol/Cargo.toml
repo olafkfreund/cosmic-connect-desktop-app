@@ -60,6 +60,8 @@ image = { version = "0.25", optional = true }
 # AudioStream plugin dependencies
 # Note: Requires libopus-dev system package
 opus = { version = "0.3", optional = true }
+# AAC codec support (future implementation)
+# fdk-aac = { version = "0.5", optional = true }
 notify = "8.2.0"
 blake3 = "1.8.3"
 walkdir = "2.5.0"
@@ -78,6 +80,9 @@ screenshare = ["gstreamer", "gstreamer-app", "gstreamer-video", "image", "ashpd"
 video = ["cosmic-connect-core/video"]
 audiostream = ["pipewire"]
 audiostream-opus = ["audiostream", "opus"]
+# AAC codec support - currently a placeholder feature for future implementation
+# When implementing, uncomment fdk-aac dependency and add: aac = ["audiostream", "fdk-aac"]
+aac = ["audiostream"]
 
 [dev-dependencies]
 tokio-test = "0.4"

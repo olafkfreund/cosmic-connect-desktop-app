@@ -1753,6 +1753,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "ashpd 0.12.1",
+ "chrono",
  "cosmic-connect-protocol",
  "dirs 5.0.1",
  "futures",

@@ -9,7 +9,45 @@
 use crate::plugins::remotedesktop::capture::{EncodedFrame, EncodingType, QualityPreset, RawFrame};
 use crate::Result;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
+
+/// YUV420 buffer wrapper for H.264 encoding
+#[cfg(feature = "remotedesktop")]
+struct Yuv420Buffer {
+    width: u32,
+    height: u32,
+    data: Vec<u8>,
+}
+
+#[cfg(feature = "remotedesktop")]
+impl openh264::formats::YUVSource for Yuv420Buffer {
+    fn dimensions(&self) -> (usize, usize) {
+        (self.width as usize, self.height as usize)
+    }
+
+    fn strides(&self) -> (usize, usize, usize) {
+        let y_stride = self.width as usize;
+        let uv_stride = (self.width / 2) as usize;
+        (y_stride, uv_stride, uv_stride)
+    }
+
+    fn y(&self) -> &[u8] {
+        let y_size = (self.width * self.height) as usize;
+        &self.data[0..y_size]
+    }
+
+    fn u(&self) -> &[u8] {
+        let y_size = (self.width * self.height) as usize;
+        let uv_size = (self.width * self.height / 4) as usize;
+        &self.data[y_size..y_size + uv_size]
+    }
+
+    fn v(&self) -> &[u8] {
+        let y_size = (self.width * self.height) as usize;
+        let uv_size = (self.width * self.height / 4) as usize;
+        &self.data[y_size + uv_size..y_size + 2 * uv_size]
+    }
+}
 
 /// Frame encoder with support for multiple encoding types
 #[cfg(feature = "remotedesktop")]
@@ -117,19 +155,212 @@ impl FrameEncoder {
     }
 
     /// Encode with H.264 video compression
+    #[cfg(feature = "remotedesktop")]
     fn encode_h264(&self, frame: &RawFrame) -> Result<EncodedFrame> {
-        // TODO: Phase 3 - H.264 implementation
-        // For now, fall back to LZ4
-        warn!("H.264 encoding not yet implemented, falling back to LZ4");
-        self.encode_lz4(frame)
+        use openh264::encoder::{Encoder as H264EncoderImpl, EncoderConfig};
+
+        // Convert frame to YUV420 format required by H.264
+        let yuv_buffer = self.rgba_to_yuv420(frame)?;
+
+        // Configure encoder based on quality preset
+        let bitrate = self.quality.target_bitrate(frame.width, frame.height, 30);
+
+        let config = EncoderConfig::new()
+            .set_bitrate_bps(bitrate)
+            .max_frame_rate(30.0)
+            .enable_skip_frame(true);
+
+        // Create encoder with API and config
+        let api = openh264::OpenH264API::from_source();
+        let mut encoder = H264EncoderImpl::with_api_config(api, config)
+            .map_err(|e| crate::ProtocolError::Plugin(format!("H.264 encoder creation failed: {}", e)))?;
+
+        // Create YUV source wrapper
+        let yuv_source = Yuv420Buffer {
+            width: frame.width,
+            height: frame.height,
+            data: yuv_buffer,
+        };
+
+        // Encode frame
+        let bitstream = encoder
+            .encode(&yuv_source)
+            .map_err(|e| crate::ProtocolError::Plugin(format!("H.264 encoding failed: {}", e)))?;
+
+        // Collect encoded data from bitstream
+        let mut encoded_data = Vec::new();
+        bitstream.write_vec(&mut encoded_data);
+
+        let encoded = EncodedFrame::new(
+            frame.width,
+            frame.height,
+            EncodingType::H264,
+            encoded_data,
+            frame.timestamp,
+        )
+        .with_compression_ratio(frame.size());
+
+        Ok(encoded)
+    }
+
+    #[cfg(not(feature = "remotedesktop"))]
+    fn encode_h264(&self, _frame: &RawFrame) -> Result<EncodedFrame> {
+        Err(crate::ProtocolError::unsupported_feature(
+            "H.264 encoding requires remotedesktop feature",
+        ))
+    }
+
+    /// Convert RGBA to YUV420 format for H.264 encoding
+    #[cfg(feature = "remotedesktop")]
+    fn rgba_to_yuv420(&self, frame: &RawFrame) -> Result<Vec<u8>> {
+        let width = frame.width as usize;
+        let height = frame.height as usize;
+        let rgba = &frame.data;
+
+        // YUV420 has Y plane (full resolution) + U/V planes (half resolution)
+        let y_size = width * height;
+        let uv_size = (width / 2) * (height / 2);
+        let total_size = y_size + 2 * uv_size;
+
+        let mut yuv = vec![0u8; total_size];
+
+        // Convert RGBA to YUV using ITU-R BT.601 coefficients
+        for y in 0..height {
+            for x in 0..width {
+                let rgba_idx = (y * width + x) * 4;
+
+                // Handle potential out of bounds
+                if rgba_idx + 2 >= rgba.len() {
+                    continue;
+                }
+
+                let r = rgba[rgba_idx] as f32;
+                let g = rgba[rgba_idx + 1] as f32;
+                let b = rgba[rgba_idx + 2] as f32;
+
+                // Y component (luminance)
+                let y_val = (0.299 * r + 0.587 * g + 0.114 * b) as u8;
+                yuv[y * width + x] = y_val;
+
+                // U and V components (chrominance) - subsample to 4:2:0
+                if x % 2 == 0 && y % 2 == 0 {
+                    let u_val = (128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b) as u8;
+                    let v_val = (128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b) as u8;
+
+                    let uv_x = x / 2;
+                    let uv_y = y / 2;
+                    let uv_width = width / 2;
+
+                    yuv[y_size + uv_y * uv_width + uv_x] = u_val;
+                    yuv[y_size + uv_size + uv_y * uv_width + uv_x] = v_val;
+                }
+            }
+        }
+
+        Ok(yuv)
     }
 
     /// Encode with Hextile (VNC standard)
     fn encode_hextile(&self, frame: &RawFrame) -> Result<EncodedFrame> {
-        // TODO: Phase 4 - Hextile implementation
-        // For now, fall back to Raw
-        warn!("Hextile encoding not yet implemented, falling back to Raw");
-        self.encode_raw(frame)
+        // Hextile encoding per RFC 6143 Section 7.7.4
+        // Divides framebuffer into 16x16 tiles and encodes each tile
+        const TILE_SIZE: u32 = 16;
+
+        let mut encoded_data = Vec::new();
+
+        // Process tiles row by row
+        for tile_y in (0..frame.height).step_by(TILE_SIZE as usize) {
+            for tile_x in (0..frame.width).step_by(TILE_SIZE as usize) {
+                let tile_width = TILE_SIZE.min(frame.width - tile_x);
+                let tile_height = TILE_SIZE.min(frame.height - tile_y);
+
+                self.encode_hextile_tile(
+                    frame,
+                    tile_x,
+                    tile_y,
+                    tile_width,
+                    tile_height,
+                    &mut encoded_data,
+                )?;
+            }
+        }
+
+        let encoded = EncodedFrame::new(
+            frame.width,
+            frame.height,
+            EncodingType::Hextile,
+            encoded_data,
+            frame.timestamp,
+        )
+        .with_compression_ratio(frame.size());
+
+        Ok(encoded)
+    }
+
+    /// Encode a single Hextile tile
+    fn encode_hextile_tile(
+        &self,
+        frame: &RawFrame,
+        tile_x: u32,
+        tile_y: u32,
+        tile_width: u32,
+        tile_height: u32,
+        output: &mut Vec<u8>,
+    ) -> Result<()> {
+        // Hextile encoding modes (RFC 6143):
+        // Bit 0: Raw - tile data is raw pixels
+        // Bit 1: BackgroundSpecified - background color follows subencoding byte
+        // Bit 2: ForegroundSpecified - foreground color follows background
+        // Bit 3: AnySubrects - subrectangles follow
+        // Bit 4: SubrectsColoured - each subrect has its own color
+
+        const RAW: u8 = 1 << 0;
+        const BACKGROUND_SPECIFIED: u8 = 1 << 1;
+
+        // Extract tile pixels
+        let mut tile_pixels = Vec::new();
+        let bytes_per_pixel = frame.format.bytes_per_pixel() as usize;
+
+        for y in 0..tile_height {
+            let row_start = ((tile_y + y) * frame.width + tile_x) as usize * bytes_per_pixel;
+            let row_end = row_start + tile_width as usize * bytes_per_pixel;
+
+            if row_end <= frame.data.len() {
+                tile_pixels.extend_from_slice(&frame.data[row_start..row_end]);
+            }
+        }
+
+        // Analyze tile for compression opportunities
+        let (is_uniform, background_color) = self.analyze_tile(&tile_pixels, bytes_per_pixel);
+
+        if is_uniform {
+            // Tile is solid color - use background only
+            output.push(BACKGROUND_SPECIFIED);
+            output.extend_from_slice(&background_color);
+        } else {
+            // Tile has variations - use raw encoding for simplicity
+            // Advanced implementation could detect subrectangles
+            output.push(RAW);
+            output.extend_from_slice(&tile_pixels);
+        }
+
+        Ok(())
+    }
+
+    /// Analyze tile to determine if it's uniform color
+    fn analyze_tile(&self, pixels: &[u8], bytes_per_pixel: usize) -> (bool, Vec<u8>) {
+        if pixels.len() < bytes_per_pixel {
+            return (false, Vec::new());
+        }
+
+        let first_pixel = &pixels[0..bytes_per_pixel];
+
+        // Check if all pixels match the first pixel
+        let is_uniform = pixels
+            .chunks_exact(bytes_per_pixel)
+            .all(|pixel| pixel == first_pixel);
+
+        (is_uniform, first_pixel.to_vec())
     }
 
     /// Get encoder statistics
@@ -328,6 +559,166 @@ mod tests {
             ratio > 2.0,
             "Compression ratio should be > 2.0, got {}",
             ratio
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_h264_encoding() {
+        let mut encoder = FrameEncoder::new(QualityPreset::Low);
+        encoder.set_encoding(EncodingType::H264);
+
+        let frame = create_test_frame();
+        let original_size = frame.size();
+        let encoded = encoder.encode(&frame).unwrap();
+
+        assert_eq!(encoded.encoding, EncodingType::H264);
+        assert_eq!(encoded.width, frame.width);
+        assert_eq!(encoded.height, frame.height);
+        // H.264 should produce some output
+        assert!(!encoded.data.is_empty(), "H.264 encoding produced empty data");
+
+        println!(
+            "H.264 compression: {} -> {} bytes ({:.1}x)",
+            original_size,
+            encoded.data.len(),
+            original_size as f32 / encoded.data.len() as f32
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_h264_quality_presets() {
+        let frame = create_test_frame();
+
+        // Test different quality presets
+        for quality in [QualityPreset::Low, QualityPreset::Medium, QualityPreset::High] {
+            let mut encoder = FrameEncoder::new(quality);
+            encoder.set_encoding(EncodingType::H264);
+
+            let result = encoder.encode(&frame);
+            assert!(
+                result.is_ok(),
+                "H.264 encoding with {:?} quality should succeed",
+                quality
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_hextile_encoding() {
+        let mut encoder = FrameEncoder::new(QualityPreset::Medium);
+        encoder.set_encoding(EncodingType::Hextile);
+
+        let frame = create_test_frame();
+        let encoded = encoder.encode(&frame).unwrap();
+
+        assert_eq!(encoded.encoding, EncodingType::Hextile);
+        assert_eq!(encoded.width, frame.width);
+        assert_eq!(encoded.height, frame.height);
+        assert!(!encoded.data.is_empty(), "Hextile encoding produced empty data");
+
+        println!(
+            "Hextile compression: {} -> {} bytes ({:.1}x)",
+            frame.size(),
+            encoded.data.len(),
+            frame.size() as f32 / encoded.data.len() as f32
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_hextile_uniform_tile() {
+        // Create frame with uniform color for optimal Hextile compression
+        let width = 640;
+        let height = 480;
+        let data = vec![200u8; (width * height * 4) as usize]; // Solid gray
+        let frame = RawFrame::new(width, height, PixelFormat::RGBA, data);
+
+        let mut encoder = FrameEncoder::new(QualityPreset::Medium);
+        encoder.set_encoding(EncodingType::Hextile);
+
+        let original_size = frame.size();
+        let encoded = encoder.encode(&frame).unwrap();
+
+        // Uniform color should compress very well with Hextile
+        assert!(
+            encoded.data.len() < original_size / 10,
+            "Hextile should compress uniform color by at least 10x, got {}x",
+            original_size as f32 / encoded.data.len() as f32
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_hextile_with_pattern() {
+        // Create frame with checkerboard pattern
+        let width = 640;
+        let height = 480;
+        let mut data = vec![0u8; (width * height * 4) as usize];
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = ((y * width + x) * 4) as usize;
+                let color = if (x / 16 + y / 16) % 2 == 0 {
+                    255u8
+                } else {
+                    0u8
+                };
+                data[idx] = color;
+                data[idx + 1] = color;
+                data[idx + 2] = color;
+                data[idx + 3] = 255;
+            }
+        }
+
+        let frame = RawFrame::new(width, height, PixelFormat::RGBA, data);
+        let mut encoder = FrameEncoder::new(QualityPreset::Medium);
+        encoder.set_encoding(EncodingType::Hextile);
+
+        let encoded = encoder.encode(&frame).unwrap();
+        assert_eq!(encoded.encoding, EncodingType::Hextile);
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_encoding_type_switch() {
+        let mut encoder = FrameEncoder::new(QualityPreset::Medium);
+        let frame = create_test_frame();
+
+        // Test switching between encoding types
+        for encoding in [
+            EncodingType::Raw,
+            EncodingType::LZ4,
+            EncodingType::Hextile,
+            EncodingType::H264,
+        ] {
+            encoder.set_encoding(encoding);
+            let result = encoder.encode(&frame);
+            assert!(
+                result.is_ok(),
+                "Encoding with {:?} should succeed",
+                encoding
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "remotedesktop")]
+    fn test_yuv_conversion() {
+        let encoder = FrameEncoder::new(QualityPreset::Medium);
+        let frame = create_test_frame();
+
+        let yuv_result = encoder.rgba_to_yuv420(&frame);
+        assert!(yuv_result.is_ok(), "YUV conversion should succeed");
+
+        let yuv = yuv_result.unwrap();
+        let expected_size = (frame.width * frame.height * 3 / 2) as usize;
+        assert_eq!(
+            yuv.len(),
+            expected_size,
+            "YUV420 size should be 1.5x width*height"
         );
     }
 }

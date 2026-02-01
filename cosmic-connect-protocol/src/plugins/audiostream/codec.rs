@@ -309,6 +309,176 @@ impl PcmCodec {
     }
 }
 
+/// AAC codec wrapper
+#[cfg(feature = "aac")]
+pub struct AacCodec {
+    sample_rate: u32,
+    channels: u8,
+    bitrate: u32,
+    frame_size: usize,
+}
+
+/// Stub AAC codec when feature is disabled
+#[cfg(not(feature = "aac"))]
+pub struct AacCodec {
+    sample_rate: u32,
+    channels: u8,
+    bitrate: u32,
+    frame_size: usize,
+}
+
+#[cfg(feature = "aac")]
+impl AacCodec {
+    /// Create new AAC codec
+    ///
+    /// # Arguments
+    /// * `sample_rate` - Sample rate in Hz (8000, 16000, 24000, 48000)
+    /// * `channels` - Number of channels (1=mono, 2=stereo)
+    /// * `bitrate` - Target bitrate in bits per second
+    pub fn new(sample_rate: u32, channels: u8, bitrate: u32) -> Result<Self> {
+        // Validate sample rate
+        if ![8000, 16000, 24000, 48000].contains(&sample_rate) {
+            return Err(ProtocolError::InvalidPacket(format!(
+                "Unsupported sample rate: {}. Must be 8000, 16000, 24000, or 48000",
+                sample_rate
+            )));
+        }
+
+        // Validate channels
+        if channels < 1 || channels > 2 {
+            return Err(ProtocolError::InvalidPacket(format!(
+                "Unsupported channel count: {}. Must be 1 or 2",
+                channels
+            )));
+        }
+
+        // AAC typically uses 1024 samples per frame for most sample rates
+        let frame_size = match sample_rate {
+            8000 => 256,
+            16000 => 512,
+            24000 => 768,
+            48000 => 1024,
+            _ => 1024,
+        };
+
+        debug!(
+            "Created AAC codec: {}Hz, {} channels, {} bps, {} samples/frame",
+            sample_rate, channels, bitrate, frame_size
+        );
+
+        Ok(Self {
+            sample_rate,
+            channels,
+            bitrate,
+            frame_size,
+        })
+    }
+
+    /// Encode audio samples to AAC
+    ///
+    /// # Arguments
+    /// * `samples` - Interleaved f32 audio samples
+    ///
+    /// # Returns
+    /// Encoded AAC packet as bytes
+    pub fn encode(&mut self, samples: &[AudioSample]) -> Result<Vec<u8>> {
+        // Check if we have enough samples for a frame
+        let expected_samples = self.frame_size * self.channels as usize;
+        if samples.len() < expected_samples {
+            return Err(ProtocolError::InvalidPacket(format!(
+                "Not enough samples for encoding: got {}, expected {}",
+                samples.len(),
+                expected_samples
+            )));
+        }
+
+        // TODO: Implement AAC encoding using fdk-aac or similar library
+        // For now, return placeholder error
+        Err(ProtocolError::InvalidPacket(
+            "AAC encoding not yet implemented - requires fdk-aac library integration".to_string(),
+        ))
+    }
+
+    /// Decode AAC packet to audio samples
+    ///
+    /// # Arguments
+    /// * `packet` - Encoded AAC packet
+    ///
+    /// # Returns
+    /// Decoded audio samples as interleaved f32
+    pub fn decode(&mut self, _packet: &[u8]) -> Result<Vec<AudioSample>> {
+        // TODO: Implement AAC decoding using fdk-aac or similar library
+        // For now, return placeholder error
+        Err(ProtocolError::InvalidPacket(
+            "AAC decoding not yet implemented - requires fdk-aac library integration".to_string(),
+        ))
+    }
+
+    /// Get frame size in samples per channel
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    /// Get sample rate
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Get channel count
+    pub fn channels(&self) -> u8 {
+        self.channels
+    }
+
+    /// Get bitrate
+    pub fn bitrate(&self) -> u32 {
+        self.bitrate
+    }
+}
+
+#[cfg(not(feature = "aac"))]
+impl AacCodec {
+    /// Create new AAC codec (stub - always fails)
+    pub fn new(sample_rate: u32, channels: u8, bitrate: u32) -> Result<Self> {
+        Err(ProtocolError::InvalidPacket(
+            "AAC codec not available - compile with 'aac' feature and install required libraries".to_string()
+        ))
+    }
+
+    /// Encode (stub)
+    pub fn encode(&mut self, _samples: &[AudioSample]) -> Result<Vec<u8>> {
+        Err(ProtocolError::InvalidPacket(
+            "AAC codec not available".to_string()
+        ))
+    }
+
+    /// Decode (stub)
+    pub fn decode(&mut self, _packet: &[u8]) -> Result<Vec<AudioSample>> {
+        Err(ProtocolError::InvalidPacket(
+            "AAC codec not available".to_string()
+        ))
+    }
+
+    /// Get frame size in samples per channel
+    pub fn frame_size(&self) -> usize {
+        1024 // Default AAC frame size at 48kHz
+    }
+
+    /// Get sample rate
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Get channel count
+    pub fn channels(&self) -> u8 {
+        self.channels
+    }
+
+    /// Get bitrate
+    pub fn bitrate(&self) -> u32 {
+        self.bitrate
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +546,32 @@ mod tests {
         for (original, decoded) in samples.iter().zip(decoded.iter()) {
             assert!((original - decoded).abs() < 0.0001);
         }
+    }
+
+    #[test]
+    fn test_aac_codec_creation_without_feature() {
+        // Without aac feature, codec creation should fail
+        let codec = AacCodec::new(48000, 2, 128000);
+        assert!(codec.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "aac")]
+    fn test_aac_codec_creation() {
+        let codec = AacCodec::new(48000, 2, 128000);
+        assert!(codec.is_ok());
+
+        let codec = codec.unwrap();
+        assert_eq!(codec.sample_rate(), 48000);
+        assert_eq!(codec.channels(), 2);
+        assert_eq!(codec.bitrate(), 128000);
+        assert_eq!(codec.frame_size(), 1024);
+    }
+
+    #[test]
+    #[cfg(feature = "aac")]
+    fn test_aac_invalid_sample_rate() {
+        let codec = AacCodec::new(44100, 2, 128000);
+        assert!(codec.is_err());
     }
 }

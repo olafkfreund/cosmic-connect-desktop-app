@@ -22,11 +22,6 @@ use cosmic_connect_protocol::{
     ConnectionState, Device, DeviceInfo as ProtocolDeviceInfo, DeviceType, PairingStatus,
 };
 
-// TODO: Uncomment when camera module is implemented
-// use cosmic_connect_core::plugins::camera::{
-//     CameraCapability, CameraFacing, CameraInfo, CameraStart, Resolution, StreamStats, StreamingStatus,
-// };
-
 use cosmic::iced::widget::progress_bar;
 use dbus_client::DbusClient;
 
@@ -451,6 +446,10 @@ struct CConnectApplet {
     sms_dialog_device: Option<String>, // device_id showing SMS dialog
     sms_phone_number_input: String,    // Phone number input field
     sms_message_input: String,         // Message body input field
+    // System Monitor state
+    system_info: HashMap<String, SystemInfo>, // device_id -> system information
+    // Screenshot state
+    screenshots: HashMap<String, Vec<u8>>, // device_id -> last screenshot image data
 }
 
 /// Active screen share session information
@@ -464,17 +463,6 @@ struct ActiveScreenShare {
     include_audio: bool, // whether system audio is included in the share
     viewer_count: u32,   // number of active viewers (only for sender)
 }
-
-// TODO: uncomment when camera module is implemented
-// /// Camera streaming state for a device
-// #[derive(Debug, Clone)]
-// struct CameraStreamingState {
-//     is_streaming: bool,
-//     selected_camera_id: u32,
-//     selected_resolution: Resolution,
-//     status: StreamingStatus,
-//     error: Option<String>,
-// }
 
 #[derive(Debug, Clone)]
 struct AppNotification {
@@ -1097,6 +1085,8 @@ impl cosmic::Application for CConnectApplet {
             sms_dialog_device: None,
             sms_phone_number_input: String::new(),
             sms_message_input: String::new(),
+            system_info: HashMap::new(),
+            screenshots: HashMap::new(),
         };
         (app, Task::none())
     }
@@ -1667,9 +1657,9 @@ impl cosmic::Application for CConnectApplet {
                 }
                 Task::none()
             }
-            Message::SystemInfoReceived(_device_id, _info) => {
-                // TODO: Store and display system info
-                tracing::info!("SystemInfoReceived not yet implemented");
+            Message::SystemInfoReceived(device_id, info) => {
+                tracing::info!("Received system info from device {}", device_id);
+                self.system_info.insert(device_id, info);
                 Task::none()
             }
 
@@ -1694,9 +1684,60 @@ impl cosmic::Application for CConnectApplet {
                 }
                 Task::none()
             }
-            Message::ScreenshotReceived(_device_id, _image_data) => {
-                // TODO: Save and display screenshot
-                tracing::info!("ScreenshotReceived not yet implemented");
+            Message::ScreenshotReceived(device_id, image_data) => {
+                tracing::info!(
+                    "Received screenshot from device {} ({} bytes)",
+                    device_id,
+                    image_data.len()
+                );
+
+                // Store screenshot in state for preview
+                self.screenshots.insert(device_id.clone(), image_data.clone());
+
+                // Save screenshot to disk
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                let device_name = self
+                    .devices
+                    .iter()
+                    .find(|d| d.device.info.device_id == device_id)
+                    .map(|d| d.device.info.device_name.as_str())
+                    .unwrap_or("unknown");
+
+                let filename = format!("cosmic-connect_{}_{}.png", device_name, timestamp);
+
+                if let Some(pictures_dir) = dirs::picture_dir() {
+                    let screenshots_dir = pictures_dir.join("Screenshots");
+
+                    // Create screenshots directory if it doesn't exist
+                    if let Err(e) = std::fs::create_dir_all(&screenshots_dir) {
+                        tracing::error!("Failed to create screenshots directory: {}", e);
+                        return Task::none();
+                    }
+
+                    let screenshot_path = screenshots_dir.join(&filename);
+
+                    // Save the image file
+                    if let Err(e) = std::fs::write(&screenshot_path, &image_data) {
+                        tracing::error!("Failed to save screenshot: {}", e);
+                        return Task::none();
+                    }
+
+                    tracing::info!("Screenshot saved to {:?}", screenshot_path);
+
+                    self.notification = Some(AppNotification {
+                        message: format!("Screenshot saved to {}", filename),
+                        kind: NotificationType::Success,
+                        action: None,
+                    });
+                } else {
+                    tracing::error!("Could not determine pictures directory");
+                    self.notification = Some(AppNotification {
+                        message: "Failed to save screenshot: Pictures directory not found".to_string(),
+                        kind: NotificationType::Error,
+                        action: None,
+                    });
+                }
+
                 Task::none()
             }
 
@@ -4305,17 +4346,73 @@ impl CConnectApplet {
         ]
         .spacing(SPACE_S);
 
-        let content = column![
+        let mut content = column![
             header,
             container(info_card)
                 .padding(SPACE_M)
                 .width(Length::Fill)
                 .class(cosmic::theme::Container::Card),
         ]
-        .spacing(SPACE_M)
-        .padding(SPACE_M);
+        .spacing(SPACE_M);
 
-        content.into()
+        // System Info card (if available)
+        if let Some(info) = self.system_info.get(device_id) {
+            let system_info_card = column![
+                row![
+                    text("System Information")
+                        .size(ICON_S)
+                        .class(theme::Text::Color(theme_accent_color()))
+                ]
+                .spacing(SPACE_XS),
+                divider::horizontal::default(),
+                row![
+                    text("CPU Usage:").width(Length::Fixed(120.0)),
+                    text(format!("{:.1}%", info.cpu_usage))
+                ]
+                .spacing(SPACE_XS),
+                row![
+                    text("Memory Usage:").width(Length::Fixed(120.0)),
+                    text(format!(
+                        "{:.1}% ({} / {} MB)",
+                        info.memory_usage,
+                        info.used_memory / 1024 / 1024,
+                        info.total_memory / 1024 / 1024
+                    ))
+                ]
+                .spacing(SPACE_XS),
+                row![
+                    text("Disk Usage:").width(Length::Fixed(120.0)),
+                    text(format!("{:.1}%", info.disk_usage))
+                ]
+                .spacing(SPACE_XS),
+                row![
+                    text("Uptime:").width(Length::Fixed(120.0)),
+                    text(format_uptime(info.uptime))
+                ]
+                .spacing(SPACE_XS),
+            ]
+            .spacing(SPACE_S);
+
+            content = content.push(
+                container(system_info_card)
+                    .padding(SPACE_M)
+                    .width(Length::Fill)
+                    .class(cosmic::theme::Container::Card),
+            );
+        } else if device.is_connected() {
+            // Show button to request system info
+            content = content.push(
+                container(
+                    button::standard("Request System Info")
+                        .on_press(Message::RequestSystemInfo(device_id.to_string())),
+                )
+                .padding(SPACE_M)
+                .width(Length::Fill)
+                .class(cosmic::theme::Container::Card),
+            );
+        }
+
+        content.padding(SPACE_M).into()
     }
 
     fn device_row<'a>(
@@ -6524,6 +6621,24 @@ fn pluralize(count: u64) -> &'static str {
 }
 
 /// Format last seen timestamp to human-readable string
+fn format_uptime(uptime_seconds: u64) -> String {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+
+    let days = uptime_seconds / DAY;
+    let hours = (uptime_seconds % DAY) / HOUR;
+    let minutes = (uptime_seconds % HOUR) / MINUTE;
+
+    if days > 0 {
+        format!("{}d {}h {}m", days, hours, minutes)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
 fn format_last_seen(last_seen: u64) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 

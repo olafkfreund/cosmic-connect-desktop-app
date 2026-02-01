@@ -272,6 +272,9 @@ pub struct MacroPlugin {
 
     /// Active executions
     executions: Arc<RwLock<HashMap<String, MacroExecution>>>,
+
+    /// Packet sender for sending packets to device
+    packet_sender: Option<tokio::sync::mpsc::Sender<(String, Packet)>>,
 }
 
 impl MacroPlugin {
@@ -282,6 +285,7 @@ impl MacroPlugin {
             enabled: false,
             macros: Arc::new(RwLock::new(HashMap::new())),
             executions: Arc::new(RwLock::new(HashMap::new())),
+            packet_sender: None,
         }
     }
 
@@ -367,10 +371,19 @@ impl MacroPlugin {
         // Spawn async task to execute macro
         let executions = self.executions.clone();
         let exec_id_clone = exec_id.clone();
+        let packet_sender = self.packet_sender.clone();
+        let device_id = self.device_id.clone();
 
         tokio::spawn(async move {
-            Self::execute_macro_steps(exec_id_clone, macro_def, execution.variables, executions)
-                .await;
+            Self::execute_macro_steps(
+                exec_id_clone,
+                macro_def,
+                execution.variables,
+                executions,
+                packet_sender,
+                device_id,
+            )
+            .await;
         });
 
         Ok(exec_id)
@@ -382,6 +395,8 @@ impl MacroPlugin {
         macro_def: MacroDefinition,
         variables: HashMap<String, String>,
         executions: Arc<RwLock<HashMap<String, MacroExecution>>>,
+        packet_sender: Option<tokio::sync::mpsc::Sender<(String, Packet)>>,
+        device_id: Option<String>,
     ) {
         let start_time = std::time::Instant::now();
 
@@ -407,7 +422,7 @@ impl MacroPlugin {
                 exec_id, step_idx, step.action
             );
 
-            if let Err(e) = Self::execute_step(step, &variables).await {
+            if let Err(e) = Self::execute_step(step, &variables, &packet_sender, &device_id).await {
                 error!("Macro step failed: {}", e);
                 Self::mark_failed(&executions, &exec_id, &e.to_string()).await;
                 return;
@@ -422,7 +437,12 @@ impl MacroPlugin {
     }
 
     /// Execute a single macro step
-    async fn execute_step(step: &MacroStep, _variables: &HashMap<String, String>) -> Result<()> {
+    async fn execute_step(
+        step: &MacroStep,
+        _variables: &HashMap<String, String>,
+        packet_sender: &Option<tokio::sync::mpsc::Sender<(String, Packet)>>,
+        device_id: &Option<String>,
+    ) -> Result<()> {
         match step.action.as_str() {
             "notify" => {
                 let title = step
@@ -437,7 +457,26 @@ impl MacroPlugin {
                     .unwrap_or("");
 
                 info!("Macro notify: {} - {}", title, message);
-                // TODO: Actually send notification packet
+
+                // Send notification packet if packet_sender is available
+                if let (Some(sender), Some(dev_id)) = (packet_sender, device_id) {
+                    let packet = Packet::new(
+                        "cconnect.notification",
+                        json!({
+                            "title": title,
+                            "text": message,
+                            "id": format!("macro-{}", Uuid::new_v4()),
+                        }),
+                    );
+
+                    if let Err(e) = sender.send((dev_id.clone(), packet)).await {
+                        error!("Failed to send notification packet: {}", e);
+                        return Err(ProtocolError::invalid_state(format!(
+                            "Failed to send notification: {}",
+                            e
+                        )));
+                    }
+                }
                 Ok(())
             }
 
@@ -448,8 +487,33 @@ impl MacroPlugin {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ProtocolError::invalid_state("Missing command parameter"))?;
 
-                info!("Macro run_command: {}", command);
-                // TODO: Send run_command packet
+                let args = step
+                    .params
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                info!("Macro run_command: {} {:?}", command, args);
+
+                // Send run_command packet if packet_sender is available
+                if let (Some(sender), Some(dev_id)) = (packet_sender, device_id) {
+                    let packet = Packet::new(
+                        "cconnect.runcommand.request",
+                        json!({
+                            "key": command,
+                            "command": args,
+                        }),
+                    );
+
+                    if let Err(e) = sender.send((dev_id.clone(), packet)).await {
+                        error!("Failed to send run_command packet: {}", e);
+                        return Err(ProtocolError::invalid_state(format!(
+                            "Failed to send command: {}",
+                            e
+                        )));
+                    }
+                }
                 Ok(())
             }
 
@@ -473,7 +537,24 @@ impl MacroPlugin {
                     .ok_or_else(|| ProtocolError::invalid_state("Missing content parameter"))?;
 
                 info!("Macro set_clipboard: {} chars", content.len());
-                // TODO: Send clipboard packet
+
+                // Send clipboard packet if packet_sender is available
+                if let (Some(sender), Some(dev_id)) = (packet_sender, device_id) {
+                    let packet = Packet::new(
+                        "cconnect.clipboard",
+                        json!({
+                            "content": content,
+                        }),
+                    );
+
+                    if let Err(e) = sender.send((dev_id.clone(), packet)).await {
+                        error!("Failed to send clipboard packet: {}", e);
+                        return Err(ProtocolError::invalid_state(format!(
+                            "Failed to set clipboard: {}",
+                            e
+                        )));
+                    }
+                }
                 Ok(())
             }
 
@@ -485,7 +566,31 @@ impl MacroPlugin {
                     .ok_or_else(|| ProtocolError::invalid_state("Missing path parameter"))?;
 
                 info!("Macro send_file: {}", path);
-                // TODO: Send share packet
+
+                // Send share packet if packet_sender is available
+                if let (Some(sender), Some(dev_id)) = (packet_sender, device_id) {
+                    // Extract filename from path
+                    let filename = std::path::Path::new(path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("file");
+
+                    let packet = Packet::new(
+                        "cconnect.share.request",
+                        json!({
+                            "filename": filename,
+                            "text": path,
+                        }),
+                    );
+
+                    if let Err(e) = sender.send((dev_id.clone(), packet)).await {
+                        error!("Failed to send share packet: {}", e);
+                        return Err(ProtocolError::invalid_state(format!(
+                            "Failed to send file: {}",
+                            e
+                        )));
+                    }
+                }
                 Ok(())
             }
 
@@ -718,8 +823,37 @@ impl MacroPlugin {
 
         info!("Found {} macros", macros.len());
 
-        // TODO: Send list response packet
-        // Need packet sending infrastructure
+        // Send list response packet
+        if let Some(sender) = &self.packet_sender {
+            let macros_json: Vec<Value> = macros
+                .iter()
+                .map(|m| {
+                    json!({
+                        "macroId": m.id,
+                        "name": m.name,
+                        "description": m.description,
+                        "steps": m.steps.len(),
+                    })
+                })
+                .collect();
+
+            let packet = Packet::new(
+                "cconnect.macro.list_response",
+                json!({
+                    "macros": macros_json,
+                }),
+            );
+
+            if let Err(e) = sender.send((device.id().to_string(), packet)).await {
+                error!("Failed to send macro list response: {}", e);
+                return Err(ProtocolError::invalid_state(format!(
+                    "Failed to send list response: {}",
+                    e
+                )));
+            }
+
+            debug!("Sent macro list response with {} macros", macros.len());
+        }
 
         Ok(())
     }
@@ -768,9 +902,10 @@ impl Plugin for MacroPlugin {
     async fn init(
         &mut self,
         device: &Device,
-        _packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>,
+        packet_sender: tokio::sync::mpsc::Sender<(String, Packet)>,
     ) -> Result<()> {
         self.device_id = Some(device.id().to_string());
+        self.packet_sender = Some(packet_sender);
         info!("Macro plugin initialized for device {}", device.name());
         Ok(())
     }

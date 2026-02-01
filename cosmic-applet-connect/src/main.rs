@@ -350,6 +350,8 @@ enum OperationType {
     AddRunCommand,
     AddSyncFolder,
     SaveNickname,
+    MuteCall,
+    SendSms,
 }
 
 struct CConnectApplet {
@@ -423,6 +425,10 @@ struct CConnectApplet {
     context_menu_mpris: bool,            // whether MPRIS context menu is open
     // Screen share state
     active_screen_share: Option<ActiveScreenShare>, // Currently active screen share session
+    // Audio stream state
+    audio_streaming_devices: std::collections::HashSet<String>, // device_ids currently streaming audio
+    // Presenter mode state
+    presenter_mode_devices: std::collections::HashSet<String>, // device_ids in presenter mode
     // Pinned devices config
     pinned_devices_config: pinned_devices_config::PinnedDevicesConfig,
     // Camera state
@@ -438,6 +444,10 @@ struct CConnectApplet {
     // App Continuity (Open plugin) state
     open_url_dialog_device: Option<String>, // device_id showing open URL dialog
     open_url_input: String,                 // URL input field
+    // SMS dialog state
+    sms_dialog_device: Option<String>,      // device_id showing SMS dialog
+    sms_phone_number_input: String,         // Phone number input field
+    sms_message_input: String,              // Message body input field
 }
 
 /// Active screen share session information
@@ -696,6 +706,14 @@ enum Message {
     SetScreenShareQuality(String),        // quality preset: "low", "medium", "high"
     SetScreenShareFps(u8),                // fps: 15, 30, or 60
     ToggleScreenShareAudio(String, bool), // device_id, include_audio - toggle audio in screen share
+    // Audio Stream events
+    ToggleAudioStream(String),    // device_id - toggle audio streaming on/off
+    AudioStreamStarted(String),   // device_id - audio stream started
+    AudioStreamStopped(String),   // device_id - audio stream stopped
+    // Presenter mode events
+    TogglePresenterMode(String),  // device_id - toggle presenter mode on/off
+    PresenterStarted(String),     // device_id - presenter mode started
+    PresenterStopped(String),     // device_id - presenter mode stopped
     // File Transfer events
     TransferProgress(
         String,
@@ -718,21 +736,21 @@ enum Message {
     CancelAddSyncFolder,
     ShowFileSyncSettings(String), // device_id
     CloseFileSyncSettings,
-    // Camera (TODO: uncomment when camera module is implemented)
-    // ShowCameraSettings(String), // device_id
-    // CloseCameraSettings,
-    // CameraCapabilityReceived(String, CameraCapability), // device_id, capability
-    // StartCameraStreaming(String),                       // device_id
-    // StopCameraStreaming(String),                        // device_id
-    // SelectCamera(String, u32),                          // device_id, camera_id
-    // SelectResolution(String, Resolution),               // device_id, resolution
-    // CameraStatusUpdated(String, StreamingStatus, Option<String>), // device_id, status, error
-    // CameraStatsUpdated(String, StreamStats),            // device_id, stats
+    // Camera settings
+    ShowCameraSettings(String), // device_id
+    CloseCameraSettings,
     // App Continuity (Open plugin)
     ShowOpenUrlDialog(String),      // device_id
     OpenUrlInput(String),           // url input text
     OpenOnPhone(String, String),    // device_id, url
     CancelOpenUrlDialog,
+    // Telephony and SMS
+    MuteCall(String),                       // device_id
+    ShowSmsDialog(String),                  // device_id
+    CancelSmsDialog,
+    UpdateSmsPhoneNumberInput(String),      // phone number text
+    UpdateSmsMessageInput(String),          // message body text
+    SendSms(String, String, String),        // device_id, phone_number, message
     // Animation
     Tick(std::time::Instant),
     // Recursive loop
@@ -1063,6 +1081,8 @@ impl cosmic::Application for CConnectApplet {
             context_menu_transfer: None,
             context_menu_mpris: false,
             active_screen_share: None,
+            audio_streaming_devices: std::collections::HashSet::new(),
+            presenter_mode_devices: std::collections::HashSet::new(),
             pinned_devices_config,
             // Camera state initialization
             camera_settings_device: None,
@@ -1074,6 +1094,9 @@ impl cosmic::Application for CConnectApplet {
             settings_window: None,
             open_url_dialog_device: None,
             open_url_input: String::new(),
+            sms_dialog_device: None,
+            sms_phone_number_input: String::new(),
+            sms_message_input: String::new(),
         };
         (app, Task::none())
     }
@@ -1382,6 +1405,99 @@ impl cosmic::Application for CConnectApplet {
                 self.open_url_input.clear();
                 Task::none()
             }
+            Message::MuteCall(device_id) => {
+                tracing::info!("Muting call on device: {}", device_id);
+                Task::perform(
+                    async move {
+                        match DbusClient::connect().await {
+                            Ok((client, _)) => {
+                                if let Err(e) = client.mute_call(&device_id).await {
+                                    tracing::error!("Failed to mute call: {:?}", e);
+                                    return Message::OperationFailed(
+                                        device_id.clone(),
+                                        OperationType::MuteCall,
+                                        format!("Failed to mute call: {}", e),
+                                    );
+                                }
+                                Message::OperationSucceeded(
+                                    device_id,
+                                    OperationType::MuteCall,
+                                    "Call muted".to_string(),
+                                )
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect to daemon: {:?}", e);
+                                Message::OperationFailed(
+                                    device_id.clone(),
+                                    OperationType::MuteCall,
+                                    format!("Failed to connect: {}", e),
+                                )
+                            }
+                        }
+                    },
+                    |msg| cosmic::Action::App(msg),
+                )
+            }
+            Message::ShowSmsDialog(device_id) => {
+                tracing::info!("Show SMS dialog for device: {}", device_id);
+                self.sms_dialog_device = Some(device_id);
+                Task::none()
+            }
+            Message::CancelSmsDialog => {
+                tracing::debug!("Cancel SMS dialog");
+                self.sms_dialog_device = None;
+                self.sms_phone_number_input.clear();
+                self.sms_message_input.clear();
+                Task::none()
+            }
+            Message::UpdateSmsPhoneNumberInput(input) => {
+                self.sms_phone_number_input = input;
+                Task::none()
+            }
+            Message::UpdateSmsMessageInput(input) => {
+                self.sms_message_input = input;
+                Task::none()
+            }
+            Message::SendSms(device_id, phone_number, message) => {
+                tracing::info!("Sending SMS via device {} to {}", device_id, phone_number);
+
+                // Clear dialog
+                self.sms_dialog_device = None;
+                self.sms_phone_number_input.clear();
+                self.sms_message_input.clear();
+
+                // Send SMS
+                Task::perform(
+                    async move {
+                        match DbusClient::connect().await {
+                            Ok((client, _)) => {
+                                if let Err(e) = client.send_sms(&device_id, &phone_number, &message).await {
+                                    tracing::error!("Failed to send SMS: {:?}", e);
+                                    return Message::OperationFailed(
+                                        device_id.clone(),
+                                        OperationType::SendSms,
+                                        format!("Failed to send SMS: {}", e),
+                                    );
+                                }
+                                Message::OperationSucceeded(
+                                    device_id,
+                                    OperationType::SendSms,
+                                    format!("SMS sent to {}", phone_number),
+                                )
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect to daemon: {:?}", e);
+                                Message::OperationFailed(
+                                    device_id.clone(),
+                                    OperationType::SendSms,
+                                    format!("Failed to connect: {}", e),
+                                )
+                            }
+                        }
+                    },
+                    |msg| cosmic::Action::App(msg),
+                )
+            }
             Message::RequestBatteryUpdate(device_id) => {
                 let id = device_id.clone();
                 Task::batch(vec![
@@ -1432,31 +1548,78 @@ impl cosmic::Application for CConnectApplet {
             Message::MprisControl(player, action) => self.handle_mpris_control(player, action),
 
             // Camera streaming controls
-            Message::ToggleCameraStreaming(_device_id) => {
-                // TODO: Implement camera streaming toggle via DBus
-                // Check if currently streaming for this device
-                // let is_streaming = self.camera_stats.get(&device_id).map_or(false, |s| s.is_streaming);
-                // if is_streaming {
-                //     // Stop streaming
-                //     Task::perform(async move { /* call daemon.stop_camera_streaming(device_id) */ }, |_| cosmic::Action::None)
-                // } else {
-                //     // Start streaming with default settings (720p, back camera)
-                //     Task::perform(async move { /* call daemon.start_camera_streaming(device_id, settings) */ }, |_| cosmic::Action::None)
-                // }
-                tracing::warn!("Camera streaming toggle not yet implemented - requires DBus integration");
-                Task::none()
+            Message::ToggleCameraStreaming(device_id) => {
+                let is_streaming = self
+                    .camera_stats
+                    .get(&device_id)
+                    .map_or(false, |s| s.is_streaming);
+
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id_clone = device_id.clone();
+
+                    Task::perform(
+                        async move {
+                            if is_streaming {
+                                client.stop_camera_streaming(&device_id_clone).await
+                            } else {
+                                client.start_camera_streaming(&device_id_clone).await
+                            }
+                        },
+                        move |result| {
+                            if let Err(e) = result {
+                                tracing::error!("Failed to toggle camera streaming: {}", e);
+                            }
+                            cosmic::Action::App(Message::RefreshDevices)
+                        },
+                    )
+                } else {
+                    tracing::warn!("DBus client not available for camera streaming");
+                    Task::none()
+                }
             }
             Message::SelectCamera(device_id, camera_id) => {
-                // TODO: Implement camera selection via DBus
-                // Task::perform(async move { /* call daemon.set_camera(device_id, camera_id) */ }, |_| cosmic::Action::None)
-                tracing::info!("Camera selection: device={}, camera_id={} (not yet implemented)", device_id, camera_id);
-                Task::none()
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id_clone = device_id.clone();
+
+                    Task::perform(
+                        async move { client.select_camera(&device_id_clone, camera_id).await },
+                        move |result| {
+                            if let Err(e) = result {
+                                tracing::error!("Failed to select camera: {}", e);
+                            }
+                            cosmic::Action::App(Message::RefreshDevices)
+                        },
+                    )
+                } else {
+                    tracing::warn!("DBus client not available for camera selection");
+                    Task::none()
+                }
             }
             Message::SelectCameraResolution(device_id, resolution) => {
-                // TODO: Implement resolution change via DBus
-                // Task::perform(async move { /* call daemon.set_camera_resolution(device_id, resolution) */ }, |_| cosmic::Action::None)
-                tracing::info!("Camera resolution: device={}, resolution={} (not yet implemented)", device_id, resolution);
-                Task::none()
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id_clone = device_id.clone();
+                    let resolution_clone = resolution.clone();
+
+                    Task::perform(
+                        async move {
+                            client
+                                .set_camera_resolution(&device_id_clone, &resolution_clone)
+                                .await
+                        },
+                        move |result| {
+                            if let Err(e) = result {
+                                tracing::error!("Failed to set camera resolution: {}", e);
+                            }
+                            cosmic::Action::App(Message::RefreshDevices)
+                        },
+                    )
+                } else {
+                    tracing::warn!("DBus client not available for camera resolution");
+                    Task::none()
+                }
             }
             Message::CameraStatsUpdated(device_id, stats) => {
                 self.camera_stats.insert(device_id, stats);
@@ -1464,16 +1627,46 @@ impl cosmic::Application for CConnectApplet {
             }
 
             // System Volume
-            Message::SetDeviceVolume(_device_id, _volume) => {
-                // TODO: Implement DBus call to set device volume
-                tracing::info!("SetDeviceVolume not yet implemented");
+            Message::SetDeviceVolume(device_id, volume) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    return cosmic::task::future(async move {
+                        match client.set_device_volume(&device_id, volume).await {
+                            Ok(_) => Message::ShowNotification(
+                                format!("Volume set to {:.0}%", volume * 100.0),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to set volume: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
                 Task::none()
             }
 
             // System Monitor
-            Message::RequestSystemInfo(_device_id) => {
-                // TODO: Implement DBus call to request system info
-                tracing::info!("RequestSystemInfo not yet implemented");
+            Message::RequestSystemInfo(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    return cosmic::task::future(async move {
+                        match client.request_system_info(&device_id).await {
+                            Ok(_) => Message::ShowNotification(
+                                "System info requested".to_string(),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to request system info: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
                 Task::none()
             }
             Message::SystemInfoReceived(_device_id, _info) => {
@@ -1483,9 +1676,29 @@ impl cosmic::Application for CConnectApplet {
             }
 
             // Screenshot
-            Message::TakeScreenshot(_device_id) => {
-                // TODO: Implement DBus call to request screenshot
-                tracing::info!("TakeScreenshot not yet implemented");
+            Message::TakeScreenshot(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    return cosmic::task::future(async move {
+                        match client.take_screenshot(&device_id).await {
+                            Ok(_) => Message::ShowNotification(
+                                "Screenshot requested".to_string(),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to request screenshot: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
+                Task::none()
+            }
+            Message::ScreenshotReceived(_device_id, _image_data) => {
+                // TODO: Save and display screenshot
+                tracing::info!("ScreenshotReceived not yet implemented");
                 Task::none()
             }
             Message::ScreenshotReceived(_device_id, _image_data) => {
@@ -1868,6 +2081,18 @@ impl cosmic::Application for CConnectApplet {
             Message::CloseRemoteDesktopSettings => {
                 tracing::debug!("Closing RemoteDesktop settings");
                 self.remotedesktop_settings_device = None;
+                Task::none()
+            }
+
+            // Camera settings handlers
+            Message::ShowCameraSettings(device_id) => {
+                tracing::debug!("Showing Camera settings for {}", device_id);
+                self.camera_settings_device = Some(device_id);
+                Task::none()
+            }
+            Message::CloseCameraSettings => {
+                tracing::debug!("Closing Camera settings");
+                self.camera_settings_device = None;
                 Task::none()
             }
             Message::CloseSettingsWindow => {
@@ -2383,6 +2608,90 @@ impl cosmic::Application for CConnectApplet {
                         // - PipeWire audio node handling via XDG Desktop Portal
                     }
                 }
+                Task::none()
+            }
+            // Audio Stream events
+            Message::ToggleAudioStream(device_id) => {
+                if self.audio_streaming_devices.contains(&device_id) {
+                    let client = self.dbus_client.clone();
+                    cosmic::task::future(async move {
+                        if let Some(client) = client {
+                            if let Err(e) = client.stop_audio_stream(&device_id).await {
+                                tracing::error!("Failed to stop audio stream: {}", e);
+                            }
+                        }
+                        Message::AudioStreamStopped(device_id)
+                    })
+                } else {
+                    let client = self.dbus_client.clone();
+                    cosmic::task::future(async move {
+                        if let Some(client) = client {
+                            if let Err(e) = client.start_audio_stream(&device_id).await {
+                                tracing::error!("Failed to start audio stream: {}", e);
+                            }
+                        }
+                        Message::AudioStreamStarted(device_id)
+                    })
+                }
+            }
+            Message::AudioStreamStarted(device_id) => {
+                self.audio_streaming_devices.insert(device_id.clone());
+                self.notification = Some(AppNotification {
+                    message: "Audio streaming started".to_string(),
+                    kind: NotificationType::Success,
+                    action: None,
+                });
+                Task::none()
+            }
+            Message::AudioStreamStopped(device_id) => {
+                self.audio_streaming_devices.remove(&device_id);
+                self.notification = Some(AppNotification {
+                    message: "Audio streaming stopped".to_string(),
+                    kind: NotificationType::Info,
+                    action: None,
+                });
+                Task::none()
+            }
+            // Presenter mode events
+            Message::TogglePresenterMode(device_id) => {
+                if self.presenter_mode_devices.contains(&device_id) {
+                    let client = self.dbus_client.clone();
+                    cosmic::task::future(async move {
+                        if let Some(client) = client {
+                            if let Err(e) = client.stop_presenter(&device_id).await {
+                                tracing::error!("Failed to stop presenter mode: {}", e);
+                            }
+                        }
+                        Message::PresenterStopped(device_id)
+                    })
+                } else {
+                    let client = self.dbus_client.clone();
+                    cosmic::task::future(async move {
+                        if let Some(client) = client {
+                            if let Err(e) = client.start_presenter(&device_id).await {
+                                tracing::error!("Failed to start presenter mode: {}", e);
+                            }
+                        }
+                        Message::PresenterStarted(device_id)
+                    })
+                }
+            }
+            Message::PresenterStarted(device_id) => {
+                self.presenter_mode_devices.insert(device_id.clone());
+                self.notification = Some(AppNotification {
+                    message: "Presenter mode started".to_string(),
+                    kind: NotificationType::Success,
+                    action: None,
+                });
+                Task::none()
+            }
+            Message::PresenterStopped(device_id) => {
+                self.presenter_mode_devices.remove(&device_id);
+                self.notification = Some(AppNotification {
+                    message: "Presenter mode stopped".to_string(),
+                    kind: NotificationType::Info,
+                    action: None,
+                });
                 Task::none()
             }
             // File Transfer events
@@ -3536,6 +3845,11 @@ impl CConnectApplet {
         if let Some(device_id) = &self.open_url_dialog_device {
             return self.open_url_dialog_view(device_id);
         }
+        // SMS dialog
+        if let Some(device_id) = &self.sms_dialog_device {
+            return self.sms_dialog_view(device_id);
+        }
+
 
         // Settings overrides
         if let Some(device_id) = &self.remotedesktop_settings_device {
@@ -4322,6 +4636,19 @@ impl CConnectApplet {
             );
         }
 
+        // Add Camera settings panel if active
+        if self.camera_settings_device.as_ref() == Some(device_id) {
+            content = content.push(
+                container(self.camera_settings_view(device_id)).padding(Padding::from([
+                    0.0,
+                    0.0,
+                    0.0,
+                    48.0 + SPACE_S,
+                ])),
+            );
+        }
+
+
         // Add context menu if open for this device
         if self.context_menu_device.as_ref() == Some(device_id) {
             content = content.push(
@@ -4469,6 +4796,89 @@ impl CConnectApplet {
                 ));
             }
 
+            // System Volume button
+            if device.has_incoming_capability("cconnect.systemvolume.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "multimedia-volume-control-symbolic",
+                    "Control volume",
+                    Message::SetDeviceVolume(device_id.to_string(), 0.5),
+                ));
+            }
+
+            // System Monitor button
+            if device.has_incoming_capability("cconnect.systemmonitor.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "utilities-system-monitor-symbolic",
+                    "Get system info",
+                    Message::RequestSystemInfo(device_id.to_string()),
+                ));
+            }
+
+            // Screenshot button
+            if device.has_incoming_capability("cconnect.screenshot.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "camera-photo-symbolic",
+                    "Take screenshot",
+                    Message::TakeScreenshot(device_id.to_string()),
+                ));
+            }
+
+
+            // Audio Stream toggle button
+            if device.has_incoming_capability("cconnect.audiostream") {
+                let is_streaming = self.audio_streaming_devices.contains(device_id);
+
+            // Telephony - Mute Call button
+            if device.has_incoming_capability("cconnect.telephony") {
+                let is_muting = self
+                    .pending_operations
+                    .contains(&(device_id.to_string(), OperationType::MuteCall));
+                actions = actions.push(action_button_with_tooltip_loading(
+                    "audio-volume-muted-symbolic",
+                    "Mute incoming call",
+                    Message::MuteCall(device_id.to_string()),
+                    is_muting,
+                ));
+            }
+
+            // SMS button
+            if device.has_incoming_capability("cconnect.sms") {
+                actions = actions.push(action_button_with_tooltip(
+                    "mail-message-new-symbolic",
+                    "Send SMS",
+                    Message::ShowSmsDialog(device_id.to_string()),
+                ));
+            }
+                actions = actions.push(
+                    cosmic::widget::button::icon(
+                        if is_streaming {
+                            cosmic::widget::icon::from_name("audio-volume-high-symbolic").size(16)
+                        } else {
+                            cosmic::widget::icon::from_name("audio-volume-muted-symbolic").size(16)
+                        }
+                    )
+                    .on_press(Message::ToggleAudioStream(device_id.to_string()))
+                    .padding(SPACE_XXS)
+                    .tooltip(if is_streaming { "Stop audio streaming" } else { "Start audio streaming" })
+                );
+            }
+
+            // Presenter mode toggle button
+            if device.has_incoming_capability("cconnect.presenter") {
+                let is_presenting = self.presenter_mode_devices.contains(device_id);
+                actions = actions.push(
+                    cosmic::widget::button::icon(
+                        if is_presenting {
+                            cosmic::widget::icon::from_name("x11-cursor-symbolic").size(16)
+                        } else {
+                            cosmic::widget::icon::from_name("input-touchpad-symbolic").size(16)
+                        }
+                    )
+                    .on_press(Message::TogglePresenterMode(device_id.to_string()))
+                    .padding(SPACE_XXS)
+                    .tooltip(if is_presenting { "Stop presenter mode" } else { "Start presenter mode" })
+                );
+            }
             // Battery refresh button
             let is_refreshing_battery = self
                 .pending_operations
@@ -4936,7 +5346,7 @@ impl CConnectApplet {
                 ));
             }
 
-            // Settings button (only for RemoteDesktop and FileSync plugin)
+            // Settings button (only for RemoteDesktop, FileSync, RunCommand, and Camera plugins)
             if plugin_meta.id == "remotedesktop" {
                 plugin_row = plugin_row.push(cosmic::widget::tooltip(
                     button::icon(icon::from_name("emblem-system-symbolic").size(ICON_XS))
@@ -4959,6 +5369,14 @@ impl CConnectApplet {
                         .on_press(Message::ShowRunCommandSettings(device_id.to_string()))
                         .padding(SPACE_XXS),
                     "Configure Run Commands",
+                    cosmic::widget::tooltip::Position::Bottom,
+                ));
+            } else if plugin_meta.id == "camera" {
+                plugin_row = plugin_row.push(cosmic::widget::tooltip(
+                    button::icon(icon::from_name("emblem-system-symbolic").size(ICON_XS))
+                        .on_press(Message::ShowCameraSettings(device_id.to_string()))
+                        .padding(SPACE_XXS),
+                    "Configure Camera",
                     cosmic::widget::tooltip::Position::Bottom,
                 ));
             }
@@ -5347,6 +5765,68 @@ impl CConnectApplet {
     }
 
     /// RemoteDesktop settings view with quality, FPS, and resolution controls
+
+    /// SMS dialog view for sending SMS messages via device
+    fn sms_dialog_view(&self, device_id: &str) -> Element<'_, Message> {
+        use cosmic::iced::Alignment;
+        use cosmic::widget::{button, container, icon, text, text_input};
+
+        // Get device info
+        let device = self.devices.iter().find(|d| d.device.id() == device_id);
+        let device_name = device.map(|d| d.device.name()).unwrap_or("Unknown Device");
+
+        let content = column![
+            row![
+                text::title3("Send SMS").width(Length::Fill),
+                cosmic::widget::tooltip(
+                    button::icon(icon::from_name("window-close-symbolic").size(ICON_S))
+                        .on_press(Message::CancelSmsDialog)
+                        .padding(SPACE_XS),
+                    "Close",
+                    cosmic::widget::tooltip::Position::Bottom,
+                )
+            ]
+            .align_y(Alignment::Center),
+            divider::horizontal::default(),
+            text::caption(format!("Send SMS via {}", device_name)),
+            text_input("Phone number", &self.sms_phone_number_input)
+                .on_input(Message::UpdateSmsPhoneNumberInput),
+            text_input("Message", &self.sms_message_input)
+                .on_input(Message::UpdateSmsMessageInput)
+                .on_submit({
+                    let phone = self.sms_phone_number_input.clone();
+                    let msg = self.sms_message_input.clone();
+                    let id = device_id.to_string();
+                    move |_| Message::SendSms(id.clone(), phone.clone(), msg.clone())
+                }),
+            row![
+                button::text("Cancel")
+                    .on_press(Message::CancelSmsDialog)
+                    .width(Length::Fill),
+                if !self.sms_phone_number_input.is_empty() && !self.sms_message_input.is_empty() {
+                    button::text("Send SMS")
+                        .on_press({
+                            let phone = self.sms_phone_number_input.clone();
+                            let msg = self.sms_message_input.clone();
+                            Message::SendSms(device_id.to_string(), phone, msg)
+                        })
+                        .class(cosmic::theme::Button::Suggested)
+                        .width(Length::Fill)
+                } else {
+                    button::text("Send SMS")
+                        .class(cosmic::theme::Button::Suggested)
+                        .width(Length::Fill)
+                },
+            ]
+            .spacing(SPACE_S),
+        ]
+        .spacing(SPACE_M);
+
+        container(content)
+            .class(cosmic::theme::Container::Card)
+            .padding(SPACE_M)
+            .into()
+    }
     fn remotedesktop_settings_view(
         &self,
         device_id: &str,
@@ -5525,6 +6005,139 @@ impl CConnectApplet {
 
         container(content).padding(SPACE_M).into()
     }
+
+    /// Camera settings view with camera selection, resolution, and streaming controls
+    fn camera_settings_view(&self, device_id: &str) -> Element<'_, Message> {
+        use cosmic::widget::horizontal_space;
+
+        // Header with close button
+        let header = row![
+            cosmic::widget::text::body("Camera Settings"),
+            horizontal_space(),
+            cosmic::widget::tooltip(
+                button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
+                    .on_press(Message::CloseCameraSettings)
+                    .padding(SPACE_XXS),
+                "Close settings",
+                cosmic::widget::tooltip::Position::Bottom,
+            )
+        ]
+        .width(Length::Fill)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        // Get camera stats if available
+        let stats = self.camera_stats.get(device_id);
+        let is_streaming = stats.map_or(false, |s| s.is_streaming);
+
+        // Camera selection dropdown
+        let camera_idx = stats.map_or(0, |s| if s.camera_id == 0 { 0 } else { 1 });
+        let camera_row = row![
+            text("Camera:").width(Length::Fixed(120.0)),
+            cosmic::widget::dropdown(&["Back Camera", "Front Camera"], Some(camera_idx), {
+                let device_id = device_id.to_string();
+                move |idx| {
+                    let camera_id = if idx == 0 { 0 } else { 1 };
+                    Message::SelectCamera(device_id.clone(), camera_id)
+                }
+            })
+        ]
+        .spacing(SPACE_S)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        // Resolution dropdown
+        let resolution_idx = stats.map_or(1, |s| match s.resolution.as_str() {
+            "480p" => 0,
+            "720p" => 1,
+            "1080p" => 2,
+            _ => 1,
+        });
+
+        let resolution_row = row![
+            text("Resolution:").width(Length::Fixed(120.0)),
+            cosmic::widget::dropdown(&["480p", "720p", "1080p"], Some(resolution_idx), {
+                let device_id = device_id.to_string();
+                move |idx| {
+                    let resolution = match idx {
+                        0 => "480p",
+                        1 => "720p",
+                        2 => "1080p",
+                        _ => "720p",
+                    }
+                    .to_string();
+                    Message::SelectCameraResolution(device_id.clone(), resolution)
+                }
+            })
+        ]
+        .spacing(SPACE_S)
+        .align_y(cosmic::iced::Alignment::Center);
+
+        // Build content
+        let mut content = column![header, divider::horizontal::default(), camera_row, resolution_row]
+            .spacing(SPACE_M);
+
+        // Statistics section (only show when streaming)
+        if is_streaming {
+            if let Some(stats) = stats {
+                content = content.push(divider::horizontal::default());
+
+                let stats_section = column![
+                    cosmic::widget::text::caption("Stream Statistics:"),
+                    row![
+                        column![
+                            cosmic::widget::text::caption("FPS:"),
+                            text(format!("{}", stats.fps)),
+                        ]
+                        .spacing(SPACE_XXS)
+                        .width(Length::FillPortion(1)),
+                        column![
+                            cosmic::widget::text::caption("Bitrate:"),
+                            text(format!("{} kbps", stats.bitrate)),
+                        ]
+                        .spacing(SPACE_XXS)
+                        .width(Length::FillPortion(1)),
+                        column![
+                            cosmic::widget::text::caption("Current:"),
+                            text(&stats.resolution),
+                        ]
+                        .spacing(SPACE_XXS)
+                        .width(Length::FillPortion(1)),
+                    ]
+                    .spacing(SPACE_M),
+                ]
+                .spacing(SPACE_S);
+
+                content = content.push(stats_section);
+            }
+        }
+
+        content = content.push(divider::horizontal::default());
+
+        // Start/Stop streaming button
+        let streaming_button = if is_streaming {
+            button::text("Stop Streaming")
+                .on_press(Message::ToggleCameraStreaming(device_id.to_string()))
+                .padding(SPACE_S)
+                .class(cosmic::theme::Button::Destructive)
+        } else {
+            button::text("Start Streaming")
+                .on_press(Message::ToggleCameraStreaming(device_id.to_string()))
+                .padding(SPACE_S)
+                .class(cosmic::theme::Button::Suggested)
+        };
+
+        content = content.push(streaming_button);
+
+        // Helper text
+        let helper_text = if is_streaming {
+            cosmic::widget::text::caption("Camera is available at /dev/video10")
+        } else {
+            cosmic::widget::text::caption("Start streaming to use phone camera as webcam")
+        };
+        content = content.push(helper_text);
+
+        container(content).padding(SPACE_M).into()
+    }
+
     fn transfers_view(&self) -> Element<'_, Message> {
         if self.active_transfers.is_empty() {
             return Element::from(cosmic::widget::Space::new(0, 0));
@@ -5803,6 +6416,11 @@ impl CConnectApplet {
             } else if self.open_url_dialog_device.is_some() {
                 self.open_url_dialog_device = None;
                 self.open_url_input.clear();
+                return Task::none();
+            } else if self.sms_dialog_device.is_some() {
+                self.sms_dialog_device = None;
+                self.sms_phone_number_input.clear();
+                self.sms_message_input.clear();
                 return Task::none();
             } else if self.add_run_command_device.is_some() {
                 self.add_run_command_device = None;

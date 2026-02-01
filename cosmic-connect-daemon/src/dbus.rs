@@ -712,6 +712,98 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Mute incoming call ringer on a device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to mute call on
+    async fn mute_call(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: MuteCall called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create telephony mute packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.telephony.mute", json!({}));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send mute call request: {}", e))
+            })?;
+
+        info!("DBus: Mute call request sent successfully to {}", device_id);
+        Ok(())
+    }
+
+    /// Send SMS message from a device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to send SMS from
+    /// * `phone_number` - Recipient phone number
+    /// * `message` - Message body
+    async fn send_sms(
+        &self,
+        device_id: String,
+        phone_number: String,
+        message: String,
+    ) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: SendSMS called for {} to {} with message length: {}",
+            device_id,
+            phone_number,
+            message.len()
+        );
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create SMS request packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new(
+            "cconnect.sms.request",
+            json!({
+                "phoneNumber": phone_number,
+                "messageBody": message
+            }),
+        );
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send SMS request: {}", e))
+            })?;
+
+        info!("DBus: SMS request sent successfully to {}", device_id);
+        Ok(())
+    }
+
     /// Lock a device remotely
     ///
     /// # Arguments
@@ -828,6 +920,128 @@ impl CConnectInterface {
             })?;
 
         info!("DBus: Wake request sent successfully to {}", device_id);
+        Ok(())
+    }
+
+    /// Set volume on remote device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to control
+    /// * `volume` - Volume level (0.0 to 1.0)
+    async fn set_device_volume(&self, device_id: String, volume: f64) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: SetDeviceVolume called for {} with volume: {}", device_id, volume);
+
+        // Validate volume range
+        if !(0.0..=1.0).contains(&volume) {
+            return Err(zbus::fdo::Error::Failed(format!(
+                "Invalid volume: {}. Must be between 0.0 and 1.0",
+                volume
+            )));
+        }
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create systemvolume packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.systemvolume.request", json!({
+            "volume": volume
+        }));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send volume request: {}", e))
+            })?;
+
+        info!("DBus: Volume request sent successfully to {}", device_id);
+        Ok(())
+    }
+
+    /// Request system info from device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to query
+    async fn request_system_info(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: RequestSystemInfo called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create systemmonitor packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.systemmonitor.request", json!({}));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send system info request: {}", e))
+            })?;
+
+        info!("DBus: System info request sent successfully to {}", device_id);
+        Ok(())
+    }
+
+    /// Request screenshot from device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to capture from
+    async fn take_screenshot(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: TakeScreenshot called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create screenshot packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.screenshot.request", json!({}));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send screenshot request: {}", e))
+            })?;
+
+        info!("DBus: Screenshot request sent successfully to {}", device_id);
         Ok(())
     }
 
@@ -2811,6 +3025,130 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Start audio streaming from device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to stream audio from
+    async fn start_audio_stream(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StartAudioStream called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({});
+        let packet = Packet::new("cconnect.audiostream.start", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Audio stream start request sent to device {}", device_id);
+        Ok(())
+    }
+
+    /// Stop audio streaming
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to stop streaming from
+    async fn stop_audio_stream(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StopAudioStream called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({});
+        let packet = Packet::new("cconnect.audiostream.stop", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Audio stream stop request sent to device {}", device_id);
+        Ok(())
+    }
+
+    /// Start presenter mode (use phone as presentation remote)
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to use as presenter
+    async fn start_presenter(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StartPresenter called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({});
+        let packet = Packet::new("cconnect.presenter.start", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Presenter mode start request sent to device {}", device_id);
+        Ok(())
+    }
+
+    /// Stop presenter mode
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to stop presenter on
+    async fn stop_presenter(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StopPresenter called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({});
+        let packet = Packet::new("cconnect.presenter.stop", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Presenter mode stop request sent to device {}", device_id);
+        Ok(())
+    }
+
     /// Signal: Device was added (discovered)
     ///
     /// Emitted when a new device is discovered on the network.
@@ -3021,6 +3359,7 @@ impl CConnectInterface {
         color: &str,
         width: u8,
     ) -> zbus::Result<()>;
+
 }
 
 /// DBus server for the daemon

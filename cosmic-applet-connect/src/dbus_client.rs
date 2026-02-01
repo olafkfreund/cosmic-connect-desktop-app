@@ -410,6 +410,15 @@ trait CConnect {
     /// Wake a device using Wake-on-LAN
     async fn wake_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
+    /// Set volume on remote device
+    async fn set_device_volume(&self, device_id: &str, volume: f64) -> zbus::fdo::Result<()>;
+
+    /// Request system info from device
+    async fn request_system_info(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Request screenshot from device
+    async fn take_screenshot(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
     /// Share a file with a device
     async fn share_file(&self, device_id: &str, path: &str) -> zbus::fdo::Result<()>;
 
@@ -496,6 +505,22 @@ trait CConnect {
         &self,
         device_id: &str,
         settings_json: &str,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Start camera streaming for a device
+    async fn start_camera_streaming(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Stop camera streaming for a device
+    async fn stop_camera_streaming(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Select camera by ID for a device
+    async fn select_camera(&self, device_id: &str, camera_id: u32) -> zbus::fdo::Result<()>;
+
+    /// Set camera resolution for a device
+    async fn set_camera_resolution(
+        &self,
+        device_id: &str,
+        resolution: &str,
     ) -> zbus::fdo::Result<()>;
 
     /// Add a folder to sync with a device
@@ -610,6 +635,18 @@ trait CConnect {
         phone_number: &str,
         message: &str,
     ) -> zbus::fdo::Result<()>;
+
+    /// Start audio streaming from device
+    async fn start_audio_stream(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Stop audio streaming
+    async fn stop_audio_stream(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Start presenter mode (use phone as presentation remote)
+    async fn start_presenter(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Stop presenter mode
+    async fn stop_presenter(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
     /// Signal: File transfer complete
     #[zbus(signal)]
@@ -1040,6 +1077,33 @@ impl DbusClient {
             .context("Failed to wake device")
     }
 
+    /// Set volume on remote device
+    pub async fn set_device_volume(&self, device_id: &str, volume: f64) -> Result<()> {
+        info!("Setting device {} volume to {}", device_id, volume);
+        self.proxy
+            .set_device_volume(device_id, volume)
+            .await
+            .context("Failed to set device volume")
+    }
+
+    /// Request system info from device
+    pub async fn request_system_info(&self, device_id: &str) -> Result<()> {
+        info!("Requesting system info from device {}", device_id);
+        self.proxy
+            .request_system_info(device_id)
+            .await
+            .context("Failed to request system info")
+    }
+
+    /// Request screenshot from device
+    pub async fn take_screenshot(&self, device_id: &str) -> Result<()> {
+        info!("Requesting screenshot from device {}", device_id);
+        self.proxy
+            .take_screenshot(device_id)
+            .await
+            .context("Failed to take screenshot")
+    }
+
     /// Share a file with a device
     pub async fn share_file(&self, device_id: &str, path: &str) -> Result<()> {
         info!("Sharing file {} with device {}", path, device_id);
@@ -1290,6 +1354,56 @@ impl DbusClient {
             .context("Failed to set RemoteDesktop settings")
     }
 
+    /// Start camera streaming for a device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    pub async fn start_camera_streaming(&self, device_id: &str) -> Result<()> {
+        info!("Starting camera streaming for {}", device_id);
+        self.proxy
+            .start_camera_streaming(device_id)
+            .await
+            .context("Failed to start camera streaming")
+    }
+
+    /// Stop camera streaming for a device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    pub async fn stop_camera_streaming(&self, device_id: &str) -> Result<()> {
+        info!("Stopping camera streaming for {}", device_id);
+        self.proxy
+            .stop_camera_streaming(device_id)
+            .await
+            .context("Failed to stop camera streaming")
+    }
+
+    /// Select camera by ID for a device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    /// * `camera_id` - Camera ID to select
+    pub async fn select_camera(&self, device_id: &str, camera_id: u32) -> Result<()> {
+        info!("Selecting camera {} for {}", camera_id, device_id);
+        self.proxy
+            .select_camera(device_id, camera_id)
+            .await
+            .context("Failed to select camera")
+    }
+
+    /// Set camera resolution for a device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    /// * `resolution` - Resolution string (e.g., "480p", "720p", "1080p")
+    pub async fn set_camera_resolution(&self, device_id: &str, resolution: &str) -> Result<()> {
+        info!("Setting camera resolution to {} for {}", resolution, device_id);
+        self.proxy
+            .set_camera_resolution(device_id, resolution)
+            .await
+            .context("Failed to set camera resolution")
+    }
+
     /// Set a custom nickname for a device
     pub async fn set_device_nickname(&self, device_id: &str, nickname: &str) -> Result<()> {
         info!("Setting nickname for {}: '{}'", device_id, nickname);
@@ -1506,6 +1620,54 @@ impl DbusClient {
             .send_sms(device_id, phone_number, message)
             .await
             .context("Failed to send SMS")
+    }
+
+    /// Start audio streaming from device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID to stream audio from
+    pub async fn start_audio_stream(&self, device_id: &str) -> Result<()> {
+        info!("Starting audio stream from device {}", device_id);
+        self.proxy
+            .start_audio_stream(device_id)
+            .await
+            .context("Failed to start audio stream")
+    }
+
+    /// Stop audio streaming
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID to stop streaming from
+    pub async fn stop_audio_stream(&self, device_id: &str) -> Result<()> {
+        info!("Stopping audio stream from device {}", device_id);
+        self.proxy
+            .stop_audio_stream(device_id)
+            .await
+            .context("Failed to stop audio stream")
+    }
+
+    /// Start presenter mode (use phone as presentation remote)
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID to use as presenter
+    pub async fn start_presenter(&self, device_id: &str) -> Result<()> {
+        info!("Starting presenter mode on device {}", device_id);
+        self.proxy
+            .start_presenter(device_id)
+            .await
+            .context("Failed to start presenter mode")
+    }
+
+    /// Stop presenter mode
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID to stop presenter on
+    pub async fn stop_presenter(&self, device_id: &str) -> Result<()> {
+        info!("Stopping presenter mode on device {}", device_id);
+        self.proxy
+            .stop_presenter(device_id)
+            .await
+            .context("Failed to stop presenter mode")
     }
 }
 

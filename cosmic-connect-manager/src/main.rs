@@ -119,6 +119,10 @@ pub enum Message {
     DeviceConfigLoaded(String, DeviceConfig),
     ExecuteAction(String, DeviceAction),
     DbusReady(DbusClient),
+    MediaPlayPause(String),
+    MediaNext(String),
+    MediaPrevious(String),
+    CancelTransfer(String),
     None,
 }
 
@@ -196,8 +200,8 @@ impl CosmicConnectManager {
     fn content_view(&self) -> Element<Message> {
         match self.active_page {
             Page::Devices => self.device_list_view(),
-            Page::MediaPlayers => self.placeholder_view("Media Players", "multimedia-player-symbolic"),
-            Page::Transfers => self.placeholder_view("Transfers", "folder-download-symbolic"),
+            Page::MediaPlayers => self.media_players_view(),
+            Page::Transfers => self.transfers_view(),
             Page::History => self.placeholder_view("History", "document-open-recent-symbolic"),
             Page::Settings => self.placeholder_view("Settings", "preferences-system-symbolic"),
         }
@@ -284,6 +288,211 @@ impl CosmicConnectManager {
             .into()
     }
 
+    fn media_players_view(&self) -> Element<Message> {
+        let mut sections = column::with_capacity(4)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m());
+
+        sections = sections.push(text("Media Players").size(18));
+
+        let placeholder_players = vec![
+            ("firefox", "Firefox"),
+            ("spotify", "Spotify"),
+        ];
+
+        if placeholder_players.is_empty() {
+            sections = sections.push(
+                container(
+                    column::with_capacity(3)
+                        .spacing(theme::active().cosmic().space_s())
+                        .align_x(Alignment::Center)
+                        .push(icon::from_name("multimedia-player-symbolic").size(64))
+                        .push(text("No media players found").size(18))
+                        .push(text("Play media on connected devices to see players").size(14))
+                )
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+            );
+        } else {
+            for (player_id, player_name) in placeholder_players {
+                sections = sections.push(self.media_player_card(player_id, player_name));
+            }
+        }
+
+        container(sections)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn media_player_card(&self, player_id: &str, player_name: &str) -> Element<'static, Message> {
+        let player_icon = icon::from_name("multimedia-player-symbolic").size(48);
+        let name_text = text(player_name.to_string()).size(16);
+        let track_info = text("No track playing").size(12);
+
+        let info_column = column::with_capacity(2)
+            .spacing(theme::active().cosmic().space_xxs())
+            .push(name_text)
+            .push(track_info);
+
+        let header_row = row::with_capacity(2)
+            .spacing(theme::active().cosmic().space_s())
+            .align_y(Alignment::Center)
+            .push(player_icon)
+            .push(info_column);
+
+        let prev_button = button::icon(icon::from_name("media-skip-backward-symbolic").size(16))
+            .on_press(Message::MediaPrevious(player_id.to_string()))
+            .padding(theme::active().cosmic().space_xxs());
+
+        let play_pause_button = button::icon(icon::from_name("media-playback-start-symbolic").size(16))
+            .on_press(Message::MediaPlayPause(player_id.to_string()))
+            .padding(theme::active().cosmic().space_xxs());
+
+        let next_button = button::icon(icon::from_name("media-skip-forward-symbolic").size(16))
+            .on_press(Message::MediaNext(player_id.to_string()))
+            .padding(theme::active().cosmic().space_xxs());
+
+        let controls_row = row::with_capacity(3)
+            .spacing(theme::active().cosmic().space_xs())
+            .push(prev_button)
+            .push(play_pause_button)
+            .push(next_button);
+
+        let card_content = column::with_capacity(2)
+            .spacing(theme::active().cosmic().space_s())
+            .push(header_row)
+            .push(controls_row);
+
+        container(card_content)
+            .padding(theme::active().cosmic().space_s())
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn transfers_view(&self) -> Element<Message> {
+        let mut content = column::with_capacity(4)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m());
+
+        content = content.push(text("Active Transfers (2)").size(16));
+
+        let active_transfer_1 = self.transfer_card(
+            "transfer_1",
+            "document.pdf",
+            "text-x-generic-symbolic",
+            65,
+            "2.3 MB/s",
+            true,
+        );
+        content = content.push(active_transfer_1);
+
+        let active_transfer_2 = self.transfer_card(
+            "transfer_2",
+            "photo.jpg",
+            "image-x-generic-symbolic",
+            35,
+            "1.1 MB/s",
+            true,
+        );
+        content = content.push(active_transfer_2);
+
+        content = content.push(vertical_space().height(theme::active().cosmic().space_m()));
+        content = content.push(text("Completed Today (5)").size(16));
+
+        let completed_items = column::with_capacity(5)
+            .spacing(theme::active().cosmic().space_xs())
+            .push(self.completed_transfer_item("report.docx", "text-x-generic-symbolic", "2.1 MB", "10:32 AM"))
+            .push(self.completed_transfer_item("vacation.jpg", "image-x-generic-symbolic", "4.5 MB", "09:15 AM"))
+            .push(self.completed_transfer_item("presentation.pptx", "x-office-presentation-symbolic", "8.2 MB", "08:45 AM"))
+            .push(self.completed_transfer_item("video.mp4", "video-x-generic-symbolic", "125 MB", "08:12 AM"))
+            .push(self.completed_transfer_item("archive.zip", "package-x-generic-symbolic", "15.3 MB", "07:55 AM"));
+
+        content = content.push(completed_items);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn transfer_card(
+        &self,
+        transfer_id: &str,
+        filename: &str,
+        icon_name: &str,
+        progress: u8,
+        speed: &str,
+        is_active: bool,
+    ) -> Element<Message> {
+        let file_icon = icon::from_name(icon_name).size(24);
+        let filename_text = text(filename.to_string()).size(14);
+
+        let header_row = row::with_capacity(2)
+            .spacing(theme::active().cosmic().space_s())
+            .align_y(Alignment::Center)
+            .push(file_icon)
+            .push(filename_text);
+
+        let progress_text = format!("{}%", progress);
+        let progress_label = text(progress_text).size(12);
+        let speed_label = text(speed.to_string()).size(12);
+
+        let mut info_row = row::with_capacity(3)
+            .spacing(theme::active().cosmic().space_s())
+            .align_y(Alignment::Center)
+            .push(progress_label)
+            .push(text("·").size(12))
+            .push(speed_label);
+
+        if is_active {
+            let cancel_button = button::text("Cancel")
+                .on_press(Message::CancelTransfer(transfer_id.to_string()))
+                .class(theme::Button::Destructive)
+                .padding(theme::active().cosmic().space_xxs());
+
+            info_row = info_row.push(cancel_button);
+        }
+
+        let card_content = column::with_capacity(2)
+            .spacing(theme::active().cosmic().space_xs())
+            .push(header_row)
+            .push(info_row);
+
+        container(card_content)
+            .padding(theme::active().cosmic().space_s())
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn completed_transfer_item(
+        &self,
+        filename: &str,
+        icon_name: &str,
+        size: &str,
+        time: &str,
+    ) -> Element<Message> {
+        let file_icon = icon::from_name(icon_name).size(20);
+        let filename_text = text(filename.to_string()).size(14);
+        let size_text = text(size.to_string()).size(12);
+        let time_text = text(time.to_string()).size(12);
+
+        let item_row = row::with_capacity(5)
+            .spacing(theme::active().cosmic().space_s())
+            .align_y(Alignment::Center)
+            .push(file_icon)
+            .push(filename_text)
+            .push(text("-").size(12))
+            .push(size_text)
+            .push(text("-").size(12))
+            .push(time_text);
+
+        container(item_row)
+            .padding(theme::active().cosmic().space_xs())
+            .width(Length::Fill)
+            .into()
+    }
+
     fn device_card<'a>(
         &self,
         device_id: &'a str,
@@ -299,7 +508,7 @@ impl CosmicConnectManager {
         let status_text = connection_status(device);
         let status_badge = text(status_text).size(12);
 
-        let mut card_content = row::with_capacity(2)
+        let mut info_row = row::with_capacity(2)
             .spacing(theme::active().cosmic().space_s())
             .align_y(Alignment::Center)
             .push(device_icon)
@@ -312,8 +521,34 @@ impl CosmicConnectManager {
 
         if let Some(cfg) = config {
             if cfg.plugins.enable_battery.unwrap_or(true) {
-                card_content = card_content.push(icon::from_name("battery-symbolic").size(16));
+                info_row = info_row.push(icon::from_name("battery-symbolic").size(16));
             }
+        }
+
+        let mut card_content = column::with_capacity(2)
+            .spacing(theme::active().cosmic().space_s())
+            .push(info_row);
+
+        if device.is_connected {
+            let ping_button = button::icon(icon::from_name("network-transmit-receive-symbolic").size(16))
+                .on_press(Message::ExecuteAction(device_id.to_string(), DeviceAction::Ping))
+                .padding(theme::active().cosmic().space_xxs());
+
+            let send_file_button = button::icon(icon::from_name("document-send-symbolic").size(16))
+                .on_press(Message::ExecuteAction(device_id.to_string(), DeviceAction::SendFile))
+                .padding(theme::active().cosmic().space_xxs());
+
+            let find_button = button::icon(icon::from_name("find-location-symbolic").size(16))
+                .on_press(Message::ExecuteAction(device_id.to_string(), DeviceAction::Find))
+                .padding(theme::active().cosmic().space_xxs());
+
+            let actions_row = row::with_capacity(3)
+                .spacing(theme::active().cosmic().space_xs())
+                .push(ping_button)
+                .push(send_file_button)
+                .push(find_button);
+
+            card_content = card_content.push(actions_row);
         }
 
         let card_container = container(card_content)
@@ -410,6 +645,10 @@ impl Application for CosmicConnectManager {
                 self.dbus_ready = true;
                 Task::none()
             }
+            Message::MediaPlayPause(_device_id) => Task::none(),
+            Message::MediaNext(_device_id) => Task::none(),
+            Message::MediaPrevious(_device_id) => Task::none(),
+            Message::CancelTransfer(_transfer_id) => Task::none(),
             Message::None => Task::none(),
         }
     }

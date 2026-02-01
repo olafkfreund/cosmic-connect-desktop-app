@@ -162,6 +162,42 @@ The notification listener is configured in the daemon configuration file:
 - **New Plugins**: Network Share (SFTP), Contacts (SQLite), Run Command, Remote Input.
 - **Backend Stability**: Fixed DBus interface types, improved connection reliability with backoff.
 
+## COSMIC Connect Manager
+
+The **COSMIC Connect Manager** is a standalone window application for comprehensive device management, providing a full-featured interface beyond the panel applet.
+
+### Features
+
+- **Device List**: View all paired devices with real-time status indicators (Connected, Available, Offline)
+- **Media Controls**: MPRIS-based media player remote control with playback, volume, and track navigation
+- **File Transfers**: Monitor and manage file transfer queue with progress tracking
+- **Plugin Settings**: Configure per-device plugin preferences and permissions
+
+### Launching the Manager
+
+**From the Panel Applet:**
+Click the "Open Manager" button in the COSMIC Connect applet dropdown.
+
+**From Command Line:**
+```bash
+# Open manager window
+cosmic-connect-manager
+
+# Open with a specific device selected
+cosmic-connect-manager --device <device-id>
+```
+
+### Window Layout
+
+The Manager uses a two-panel layout:
+
+| Panel | Description |
+|-------|-------------|
+| **Sidebar** | Device list with status icons, search, and quick actions |
+| **Content Area** | Device details, plugin controls, and transfer management |
+
+The sidebar provides navigation between devices, while the content area displays context-specific controls based on the selected device and active plugins.
+
 ## Installation
 
 ### NixOS (Flake)

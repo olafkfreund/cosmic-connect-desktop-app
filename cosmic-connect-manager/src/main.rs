@@ -42,7 +42,7 @@ impl Page {
     }
 }
 
-use dbus_client::{DbusClient, DaemonEvent, DeviceConfig, DeviceInfo};
+use dbus_client::{DaemonEvent, DbusClient, DeviceConfig, DeviceInfo, RunCommand};
 use std::collections::HashMap;
 
 const APP_ID: &str = "com.system76.CosmicConnectManager";
@@ -154,7 +154,9 @@ impl DeviceAction {
             | DeviceAction::MuteCall
             | DeviceAction::Camera
             | DeviceAction::RefreshBattery
-            | DeviceAction::Contacts => matches!(category, DeviceCategory::Mobile | DeviceCategory::Unknown),
+            | DeviceAction::Contacts => {
+                matches!(category, DeviceCategory::Mobile | DeviceCategory::Unknown)
+            }
 
             // Desktop-only actions
             DeviceAction::ScreenShare
@@ -162,7 +164,9 @@ impl DeviceAction {
             | DeviceAction::Power
             | DeviceAction::Wake
             | DeviceAction::RunCommand
-            | DeviceAction::Presenter => matches!(category, DeviceCategory::Desktop | DeviceCategory::Unknown),
+            | DeviceAction::Presenter => {
+                matches!(category, DeviceCategory::Desktop | DeviceCategory::Unknown)
+            }
 
             // Media control works on both but primarily desktop
             DeviceAction::MediaControl => true,
@@ -347,6 +351,28 @@ pub enum Message {
     RefreshMprisPlayers,
     BatteryStatusLoaded(String, dbus_client::BatteryStatus),
     DaemonEventReceived(DaemonEvent),
+    OpenRunCommandDialog(String),
+    CloseRunCommandDialog,
+    CommandsLoaded(String, HashMap<String, RunCommand>),
+    ExecuteCommand(String, String),
+    // SMS dialog messages
+    OpenSmsDialog(String),
+    CloseSmsDialog,
+    SmsPhoneChanged(String),
+    SmsMessageChanged(String),
+    SendSms,
+    // Contacts dialog messages
+    OpenContactsDialog(String),
+    CloseContactsDialog,
+    // Settings dialog messages
+    OpenDeviceSettings(String),
+    CloseDeviceSettings,
+    DeviceSettingsLoaded(DeviceConfig),
+    SaveDeviceSettings,
+    DeviceNicknameChanged(String),
+    DevicePluginToggled(String, bool),
+    // File picker
+    FileSelected(String, String),
     None,
 }
 
@@ -369,6 +395,23 @@ pub struct CosmicConnectManager {
     completed_transfers: Vec<CompletedTransfer>,
     history_events: Vec<HistoryEvent>,
     _event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DaemonEvent>>,
+    show_runcommand_dialog: bool,
+    runcommand_device_id: Option<String>,
+    available_commands: HashMap<String, RunCommand>,
+    // SMS dialog state
+    show_sms_dialog: bool,
+    sms_device_id: String,
+    sms_phone_number: String,
+    sms_message: String,
+    // Contacts dialog state
+    show_contacts_dialog: bool,
+    contacts_device_id: String,
+    // Settings dialog state
+    show_device_settings: bool,
+    settings_device_id: Option<String>,
+    device_settings_config: Option<DeviceConfig>,
+    device_settings_nickname: String,
+    device_settings_plugins: HashMap<String, bool>,
 }
 
 impl CosmicConnectManager {
@@ -381,8 +424,8 @@ impl CosmicConnectManager {
             Page::Settings,
         ];
 
-        let mut nav_items = column::with_capacity(pages.len() + 1)
-            .spacing(theme::active().cosmic().space_xxs());
+        let mut nav_items =
+            column::with_capacity(pages.len() + 1).spacing(theme::active().cosmic().space_xxs());
 
         for page in pages {
             let is_active = self.active_page == page;
@@ -400,29 +443,24 @@ impl CosmicConnectManager {
                 .width(Length::Fill);
 
             let nav_button = if is_active {
-                button::custom(item_container)
-                    .class(theme::Button::Suggested)
+                button::custom(item_container).class(theme::Button::Suggested)
             } else {
-                button::custom(item_container)
-                    .class(theme::Button::Text)
+                button::custom(item_container).class(theme::Button::Text)
             };
 
             nav_items = nav_items.push(
                 nav_button
                     .on_press(Message::NavigateTo(page))
                     .padding(0)
-                    .width(Length::Fill)
+                    .width(Length::Fill),
             );
         }
 
         container(
             column::with_capacity(2)
-                .push(
-                    text("COSMIC Connect")
-                        .size(18)
-                )
+                .push(text("COSMIC Connect").size(18))
                 .push(vertical_space().height(theme::active().cosmic().space_m()))
-                .push(nav_items)
+                .push(nav_items),
         )
         .padding(theme::active().cosmic().space_m())
         .width(Length::Fixed(200.0))
@@ -441,14 +479,18 @@ impl CosmicConnectManager {
     }
 
     #[allow(dead_code)]
-    fn placeholder_view(&self, title: &'static str, icon_name: &'static str) -> Element<'static, Message> {
+    fn placeholder_view(
+        &self,
+        title: &'static str,
+        icon_name: &'static str,
+    ) -> Element<'static, Message> {
         container(
             column::with_capacity(2)
                 .spacing(theme::active().cosmic().space_s())
                 .align_x(Alignment::Center)
                 .push(icon::from_name(icon_name).size(64))
                 .push(text(title).size(24))
-                .push(text("Coming soon").size(14))
+                .push(text("Coming soon").size(14)),
         )
         .center_x(Length::Fill)
         .center_y(Length::Fill)
@@ -509,10 +551,10 @@ impl CosmicConnectManager {
                         .align_x(Alignment::Center)
                         .push(icon::from_name("network-wireless-offline-symbolic").size(64))
                         .push(text("No devices found").size(18))
-                        .push(text("Make sure devices are on the same network").size(14))
+                        .push(text("Make sure devices are on the same network").size(14)),
                 )
                 .center_x(Length::Fill)
-                .center_y(Length::Fill)
+                .center_y(Length::Fill),
             );
         }
 
@@ -537,14 +579,15 @@ impl CosmicConnectManager {
                         .align_x(Alignment::Center)
                         .push(icon::from_name("multimedia-player-symbolic").size(64))
                         .push(text("No media players found").size(18))
-                        .push(text("Play media on connected devices to see players").size(14))
+                        .push(text("Play media on connected devices to see players").size(14)),
                 )
                 .center_x(Length::Fill)
-                .center_y(Length::Fill)
+                .center_y(Length::Fill),
             );
         } else {
             for (player_id, state) in &self.mpris_players {
-                sections = sections.push(self.media_player_card_with_state(player_id, state.as_ref()));
+                sections =
+                    sections.push(self.media_player_card_with_state(player_id, state.as_ref()));
             }
         }
 
@@ -554,7 +597,11 @@ impl CosmicConnectManager {
             .into()
     }
 
-    fn media_player_card_with_state(&self, player_id: &str, state: Option<&dbus_client::PlayerState>) -> Element<'_, Message> {
+    fn media_player_card_with_state(
+        &self,
+        player_id: &str,
+        state: Option<&dbus_client::PlayerState>,
+    ) -> Element<'_, Message> {
         let player_icon = icon::from_name("multimedia-player-symbolic").size(48);
 
         let (player_name, track_info_text, play_pause_icon) = if let Some(state) = state {
@@ -575,7 +622,11 @@ impl CosmicConnectManager {
 
             (state.identity.clone(), track, icon_name)
         } else {
-            (player_id.to_string(), "Loading...".to_string(), "media-playback-start-symbolic")
+            (
+                player_id.to_string(),
+                "Loading...".to_string(),
+                "media-playback-start-symbolic",
+            )
         };
 
         let name_text = text(player_name).size(16);
@@ -642,9 +693,10 @@ impl CosmicConnectManager {
             .on_press(Message::MediaPrevious(player_id.to_string()))
             .padding(theme::active().cosmic().space_xxs());
 
-        let play_pause_button = button::icon(icon::from_name("media-playback-start-symbolic").size(16))
-            .on_press(Message::MediaPlayPause(player_id.to_string()))
-            .padding(theme::active().cosmic().space_xxs());
+        let play_pause_button =
+            button::icon(icon::from_name("media-playback-start-symbolic").size(16))
+                .on_press(Message::MediaPlayPause(player_id.to_string()))
+                .padding(theme::active().cosmic().space_xxs());
 
         let next_button = button::icon(icon::from_name("media-skip-forward-symbolic").size(16))
             .on_press(Message::MediaNext(player_id.to_string()))
@@ -689,13 +741,14 @@ impl CosmicConnectManager {
                     "Calculating...".to_string()
                 };
 
-                let icon_name = if info.filename.ends_with(".pdf") || info.filename.ends_with(".txt") {
-                    "text-x-generic-symbolic"
-                } else if info.filename.ends_with(".jpg") || info.filename.ends_with(".png") {
-                    "image-x-generic-symbolic"
-                } else {
-                    "text-x-generic-symbolic"
-                };
+                let icon_name =
+                    if info.filename.ends_with(".pdf") || info.filename.ends_with(".txt") {
+                        "text-x-generic-symbolic"
+                    } else if info.filename.ends_with(".jpg") || info.filename.ends_with(".png") {
+                        "image-x-generic-symbolic"
+                    } else {
+                        "text-x-generic-symbolic"
+                    };
 
                 content = content.push(self.transfer_card(
                     transfer_id,
@@ -712,15 +765,19 @@ impl CosmicConnectManager {
 
         if !self.completed_transfers.is_empty() {
             content = content.push(vertical_space().height(theme::active().cosmic().space_m()));
-            content = content.push(text(format!("Completed ({})", self.completed_transfers.len())).size(16));
+            content = content
+                .push(text(format!("Completed ({})", self.completed_transfers.len())).size(16));
 
             let mut completed_col = column::with_capacity(self.completed_transfers.len())
                 .spacing(theme::active().cosmic().space_xs());
 
             for transfer in &self.completed_transfers {
-                let icon_name = if transfer.filename.ends_with(".pdf") || transfer.filename.ends_with(".txt") {
+                let icon_name = if transfer.filename.ends_with(".pdf")
+                    || transfer.filename.ends_with(".txt")
+                {
                     "text-x-generic-symbolic"
-                } else if transfer.filename.ends_with(".jpg") || transfer.filename.ends_with(".png") {
+                } else if transfer.filename.ends_with(".jpg") || transfer.filename.ends_with(".png")
+                {
                     "image-x-generic-symbolic"
                 } else {
                     "text-x-generic-symbolic"
@@ -841,7 +898,7 @@ impl CosmicConnectManager {
                 button::text("Clear")
                     .on_press(Message::ClearHistory)
                     .class(theme::Button::Destructive)
-                    .padding(theme::active().cosmic().space_xxs())
+                    .padding(theme::active().cosmic().space_xxs()),
             );
 
         content = content.push(header);
@@ -854,10 +911,10 @@ impl CosmicConnectManager {
                         .align_x(Alignment::Center)
                         .push(icon::from_name("document-open-recent-symbolic").size(64))
                         .push(text("No events yet").size(18))
-                        .push(text("Device activity will appear here").size(14))
+                        .push(text("Device activity will appear here").size(14)),
                 )
                 .center_x(Length::Fill)
-                .center_y(Length::Fill)
+                .center_y(Length::Fill),
             );
         } else {
             let mut events_list = column::with_capacity(self.history_events.len())
@@ -914,7 +971,7 @@ impl CosmicConnectManager {
                     .align_y(Alignment::Center)
                     .push(text(description.to_string()).size(12))
                     .push(text("·").size(12))
-                    .push(text(timestamp.to_string()).size(12))
+                    .push(text(timestamp.to_string()).size(12)),
             );
 
         let item_content = row::with_capacity(2)
@@ -943,26 +1000,20 @@ impl CosmicConnectManager {
                     .spacing(theme::active().cosmic().space_s())
                     .align_y(Alignment::Center)
                     .push(text("Auto-start daemon").size(14))
-                    .push(
-                        toggler(self.auto_start_enabled)
-                            .on_toggle(Message::ToggleAutoStart)
-                    )
+                    .push(toggler(self.auto_start_enabled).on_toggle(Message::ToggleAutoStart)),
             )
             .push(
                 row::with_capacity(2)
                     .spacing(theme::active().cosmic().space_s())
                     .align_y(Alignment::Center)
                     .push(text("Show notifications").size(14))
-                    .push(
-                        toggler(self.show_notifications)
-                            .on_toggle(Message::ToggleNotifications)
-                    )
+                    .push(toggler(self.show_notifications).on_toggle(Message::ToggleNotifications)),
             );
 
         content = content.push(
             container(general_section)
                 .padding(theme::active().cosmic().space_s())
-                .width(Length::Fill)
+                .width(Length::Fill),
         );
 
         content = content.push(vertical_space().height(theme::active().cosmic().space_m()));
@@ -970,7 +1021,11 @@ impl CosmicConnectManager {
 
         let plugins = vec![
             ("battery", "Battery", "Monitor battery level"),
-            ("clipboard", "Clipboard Sync", "Synchronize clipboard content"),
+            (
+                "clipboard",
+                "Clipboard Sync",
+                "Synchronize clipboard content",
+            ),
             ("notification", "Notifications", "Sync notifications"),
             ("share", "File Sharing", "Send and receive files"),
             ("mpris", "Media Controls", "Control media playback"),
@@ -981,8 +1036,8 @@ impl CosmicConnectManager {
             ("camera", "Camera", "Webcam streaming"),
         ];
 
-        let mut plugin_section = column::with_capacity(plugins.len())
-            .spacing(theme::active().cosmic().space_xs());
+        let mut plugin_section =
+            column::with_capacity(plugins.len()).spacing(theme::active().cosmic().space_xs());
 
         for (plugin_id, plugin_name, plugin_desc) in plugins {
             let is_enabled = self.plugin_states.get(plugin_id).copied().unwrap_or(false);
@@ -996,15 +1051,14 @@ impl CosmicConnectManager {
                 .spacing(theme::active().cosmic().space_s())
                 .align_y(Alignment::Center)
                 .push(plugin_info)
-                .push(
-                    toggler(is_enabled)
-                        .on_toggle(move |enabled| Message::TogglePlugin(plugin_id.to_string(), enabled))
-                );
+                .push(toggler(is_enabled).on_toggle(move |enabled| {
+                    Message::TogglePlugin(plugin_id.to_string(), enabled)
+                }));
 
             plugin_section = plugin_section.push(
                 container(plugin_row)
                     .padding(theme::active().cosmic().space_s())
-                    .width(Length::Fill)
+                    .width(Length::Fill),
             );
         }
 
@@ -1075,8 +1129,8 @@ impl CosmicConnectManager {
             // Split actions into rows of 5 for better layout
             let actions_per_row = 5;
             let mut action_rows: Vec<Element<'_, Message>> = Vec::new();
-            let mut current_row = row::with_capacity(actions_per_row)
-                .spacing(theme::active().cosmic().space_xs());
+            let mut current_row =
+                row::with_capacity(actions_per_row).spacing(theme::active().cosmic().space_xs());
             let mut count = 0;
 
             for action in available_actions {
@@ -1127,8 +1181,7 @@ impl CosmicConnectManager {
             .class(theme::Container::Card);
 
         let card_button = if is_selected {
-            button::custom(card_container)
-                .class(theme::Button::Suggested)
+            button::custom(card_container).class(theme::Button::Suggested)
         } else {
             button::custom(card_container)
         };
@@ -1137,6 +1190,196 @@ impl CosmicConnectManager {
             .on_press(Message::SelectDevice(device_id.to_string()))
             .padding(0)
             .width(Length::Fill)
+            .into()
+    }
+
+    fn runcommand_dialog_view(&self) -> Element<'_, Message> {
+        let mut content = column::with_capacity(4)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m())
+            .push(text("Run Command").size(18));
+
+        if self.available_commands.is_empty() {
+            content = content.push(text("No commands available").size(14));
+        } else {
+            let mut commands_list = column::with_capacity(self.available_commands.len())
+                .spacing(theme::active().cosmic().space_xs());
+
+            for (command_id, command) in &self.available_commands {
+                let command_row = row::with_capacity(2)
+                    .spacing(theme::active().cosmic().space_s())
+                    .align_y(Alignment::Center)
+                    .push(
+                        column::with_capacity(2)
+                            .spacing(theme::active().cosmic().space_xxs())
+                            .push(text(&command.name).size(14))
+                            .push(text(&command.command).size(12)),
+                    )
+                    .push(
+                        button::text("Execute")
+                            .on_press(Message::ExecuteCommand(
+                                self.runcommand_device_id.clone().unwrap_or_default(),
+                                command_id.clone(),
+                            ))
+                            .class(theme::Button::Standard)
+                            .padding(theme::active().cosmic().space_xxs()),
+                    );
+
+                commands_list = commands_list.push(
+                    container(command_row)
+                        .padding(theme::active().cosmic().space_s())
+                        .width(Length::Fill),
+                );
+            }
+
+            content = content.push(commands_list);
+        }
+
+        content = content.push(
+            button::text("Close")
+                .on_press(Message::CloseRunCommandDialog)
+                .class(theme::Button::Text)
+                .padding(theme::active().cosmic().space_xxs()),
+        );
+
+        container(content)
+            .padding(theme::active().cosmic().space_m())
+            .width(Length::Fixed(400.0))
+            .class(theme::Container::Dialog)
+            .into()
+    }
+
+    fn sms_dialog_view(&self) -> Element<'_, Message> {
+        use cosmic::widget::text_input;
+
+        let content = column::with_capacity(5)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m())
+            .push(text("Send SMS").size(18))
+            .push(
+                text_input("Phone number", &self.sms_phone_number)
+                    .on_input(Message::SmsPhoneChanged)
+                    .padding(theme::active().cosmic().space_s()),
+            )
+            .push(
+                text_input("Message", &self.sms_message)
+                    .on_input(Message::SmsMessageChanged)
+                    .padding(theme::active().cosmic().space_s()),
+            )
+            .push(
+                row::with_capacity(2)
+                    .spacing(theme::active().cosmic().space_s())
+                    .push(
+                        button::text("Cancel")
+                            .on_press(Message::CloseSmsDialog)
+                            .class(theme::Button::Text)
+                            .padding(theme::active().cosmic().space_s()),
+                    )
+                    .push(
+                        button::text("Send")
+                            .on_press(Message::SendSms)
+                            .class(theme::Button::Suggested)
+                            .padding(theme::active().cosmic().space_s()),
+                    ),
+            );
+
+        container(content)
+            .padding(theme::active().cosmic().space_m())
+            .width(Length::Fixed(400.0))
+            .class(theme::Container::Dialog)
+            .into()
+    }
+
+    fn contacts_dialog_view(&self) -> Element<'_, Message> {
+        let content = column::with_capacity(3)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m())
+            .push(text("Contacts").size(18))
+            .push(text("Contact sync feature coming soon...").size(14))
+            .push(
+                button::text("Close")
+                    .on_press(Message::CloseContactsDialog)
+                    .class(theme::Button::Text)
+                    .padding(theme::active().cosmic().space_s()),
+            );
+
+        container(content)
+            .padding(theme::active().cosmic().space_m())
+            .width(Length::Fixed(400.0))
+            .class(theme::Container::Dialog)
+            .into()
+    }
+
+    fn settings_dialog_view(&self) -> Element<'_, Message> {
+        use cosmic::widget::text_input;
+
+        let mut content = column::with_capacity(10)
+            .spacing(theme::active().cosmic().space_m())
+            .padding(theme::active().cosmic().space_m())
+            .push(text("Device Settings").size(18));
+
+        // Nickname
+        content = content.push(
+            column::with_capacity(2)
+                .spacing(theme::active().cosmic().space_xxs())
+                .push(text("Nickname").size(14))
+                .push(
+                    text_input("Device nickname", &self.device_settings_nickname)
+                        .on_input(Message::DeviceNicknameChanged)
+                        .padding(theme::active().cosmic().space_s()),
+                ),
+        );
+
+        // Plugin toggles
+        content = content.push(text("Plugins").size(16));
+
+        let plugins = [
+            ("ping", "Ping"),
+            ("battery", "Battery"),
+            ("notification", "Notifications"),
+            ("share", "File Sharing"),
+            ("clipboard", "Clipboard"),
+            ("mpris", "Media Control"),
+            ("remotedesktop", "Remote Desktop"),
+            ("findmyphone", "Find My Phone"),
+        ];
+
+        for (plugin_id, plugin_name) in plugins {
+            let enabled = self.device_settings_plugins.get(plugin_id).copied().unwrap_or(false);
+            let plugin_id_owned = plugin_id.to_string();
+            content = content.push(
+                row::with_capacity(2)
+                    .spacing(theme::active().cosmic().space_s())
+                    .align_y(Alignment::Center)
+                    .push(text(plugin_name).size(14))
+                    .push(toggler(enabled).on_toggle(move |e| {
+                        Message::DevicePluginToggled(plugin_id_owned.clone(), e)
+                    })),
+            );
+        }
+
+        // Buttons
+        content = content.push(
+            row::with_capacity(2)
+                .spacing(theme::active().cosmic().space_s())
+                .push(
+                    button::text("Cancel")
+                        .on_press(Message::CloseDeviceSettings)
+                        .class(theme::Button::Text)
+                        .padding(theme::active().cosmic().space_s()),
+                )
+                .push(
+                    button::text("Save")
+                        .on_press(Message::SaveDeviceSettings)
+                        .class(theme::Button::Suggested)
+                        .padding(theme::active().cosmic().space_s()),
+                ),
+        );
+
+        container(content)
+            .padding(theme::active().cosmic().space_m())
+            .width(Length::Fixed(450.0))
+            .class(theme::Container::Dialog)
             .into()
     }
 }
@@ -1176,7 +1419,10 @@ impl Application for CosmicConnectManager {
                 Ok((client, _event_rx)) => {
                     if let Err(e) = client.start_signal_listener().await {
                         tracing::warn!("Failed to start signal listener: {}", e);
-                        return Message::DbusError(format!("Failed to start signal listener: {}", e));
+                        return Message::DbusError(format!(
+                            "Failed to start signal listener: {}",
+                            e
+                        ));
                     }
 
                     Message::DbusConnected(client)
@@ -1208,6 +1454,23 @@ impl Application for CosmicConnectManager {
                 completed_transfers: Vec::new(),
                 history_events: Vec::new(),
                 _event_rx: None,
+                show_runcommand_dialog: false,
+                runcommand_device_id: None,
+                available_commands: HashMap::new(),
+                // SMS dialog
+                show_sms_dialog: false,
+                sms_device_id: String::new(),
+                sms_phone_number: String::new(),
+                sms_message: String::new(),
+                // Contacts dialog
+                show_contacts_dialog: false,
+                contacts_device_id: String::new(),
+                // Settings dialog
+                show_device_settings: false,
+                settings_device_id: None,
+                device_settings_config: None,
+                device_settings_nickname: String::new(),
+                device_settings_plugins: HashMap::new(),
             },
             connect_task,
         )
@@ -1227,12 +1490,43 @@ impl Application for CosmicConnectManager {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        row::with_capacity(2)
-            .push(sidebar)
-            .push(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        // Show dialog instead of main view when a dialog is open
+        if self.show_runcommand_dialog {
+            container(self.runcommand_dialog_view())
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.show_sms_dialog {
+            container(self.sms_dialog_view())
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.show_contacts_dialog {
+            container(self.contacts_dialog_view())
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.show_device_settings {
+            container(self.settings_dialog_view())
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            row::with_capacity(2)
+                .push(sidebar)
+                .push(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
@@ -1327,34 +1621,42 @@ impl Application for CosmicConnectManager {
             }
             Message::MprisPlayersLoaded(players) => {
                 let client = self.dbus_client.clone();
-                let tasks: Vec<_> = players.iter().map(|player| {
-                    let player_clone = player.clone();
-                    let client_clone = client.clone();
-                    cosmic::task::future(async move {
-                        if let Some(client) = client_clone {
-                            match client.get_player_state(&player_clone).await {
-                                Ok(state) => Message::MprisPlayerStateLoaded(player_clone, state),
-                                Err(_) => Message::MprisPlayerStateLoaded(player_clone.clone(), dbus_client::PlayerState {
-                                    name: player_clone.clone(),
-                                    identity: player_clone,
-                                    playback_status: dbus_client::PlaybackStatus::Stopped,
-                                    position: 0,
-                                    volume: 0.0,
-                                    loop_status: dbus_client::LoopStatus::None,
-                                    shuffle: false,
-                                    can_play: false,
-                                    can_pause: false,
-                                    can_go_next: false,
-                                    can_go_previous: false,
-                                    can_seek: false,
-                                    metadata: dbus_client::PlayerMetadata::default(),
-                                }),
+                let tasks: Vec<_> = players
+                    .iter()
+                    .map(|player| {
+                        let player_clone = player.clone();
+                        let client_clone = client.clone();
+                        cosmic::task::future(async move {
+                            if let Some(client) = client_clone {
+                                match client.get_player_state(&player_clone).await {
+                                    Ok(state) => {
+                                        Message::MprisPlayerStateLoaded(player_clone, state)
+                                    }
+                                    Err(_) => Message::MprisPlayerStateLoaded(
+                                        player_clone.clone(),
+                                        dbus_client::PlayerState {
+                                            name: player_clone.clone(),
+                                            identity: player_clone,
+                                            playback_status: dbus_client::PlaybackStatus::Stopped,
+                                            position: 0,
+                                            volume: 0.0,
+                                            loop_status: dbus_client::LoopStatus::None,
+                                            shuffle: false,
+                                            can_play: false,
+                                            can_pause: false,
+                                            can_go_next: false,
+                                            can_go_previous: false,
+                                            can_seek: false,
+                                            metadata: dbus_client::PlayerMetadata::default(),
+                                        },
+                                    ),
+                                }
+                            } else {
+                                Message::None
                             }
-                        } else {
-                            Message::None
-                        }
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 self.mpris_players = players.into_iter().map(|p| (p, None)).collect();
                 Task::batch(tasks)
@@ -1370,18 +1672,43 @@ impl Application for CosmicConnectManager {
                     let client = client.clone();
                     match action {
                         // Universal actions
-                        DeviceAction::Ping => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.send_ping(&device_id, "Ping from manager").await {
-                                    tracing::error!("Failed to send ping: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::Ping => cosmic::task::future(async move {
+                            if let Err(e) = client.send_ping(&device_id, "Ping from manager").await
+                            {
+                                tracing::error!("Failed to send ping: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::SendFile => {
-                            // TODO: Open file picker dialog
-                            tracing::info!("Send file to {}", device_id);
-                            Task::none()
+                            // Open file picker using xdg-desktop-portal
+                            cosmic::task::future(async move {
+                                use ashpd::desktop::file_chooser::SelectedFiles;
+                                match SelectedFiles::open_file()
+                                    .title("Select file to send")
+                                    .modal(true)
+                                    .send()
+                                    .await
+                                    .and_then(|request| request.response())
+                                {
+                                    Ok(files) => {
+                                        if let Some(file) = files.uris().first() {
+                                            if let Ok(path) = file.to_file_path() {
+                                                if let Some(path_str) = path.to_str() {
+                                                    return Message::FileSelected(
+                                                        device_id,
+                                                        path_str.to_string(),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        Message::None
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to open file picker: {}", e);
+                                        Message::None
+                                    }
+                                }
+                            })
                         }
                         DeviceAction::Clipboard => {
                             // Toggle clipboard sync for this device
@@ -1393,49 +1720,59 @@ impl Application for CosmicConnectManager {
                             tracing::info!("Remote input requested for {}", device_id);
                             Task::none()
                         }
-                        DeviceAction::Screenshot => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.take_screenshot(&device_id).await {
-                                    tracing::error!("Failed to take screenshot: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
-                        DeviceAction::SystemInfo => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.request_system_info(&device_id).await {
-                                    tracing::error!("Failed to request system info: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::Screenshot => cosmic::task::future(async move {
+                            if let Err(e) = client.take_screenshot(&device_id).await {
+                                tracing::error!("Failed to take screenshot: {}", e);
+                            }
+                            Message::None
+                        }),
+                        DeviceAction::SystemInfo => cosmic::task::future(async move {
+                            if let Err(e) = client.request_system_info(&device_id).await {
+                                tracing::error!("Failed to request system info: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::Settings => {
-                            // TODO: Open device settings dialog
-                            Task::none()
+                            // Open device settings dialog
+                            self.show_device_settings = true;
+                            self.settings_device_id = Some(device_id.clone());
+                            if let Some(client) = &self.dbus_client {
+                                let client = client.clone();
+                                cosmic::task::future(async move {
+                                    match client.get_device_config(&device_id).await {
+                                        Ok(config) => Message::DeviceSettingsLoaded(config),
+                                        Err(e) => {
+                                            tracing::error!("Failed to load device config: {}", e);
+                                            Message::None
+                                        }
+                                    }
+                                })
+                            } else {
+                                Task::none()
+                            }
                         }
 
                         // Mobile-only actions
-                        DeviceAction::Find => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.find_phone(&device_id).await {
-                                    tracing::error!("Failed to find phone: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::Find => cosmic::task::future(async move {
+                            if let Err(e) = client.find_phone(&device_id).await {
+                                tracing::error!("Failed to find phone: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::Sms => {
-                            // TODO: Open SMS compose dialog
-                            tracing::info!("SMS compose requested for {}", device_id);
+                            // Open SMS compose dialog
+                            self.show_sms_dialog = true;
+                            self.sms_device_id = device_id;
+                            self.sms_phone_number.clear();
+                            self.sms_message.clear();
                             Task::none()
                         }
-                        DeviceAction::MuteCall => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.mute_call(&device_id).await {
-                                    tracing::error!("Failed to mute call: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::MuteCall => cosmic::task::future(async move {
+                            if let Err(e) = client.mute_call(&device_id).await {
+                                tracing::error!("Failed to mute call: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::Camera => {
                             // TODO: Start camera as webcam
                             tracing::info!("Camera webcam requested for {}", device_id);
@@ -1446,11 +1783,18 @@ impl Application for CosmicConnectManager {
                             cosmic::task::future(async move {
                                 match client.request_battery_update(&device_id).await {
                                     Ok(_) => {
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(500))
+                                            .await;
                                         match client.get_battery_status(&device_id).await {
-                                            Ok(status) => Message::BatteryStatusLoaded(device_id_clone, status),
+                                            Ok(status) => Message::BatteryStatusLoaded(
+                                                device_id_clone,
+                                                status,
+                                            ),
                                             Err(e) => {
-                                                tracing::error!("Failed to get battery status: {}", e);
+                                                tracing::error!(
+                                                    "Failed to get battery status: {}",
+                                                    e
+                                                );
                                                 Message::None
                                             }
                                         }
@@ -1463,28 +1807,25 @@ impl Application for CosmicConnectManager {
                             })
                         }
                         DeviceAction::Contacts => {
-                            // TODO: Open contacts browser
-                            tracing::info!("Contacts browser requested for {}", device_id);
+                            // Open contacts browser dialog
+                            self.show_contacts_dialog = true;
+                            self.contacts_device_id = device_id;
                             Task::none()
                         }
 
                         // Desktop-only actions
-                        DeviceAction::ScreenShare => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.start_screen_share(&device_id, 5000).await {
-                                    tracing::error!("Failed to start screen share: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
-                        DeviceAction::Lock => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.lock_device(&device_id).await {
-                                    tracing::error!("Failed to lock device: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::ScreenShare => cosmic::task::future(async move {
+                            if let Err(e) = client.start_screen_share(&device_id, 5000).await {
+                                tracing::error!("Failed to start screen share: {}", e);
+                            }
+                            Message::None
+                        }),
+                        DeviceAction::Lock => cosmic::task::future(async move {
+                            if let Err(e) = client.lock_device(&device_id).await {
+                                tracing::error!("Failed to lock device: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::Power => {
                             // TODO: Show power options menu (shutdown, suspend, hibernate)
                             cosmic::task::future(async move {
@@ -1494,27 +1835,23 @@ impl Application for CosmicConnectManager {
                                 Message::None
                             })
                         }
-                        DeviceAction::Wake => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.wake_device(&device_id).await {
-                                    tracing::error!("Failed to wake device: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::Wake => cosmic::task::future(async move {
+                            if let Err(e) = client.wake_device(&device_id).await {
+                                tracing::error!("Failed to wake device: {}", e);
+                            }
+                            Message::None
+                        }),
                         DeviceAction::RunCommand => {
                             // TODO: Open run command dialog
                             tracing::info!("Run command requested for {}", device_id);
                             Task::none()
                         }
-                        DeviceAction::Presenter => {
-                            cosmic::task::future(async move {
-                                if let Err(e) = client.start_presenter(&device_id).await {
-                                    tracing::error!("Failed to start presenter mode: {}", e);
-                                }
-                                Message::None
-                            })
-                        }
+                        DeviceAction::Presenter => cosmic::task::future(async move {
+                            if let Err(e) = client.start_presenter(&device_id).await {
+                                tracing::error!("Failed to start presenter mode: {}", e);
+                            }
+                            Message::None
+                        }),
 
                         // Media control
                         DeviceAction::MediaControl => {
@@ -1595,8 +1932,16 @@ impl Application for CosmicConnectManager {
                 self.completed_transfers.push(completed);
 
                 let event = HistoryEvent {
-                    icon_name: if success { "document-save-symbolic".to_string() } else { "dialog-error-symbolic".to_string() },
-                    event_type: if success { "File received".to_string() } else { "Transfer failed".to_string() },
+                    icon_name: if success {
+                        "document-save-symbolic".to_string()
+                    } else {
+                        "dialog-error-symbolic".to_string()
+                    },
+                    event_type: if success {
+                        "File received".to_string()
+                    } else {
+                        "Transfer failed".to_string()
+                    },
                     description: filename,
                     timestamp: chrono::Local::now(),
                 };
@@ -1663,38 +2008,223 @@ impl Application for CosmicConnectManager {
                 self.battery_status.insert(device_id, status);
                 Task::none()
             }
-            Message::DaemonEventReceived(event) => {
-                match event {
-                    DaemonEvent::DeviceAdded { device_id, device_info } => {
-                        cosmic::task::future(async move { Message::DeviceAdded(device_id, device_info) })
-                    }
-                    DaemonEvent::DeviceRemoved { device_id } => {
-                        cosmic::task::future(async move { Message::DeviceRemoved(device_id) })
-                    }
-                    DaemonEvent::DeviceStateChanged { device_id, state } => {
-                        cosmic::task::future(async move { Message::DeviceStateChanged(device_id, state) })
-                    }
-                    DaemonEvent::TransferProgress { transfer_id, device_id, filename, current, total, direction } => {
-                        let info = TransferInfo {
-                            transfer_id,
-                            device_id,
-                            filename,
-                            current,
-                            total,
-                            direction,
-                        };
-                        cosmic::task::future(async move { Message::TransferProgressUpdate(info) })
-                    }
-                    DaemonEvent::TransferComplete { transfer_id, device_id, filename, success, error } => {
-                        cosmic::task::future(async move { Message::TransferCompleted(transfer_id, device_id, filename, success, error) })
-                    }
-                    _ => Task::none(),
+            Message::DaemonEventReceived(event) => match event {
+                DaemonEvent::DeviceAdded {
+                    device_id,
+                    device_info,
+                } => cosmic::task::future(
+                    async move { Message::DeviceAdded(device_id, device_info) },
+                ),
+                DaemonEvent::DeviceRemoved { device_id } => {
+                    cosmic::task::future(async move { Message::DeviceRemoved(device_id) })
                 }
-            }
+                DaemonEvent::DeviceStateChanged { device_id, state } => cosmic::task::future(
+                    async move { Message::DeviceStateChanged(device_id, state) },
+                ),
+                DaemonEvent::TransferProgress {
+                    transfer_id,
+                    device_id,
+                    filename,
+                    current,
+                    total,
+                    direction,
+                } => {
+                    let info = TransferInfo {
+                        transfer_id,
+                        device_id,
+                        filename,
+                        current,
+                        total,
+                        direction,
+                    };
+                    cosmic::task::future(async move { Message::TransferProgressUpdate(info) })
+                }
+                DaemonEvent::TransferComplete {
+                    transfer_id,
+                    device_id,
+                    filename,
+                    success,
+                    error,
+                } => cosmic::task::future(async move {
+                    Message::TransferCompleted(transfer_id, device_id, filename, success, error)
+                }),
+                _ => Task::none(),
+            },
             Message::DbusReady(client) => {
                 self.dbus_client = Some(client);
                 self.dbus_ready = true;
                 Task::none()
+            }
+            Message::OpenRunCommandDialog(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id_clone = device_id.clone();
+                    cosmic::task::future(async move {
+                        match client.get_run_commands(device_id.clone()).await {
+                            Ok(commands) => Message::CommandsLoaded(device_id_clone, commands),
+                            Err(e) => {
+                                tracing::error!("Failed to get run commands: {}", e);
+                                Message::None
+                            }
+                        }
+                    })
+                } else {
+                    Task::none()
+                }
+            }
+            Message::CloseRunCommandDialog => {
+                self.show_runcommand_dialog = false;
+                self.runcommand_device_id = None;
+                self.available_commands.clear();
+                Task::none()
+            }
+            Message::CommandsLoaded(device_id, commands) => {
+                if self.runcommand_device_id.as_ref() == Some(&device_id) {
+                    self.available_commands = commands;
+                }
+                Task::none()
+            }
+            Message::ExecuteCommand(device_id, command_id) => {
+                tracing::info!("Executing command {} on device {}", command_id, device_id);
+                Task::none()
+            }
+            // SMS dialog handlers
+            Message::OpenSmsDialog(device_id) => {
+                self.show_sms_dialog = true;
+                self.sms_device_id = device_id;
+                self.sms_phone_number.clear();
+                self.sms_message.clear();
+                Task::none()
+            }
+            Message::CloseSmsDialog => {
+                self.show_sms_dialog = false;
+                Task::none()
+            }
+            Message::SmsPhoneChanged(phone) => {
+                self.sms_phone_number = phone;
+                Task::none()
+            }
+            Message::SmsMessageChanged(msg) => {
+                self.sms_message = msg;
+                Task::none()
+            }
+            Message::SendSms => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id = self.sms_device_id.clone();
+                    let phone = self.sms_phone_number.clone();
+                    let message = self.sms_message.clone();
+                    self.show_sms_dialog = false;
+                    cosmic::task::future(async move {
+                        if let Err(e) = client.send_sms(&device_id, &phone, &message).await {
+                            tracing::error!("Failed to send SMS: {}", e);
+                        }
+                        Message::None
+                    })
+                } else {
+                    self.show_sms_dialog = false;
+                    Task::none()
+                }
+            }
+            // Contacts dialog handlers
+            Message::OpenContactsDialog(device_id) => {
+                self.show_contacts_dialog = true;
+                self.contacts_device_id = device_id;
+                Task::none()
+            }
+            Message::CloseContactsDialog => {
+                self.show_contacts_dialog = false;
+                Task::none()
+            }
+            // Settings dialog handlers
+            Message::OpenDeviceSettings(device_id) => {
+                self.show_device_settings = true;
+                self.settings_device_id = Some(device_id.clone());
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    cosmic::task::future(async move {
+                        match client.get_device_config(&device_id).await {
+                            Ok(config) => Message::DeviceSettingsLoaded(config),
+                            Err(e) => {
+                                tracing::error!("Failed to load device config: {}", e);
+                                Message::None
+                            }
+                        }
+                    })
+                } else {
+                    Task::none()
+                }
+            }
+            Message::CloseDeviceSettings => {
+                self.show_device_settings = false;
+                self.settings_device_id = None;
+                self.device_settings_config = None;
+                self.device_settings_nickname.clear();
+                self.device_settings_plugins.clear();
+                Task::none()
+            }
+            Message::DeviceSettingsLoaded(config) => {
+                self.device_settings_nickname = config.nickname.clone().unwrap_or_default();
+                self.device_settings_plugins.clear();
+                self.device_settings_plugins.insert("ping".to_string(), config.plugins.enable_ping.unwrap_or(true));
+                self.device_settings_plugins.insert("battery".to_string(), config.plugins.enable_battery.unwrap_or(true));
+                self.device_settings_plugins.insert("notification".to_string(), config.plugins.enable_notification.unwrap_or(true));
+                self.device_settings_plugins.insert("share".to_string(), config.plugins.enable_share.unwrap_or(true));
+                self.device_settings_plugins.insert("clipboard".to_string(), config.plugins.enable_clipboard.unwrap_or(true));
+                self.device_settings_plugins.insert("mpris".to_string(), config.plugins.enable_mpris.unwrap_or(true));
+                self.device_settings_plugins.insert("remotedesktop".to_string(), config.plugins.enable_remotedesktop.unwrap_or(false));
+                self.device_settings_plugins.insert("findmyphone".to_string(), config.plugins.enable_findmyphone.unwrap_or(true));
+                self.device_settings_config = Some(config);
+                Task::none()
+            }
+            Message::SaveDeviceSettings => {
+                if let (Some(client), Some(device_id)) = (&self.dbus_client, &self.settings_device_id) {
+                    let client = client.clone();
+                    let device_id = device_id.clone();
+                    let nickname = self.device_settings_nickname.clone();
+                    let plugins = self.device_settings_plugins.clone();
+                    self.show_device_settings = false;
+                    cosmic::task::future(async move {
+                        if !nickname.is_empty() {
+                            if let Err(e) = client.set_device_nickname(&device_id, &nickname).await {
+                                tracing::error!("Failed to set nickname: {}", e);
+                            }
+                        }
+                        for (plugin, enabled) in plugins {
+                            if let Err(e) = client.set_device_plugin_enabled(&device_id, &plugin, enabled).await {
+                                tracing::error!("Failed to set plugin {} state: {}", plugin, e);
+                            }
+                        }
+                        Message::CloseDeviceSettings
+                    })
+                } else {
+                    self.show_device_settings = false;
+                    Task::none()
+                }
+            }
+            Message::DeviceNicknameChanged(nickname) => {
+                self.device_settings_nickname = nickname;
+                Task::none()
+            }
+            Message::DevicePluginToggled(plugin, enabled) => {
+                self.device_settings_plugins.insert(plugin, enabled);
+                Task::none()
+            }
+            // File picker handler
+            Message::FileSelected(device_id, file_path) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    cosmic::task::future(async move {
+                        if let Err(e) = client.share_file(&device_id, &file_path).await {
+                            tracing::error!("Failed to share file: {}", e);
+                        } else {
+                            tracing::info!("File transfer initiated: {}", file_path);
+                        }
+                        Message::None
+                    })
+                } else {
+                    Task::none()
+                }
             }
             Message::None => Task::none(),
         }

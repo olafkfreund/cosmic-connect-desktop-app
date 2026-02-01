@@ -66,6 +66,21 @@ pub struct ScreenShareStats {
     pub avg_fps: u64,
 }
 
+/// Contact information from DBus
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, zbus::zvariant::Type)]
+pub struct ContactInfo {
+    /// Contact unique identifier
+    pub uid: String,
+    /// Contact name
+    pub name: String,
+    /// Phone numbers
+    pub phone_numbers: Vec<String>,
+    /// Email addresses
+    pub emails: Vec<String>,
+    /// vCard data
+    pub vcard: String,
+}
+
 /// Notification preference for a device
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -429,6 +444,29 @@ trait CConnect {
 
     /// Request battery update from a device
     async fn request_battery_update(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Start camera streaming from device
+    async fn start_camera(
+        &self,
+        device_id: &str,
+        camera_id: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Stop camera streaming on device
+    async fn stop_camera(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Get camera status from device
+    async fn get_camera_status(&self, device_id: &str) -> zbus::fdo::Result<String>;
+
+    /// Request contacts sync from a device
+    async fn request_contacts_sync(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Get contacts from a device
+    async fn get_contacts(&self, device_id: &str) -> zbus::fdo::Result<Vec<ContactInfo>>;
 
     /// Get list of available MPRIS media players
     async fn get_mpris_players(&self) -> zbus::fdo::Result<Vec<String>>;
@@ -1105,6 +1143,76 @@ impl DbusClient {
             .request_battery_update(device_id)
             .await
             .context("Failed to request battery update")
+    }
+
+    /// Start camera streaming from device
+    ///
+    /// Requests the phone to start streaming camera video which will be routed
+    /// to a V4L2 loopback device for use as a webcam.
+    ///
+    /// # Arguments
+    /// * `device_id` - Device to stream from
+    /// * `camera_id` - Camera ID (0 = back, 1 = front typically)
+    /// * `width` - Video width in pixels
+    /// * `height` - Video height in pixels
+    /// * `fps` - Frame rate
+    /// * `bitrate` - Bitrate in kbps
+    pub async fn start_camera(
+        &self,
+        device_id: &str,
+        camera_id: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<()> {
+        info!(
+            "Starting camera on device {} (camera_id={}, {}x{} @ {}fps, {}kbps)",
+            device_id, camera_id, width, height, fps, bitrate
+        );
+        self.proxy
+            .start_camera(device_id, camera_id, width, height, fps, bitrate)
+            .await
+            .context("Failed to start camera")
+    }
+
+    /// Stop camera streaming on device
+    pub async fn stop_camera(&self, device_id: &str) -> Result<()> {
+        info!("Stopping camera on device {}", device_id);
+        self.proxy
+            .stop_camera(device_id)
+            .await
+            .context("Failed to stop camera")
+    }
+
+    /// Get camera status from device
+    ///
+    /// # Returns
+    /// JSON string with camera status: {streaming, cameraId, resolution, fps, quality}
+    pub async fn get_camera_status(&self, device_id: &str) -> Result<String> {
+        debug!("Getting camera status for device {}", device_id);
+        self.proxy
+            .get_camera_status(device_id)
+            .await
+            .context("Failed to get camera status")
+    }
+
+    /// Request contacts sync from device
+    pub async fn request_contacts_sync(&self, device_id: &str) -> Result<()> {
+        info!("Requesting contacts sync from device {}", device_id);
+        self.proxy
+            .request_contacts_sync(device_id)
+            .await
+            .context("Failed to request contacts sync")
+    }
+
+    /// Get contacts list from device
+    pub async fn get_contacts(&self, device_id: &str) -> Result<Vec<ContactInfo>> {
+        debug!("Getting contacts for device {}", device_id);
+        self.proxy
+            .get_contacts(device_id)
+            .await
+            .context("Failed to get contacts")
     }
 
     /// Get list of available MPRIS media players

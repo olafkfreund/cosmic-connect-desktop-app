@@ -141,6 +141,21 @@ pub struct ScreenShareStats {
     pub avg_fps: u64,
 }
 
+/// Contact information for DBus serialization
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, zbus::zvariant::Type)]
+pub struct ContactInfo {
+    /// Contact unique identifier
+    pub uid: String,
+    /// Contact name
+    pub name: String,
+    /// Phone numbers
+    pub phone_numbers: Vec<String>,
+    /// Email addresses
+    pub emails: Vec<String>,
+    /// vCard data
+    pub vcard: String,
+}
+
 /// Daemon performance metrics for DBus serialization
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, zbus::zvariant::Type)]
 pub struct DaemonMetrics {
@@ -310,6 +325,35 @@ async fn attempt_manual_connection(
     }
 
     Err(anyhow::anyhow!("Device did not respond with identity"))
+}
+
+/// Parse vCard data to extract contact information
+fn parse_vcard(vcard_data: &str) -> (String, Vec<String>, Vec<String>) {
+    let mut name = String::new();
+    let mut phone_numbers = Vec::new();
+    let mut emails = Vec::new();
+
+    for line in vcard_data.lines() {
+        let line = line.trim();
+        if line.starts_with("FN:") {
+            name = line[3..].to_string();
+        } else if line.starts_with("TEL") {
+            if let Some(number) = line.split(':').nth(1) {
+                phone_numbers.push(number.to_string());
+            }
+        } else if line.starts_with("EMAIL") {
+            if let Some(email) = line.split(':').nth(1) {
+                emails.push(email.to_string());
+            }
+        }
+    }
+
+    // Use UID as fallback name if FN not found
+    if name.is_empty() {
+        name = "Unknown".to_string();
+    }
+
+    (name, phone_numbers, emails)
 }
 
 #[interface(name = "com.system76.CosmicConnect")]
@@ -547,24 +591,16 @@ impl CConnectInterface {
             // Address includes port
             address
                 .to_socket_addrs()
-                .map_err(|e| {
-                    zbus::fdo::Error::Failed(format!("Invalid address format: {}", e))
-                })?
+                .map_err(|e| zbus::fdo::Error::Failed(format!("Invalid address format: {}", e)))?
                 .next()
-                .ok_or_else(|| {
-                    zbus::fdo::Error::Failed("Could not resolve address".to_string())
-                })?
+                .ok_or_else(|| zbus::fdo::Error::Failed("Could not resolve address".to_string()))?
         } else {
             // Address is just hostname/IP, add default port 1716
             format!("{}:1716", address)
                 .to_socket_addrs()
-                .map_err(|e| {
-                    zbus::fdo::Error::Failed(format!("Invalid address format: {}", e))
-                })?
+                .map_err(|e| zbus::fdo::Error::Failed(format!("Invalid address format: {}", e)))?
                 .next()
-                .ok_or_else(|| {
-                    zbus::fdo::Error::Failed("Could not resolve address".to_string())
-                })?
+                .ok_or_else(|| zbus::fdo::Error::Failed("Could not resolve address".to_string()))?
         };
 
         info!("Attempting manual connection to {}", socket_addr);
@@ -796,9 +832,7 @@ impl CConnectInterface {
         conn_manager
             .send_packet(&device_id, &packet)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to send SMS request: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send SMS request: {}", e)))?;
 
         info!("DBus: SMS request sent successfully to {}", device_id);
         Ok(())
@@ -833,9 +867,7 @@ impl CConnectInterface {
         conn_manager
             .send_packet(&device_id, &packet)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to send lock request: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send lock request: {}", e)))?;
 
         info!("DBus: Lock request sent successfully to {}", device_id);
         Ok(())
@@ -846,8 +878,15 @@ impl CConnectInterface {
     /// # Arguments
     /// * `device_id` - The device ID to control
     /// * `action` - Power action: "shutdown", "hibernate", "suspend"
-    async fn power_action(&self, device_id: String, action: String) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: PowerAction called for {} with action: {}", device_id, action);
+    async fn power_action(
+        &self,
+        device_id: String,
+        action: String,
+    ) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: PowerAction called for {} with action: {}",
+            device_id, action
+        );
 
         // Validate action
         match action.as_str() {
@@ -882,11 +921,12 @@ impl CConnectInterface {
         conn_manager
             .send_packet(&device_id, &packet)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to send power action: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send power action: {}", e)))?;
 
-        info!("DBus: Power action '{}' sent successfully to {}", action, device_id);
+        info!(
+            "DBus: Power action '{}' sent successfully to {}",
+            action, device_id
+        );
         Ok(())
     }
 
@@ -915,9 +955,7 @@ impl CConnectInterface {
         conn_manager
             .send_packet(&device_id, &packet)
             .await
-            .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("Failed to send wake request: {}", e))
-            })?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send wake request: {}", e)))?;
 
         info!("DBus: Wake request sent successfully to {}", device_id);
         Ok(())
@@ -928,8 +966,15 @@ impl CConnectInterface {
     /// # Arguments
     /// * `device_id` - The device ID to control
     /// * `volume` - Volume level (0.0 to 1.0)
-    async fn set_device_volume(&self, device_id: String, volume: f64) -> Result<(), zbus::fdo::Error> {
-        info!("DBus: SetDeviceVolume called for {} with volume: {}", device_id, volume);
+    async fn set_device_volume(
+        &self,
+        device_id: String,
+        volume: f64,
+    ) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: SetDeviceVolume called for {} with volume: {}",
+            device_id, volume
+        );
 
         // Validate volume range
         if !(0.0..=1.0).contains(&volume) {
@@ -954,9 +999,12 @@ impl CConnectInterface {
         use cosmic_connect_protocol::Packet;
         use serde_json::json;
 
-        let packet = Packet::new("cconnect.systemvolume.request", json!({
-            "volume": volume
-        }));
+        let packet = Packet::new(
+            "cconnect.systemvolume.request",
+            json!({
+                "volume": volume
+            }),
+        );
 
         // Send packet via ConnectionManager
         let conn_manager = self.connection_manager.read().await;
@@ -1004,7 +1052,10 @@ impl CConnectInterface {
                 zbus::fdo::Error::Failed(format!("Failed to send system info request: {}", e))
             })?;
 
-        info!("DBus: System info request sent successfully to {}", device_id);
+        info!(
+            "DBus: System info request sent successfully to {}",
+            device_id
+        );
         Ok(())
     }
 
@@ -1041,7 +1092,10 @@ impl CConnectInterface {
                 zbus::fdo::Error::Failed(format!("Failed to send screenshot request: {}", e))
             })?;
 
-        info!("DBus: Screenshot request sent successfully to {}", device_id);
+        info!(
+            "DBus: Screenshot request sent successfully to {}",
+            device_id
+        );
         Ok(())
     }
 
@@ -1674,6 +1728,109 @@ impl CConnectInterface {
 
         info!("DBus: Battery update request sent to {}", device_id);
         Ok(())
+    }
+
+    /// Request contacts sync from device
+    ///
+    /// Sends a request to the device to sync all contacts.
+    /// This requests UIDs and timestamps first, then can request vCards.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to request from
+    async fn request_contacts_sync(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: RequestContactsSync called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create contacts request packet
+        use cosmic_connect_protocol::plugins::contacts::ContactsPlugin;
+        let plugin = ContactsPlugin::new();
+        let packet = plugin.create_request_all_uids_timestamps();
+
+        // Send packet
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send contacts request: {}", e))
+            })?;
+
+        info!("DBus: Contacts sync request sent to {}", device_id);
+        Ok(())
+    }
+
+    /// Get contacts from device
+    ///
+    /// Retrieves the list of cached contacts for a device.
+    /// Call request_contacts_sync first to populate the cache.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to query
+    ///
+    /// # Returns
+    /// List of contacts with name, phone numbers, and emails
+    async fn get_contacts(
+        &self,
+        device_id: String,
+    ) -> Result<Vec<ContactInfo>, zbus::fdo::Error> {
+        debug!("DBus: GetContacts called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Get contacts from plugin
+        let plugin_manager = self.plugin_manager.read().await;
+        let plugin = plugin_manager
+            .get_device_plugin(&device_id, "contacts")
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Contacts plugin not available for device".to_string())
+            })?;
+
+        // Downcast to ContactsPlugin
+        use cosmic_connect_protocol::plugins::contacts::ContactsPlugin;
+        let contacts_plugin = plugin.as_any().downcast_ref::<ContactsPlugin>().ok_or_else(|| {
+            zbus::fdo::Error::Failed("Failed to access contacts plugin".to_string())
+        })?;
+
+        // Get all contact UIDs
+        let uids = contacts_plugin.get_all_contact_uids();
+
+        // Build contact info list
+        let mut contacts = Vec::new();
+        for uid in uids {
+            if let Some(vcard) = contacts_plugin.get_vcard(&uid) {
+                // Parse vCard to extract name, phone numbers, emails
+                let (name, phone_numbers, emails) = parse_vcard(vcard);
+                contacts.push(ContactInfo {
+                    uid: uid.clone(),
+                    name,
+                    phone_numbers,
+                    emails,
+                    vcard: vcard.clone(),
+                });
+            }
+        }
+
+        info!("DBus: Retrieved {} contacts for {}", contacts.len(), device_id);
+        Ok(contacts)
     }
 
     /// Send command list to device
@@ -3149,6 +3306,145 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Start camera streaming from Android device to V4L2 loopback
+    ///
+    /// Requests the phone to start streaming camera video which will be routed
+    /// to a V4L2 loopback device for use as a webcam in video conferencing apps.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to stream camera from
+    /// * `camera_id` - Camera ID (0 = back, 1 = front typically)
+    /// * `width` - Video width in pixels (e.g., 1280)
+    /// * `height` - Video height in pixels (e.g., 720)
+    /// * `fps` - Frame rate (e.g., 30)
+    /// * `bitrate` - Bitrate in kbps (e.g., 2000)
+    async fn start_camera(
+        &self,
+        device_id: String,
+        camera_id: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: StartCamera called for {} (camera_id={}, {}x{} @ {}fps, {}kbps)",
+            device_id, camera_id, width, height, fps, bitrate
+        );
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({
+            "cameraId": camera_id,
+            "resolution": {
+                "width": width,
+                "height": height,
+            },
+            "fps": fps,
+            "bitrate": bitrate,
+            "codec": "h264",
+        });
+        let packet = Packet::new("cconnect.camera.start", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Camera stream start request sent to device {}", device_id);
+        Ok(())
+    }
+
+    /// Stop camera streaming
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to stop camera streaming on
+    async fn stop_camera(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: StopCamera called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        if !device_manager
+            .get_device(&device_id)
+            .map(|d| d.is_connected())
+            .unwrap_or(false)
+        {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+        drop(device_manager);
+
+        use cosmic_connect_protocol::Packet;
+        let body = serde_json::json!({});
+        let packet = Packet::new("cconnect.camera.stop", body);
+
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
+
+        info!("Camera stream stop request sent to device {}", device_id);
+        Ok(())
+    }
+
+    /// Get camera status
+    ///
+    /// Returns the current camera streaming status from the camera plugin.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to query camera status for
+    ///
+    /// # Returns
+    /// JSON string with camera status: {status, cameraId, resolution, fps, bitrate, error}
+    async fn get_camera_status(&self, device_id: String) -> Result<String, zbus::fdo::Error> {
+        debug!("DBus: GetCameraStatus called for {}", device_id);
+
+        let plugin_manager = self.plugin_manager.read().await;
+        let camera_plugin = plugin_manager
+            .get_device_plugin(&device_id, "camera")
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed(format!(
+                    "Camera plugin not found for device {}",
+                    device_id
+                ))
+            })?;
+
+        let camera = camera_plugin
+            .as_any()
+            .downcast_ref::<cosmic_connect_protocol::plugins::camera::CameraPlugin>()
+            .ok_or_else(|| {
+                zbus::fdo::Error::Failed("Failed to downcast to CameraPlugin".to_string())
+            })?;
+
+        let is_streaming = camera.is_streaming().await;
+        if let Some(session) = camera.get_session().await {
+            let status = serde_json::json!({
+                "streaming": is_streaming,
+                "cameraId": session.camera_id,
+                "resolution": session.resolution,
+                "fps": session.fps,
+                "quality": session.quality.as_str(),
+                "frameNumber": session.frame_number,
+                "startedAt": session.started_at,
+            });
+            serde_json::to_string(&status).map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to serialize camera status: {}", e))
+            })
+        } else {
+            // Return stopped status if no active session
+            Ok(r#"{"streaming":false}"#.to_string())
+        }
+    }
+
     /// Signal: Device was added (discovered)
     ///
     /// Emitted when a new device is discovered on the network.
@@ -3359,7 +3655,6 @@ impl CConnectInterface {
         color: &str,
         width: u8,
     ) -> zbus::Result<()>;
-
 }
 
 /// DBus server for the daemon
@@ -3429,7 +3724,8 @@ impl DbusServer {
             .context("Failed to serve interface")?;
 
         // Register the Open interface on a separate path
-        let open_interface = OpenInterface::new(device_manager_for_open, connection_manager_for_open);
+        let open_interface =
+            OpenInterface::new(device_manager_for_open, connection_manager_for_open);
         connection
             .object_server()
             .at("/com/system76/CosmicConnect/Open", open_interface)
@@ -3778,18 +4074,13 @@ impl OpenInterface {
     }
 
     /// Get a device by ID or return the default device
-    async fn get_target_device(
-        &self,
-        device_id: Option<&str>,
-    ) -> Result<Device, zbus::fdo::Error> {
+    async fn get_target_device(&self, device_id: Option<&str>) -> Result<Device, zbus::fdo::Error> {
         let manager = self.device_manager.read().await;
 
         let device = match device_id {
             Some(id) if !id.is_empty() => manager
                 .get_device(id)
-                .ok_or_else(|| {
-                    zbus::fdo::Error::Failed(format!("Device not found: {}", id))
-                })?
+                .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", id)))?
                 .clone(),
             _ => {
                 // Get first paired and reachable device with share capability
@@ -3879,11 +4170,7 @@ impl OpenInterface {
                 zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e))
             })?;
 
-        info!(
-            "Sent open URL request {} to {}",
-            request_id,
-            device.name()
-        );
+        info!("Sent open URL request {} to {}", request_id, device.name());
         Ok(request_id)
     }
 
@@ -3976,14 +4263,10 @@ mod open_interface_tests {
     fn test_allowed_schemes() {
         assert!(OpenInterface::is_scheme_allowed("https://example.com"));
         assert!(OpenInterface::is_scheme_allowed("http://example.com"));
-        assert!(OpenInterface::is_scheme_allowed(
-            "mailto:test@example.com"
-        ));
+        assert!(OpenInterface::is_scheme_allowed("mailto:test@example.com"));
         assert!(OpenInterface::is_scheme_allowed("tel:+1234567890"));
         assert!(OpenInterface::is_scheme_allowed("sms:+1234567890"));
-        assert!(OpenInterface::is_scheme_allowed(
-            "ftp://files.example.com"
-        ));
+        assert!(OpenInterface::is_scheme_allowed("ftp://files.example.com"));
         assert!(OpenInterface::is_scheme_allowed("file:///path/to/file"));
     }
 

@@ -364,6 +364,7 @@ pub enum Message {
     // Contacts dialog messages
     OpenContactsDialog(String),
     CloseContactsDialog,
+    ContactsLoaded(String, Vec<dbus_client::ContactInfo>),
     // Settings dialog messages
     OpenDeviceSettings(String),
     CloseDeviceSettings,
@@ -406,6 +407,8 @@ pub struct CosmicConnectManager {
     // Contacts dialog state
     show_contacts_dialog: bool,
     contacts_device_id: String,
+    contacts_list: Vec<dbus_client::ContactInfo>,
+    contacts_loading: bool,
     // Settings dialog state
     show_device_settings: bool,
     settings_device_id: Option<String>,
@@ -1291,21 +1294,73 @@ impl CosmicConnectManager {
     }
 
     fn contacts_dialog_view(&self) -> Element<'_, Message> {
-        let content = column::with_capacity(3)
+        let mut content = column::with_capacity(4)
             .spacing(theme::active().cosmic().space_m())
             .padding(theme::active().cosmic().space_m())
-            .push(text("Contacts").size(18))
-            .push(text("Contact sync feature coming soon...").size(14))
-            .push(
-                button::text("Close")
-                    .on_press(Message::CloseContactsDialog)
-                    .class(theme::Button::Text)
-                    .padding(theme::active().cosmic().space_s()),
-            );
+            .push(text("Contacts").size(18));
+
+        if self.contacts_loading {
+            content = content.push(text("Loading contacts...").size(14));
+        } else if self.contacts_list.is_empty() {
+            content = content.push(text("No contacts available").size(14));
+        } else {
+            // Create scrollable contacts list
+            let mut contacts_column = column::with_capacity(self.contacts_list.len())
+                .spacing(theme::active().cosmic().space_xs());
+
+            for contact in &self.contacts_list {
+                // Build contact row with name and details
+                let mut contact_info = column::with_capacity(3)
+                    .spacing(theme::active().cosmic().space_xxs())
+                    .push(text(&contact.name).size(14));
+
+                // Add phone numbers
+                for phone in &contact.phone_numbers {
+                    contact_info = contact_info.push(
+                        row::with_capacity(2)
+                            .spacing(theme::active().cosmic().space_xs())
+                            .push(icon::from_name("phone-symbolic").size(12))
+                            .push(text(phone).size(12)),
+                    );
+                }
+
+                // Add emails
+                for email in &contact.emails {
+                    contact_info = contact_info.push(
+                        row::with_capacity(2)
+                            .spacing(theme::active().cosmic().space_xs())
+                            .push(icon::from_name("mail-symbolic").size(12))
+                            .push(text(email).size(12)),
+                    );
+                }
+
+                // Add contact row to list
+                contacts_column = contacts_column.push(
+                    container(contact_info)
+                        .padding(theme::active().cosmic().space_s())
+                        .width(Length::Fill)
+                        .class(theme::Container::Card),
+                );
+            }
+
+            // Make contacts list scrollable
+            let scrollable_contacts = scrollable(contacts_column)
+                .height(Length::Fixed(400.0));
+
+            content = content.push(scrollable_contacts);
+        }
+
+        // Close button
+        content = content.push(
+            button::text("Close")
+                .on_press(Message::CloseContactsDialog)
+                .class(theme::Button::Text)
+                .padding(theme::active().cosmic().space_s()),
+        );
 
         container(content)
             .padding(theme::active().cosmic().space_m())
-            .width(Length::Fixed(400.0))
+            .width(Length::Fixed(500.0))
             .class(theme::Container::Dialog)
             .into()
     }
@@ -1465,6 +1520,8 @@ impl Application for CosmicConnectManager {
                 // Contacts dialog
                 show_contacts_dialog: false,
                 contacts_device_id: String::new(),
+                contacts_list: Vec::new(),
+                contacts_loading: false,
                 // Settings dialog
                 show_device_settings: false,
                 settings_device_id: None,
@@ -1774,9 +1831,32 @@ impl Application for CosmicConnectManager {
                             Message::None
                         }),
                         DeviceAction::Camera => {
-                            // TODO: Start camera as webcam
-                            tracing::info!("Camera webcam requested for {}", device_id);
-                            Task::none()
+                            tracing::info!("Camera as webcam requested for {}", device_id);
+
+                            // Start camera with default 720p settings
+                            // camera_id: 0 (back camera), 1280x720 @ 30fps, 2000kbps
+                            cosmic::task::future(async move {
+                                match client.start_camera(&device_id, 0, 1280, 720, 30, 2000).await {
+                                    Ok(_) => {
+                                        tracing::info!("Camera started successfully on device {}", device_id);
+                                        Message::AddHistoryEvent(HistoryEvent {
+                                            icon_name: "camera-web-symbolic".to_string(),
+                                            event_type: "Camera started".to_string(),
+                                            description: "Streaming 720p @ 30fps to V4L2 loopback".to_string(),
+                                            timestamp: chrono::Local::now(),
+                                        })
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to start camera: {}", e);
+                                        Message::AddHistoryEvent(HistoryEvent {
+                                            icon_name: "dialog-error-symbolic".to_string(),
+                                            event_type: "Camera failed".to_string(),
+                                            description: format!("Failed to start camera: {}", e),
+                                            timestamp: chrono::Local::now(),
+                                        })
+                                    }
+                                }
+                            })
                         }
                         DeviceAction::RefreshBattery => {
                             let device_id_clone = device_id.clone();
@@ -2129,11 +2209,46 @@ impl Application for CosmicConnectManager {
             // Contacts dialog handlers
             Message::OpenContactsDialog(device_id) => {
                 self.show_contacts_dialog = true;
-                self.contacts_device_id = device_id;
-                Task::none()
+                self.contacts_device_id = device_id.clone();
+                self.contacts_loading = true;
+                self.contacts_list.clear();
+
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let device_id_clone = device_id.clone();
+
+                    // First request contacts sync
+                    cosmic::task::future(async move {
+                        // Request sync
+                        if let Err(e) = client.request_contacts_sync(&device_id).await {
+                            tracing::warn!("Failed to request contacts sync: {}", e);
+                        }
+
+                        // Wait a bit for the device to respond
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+                        // Then fetch contacts
+                        match client.get_contacts(&device_id_clone).await {
+                            Ok(contacts) => Message::ContactsLoaded(device_id_clone, contacts),
+                            Err(e) => {
+                                tracing::warn!("Failed to get contacts: {}", e);
+                                Message::ContactsLoaded(device_id_clone, Vec::new())
+                            }
+                        }
+                    })
+                } else {
+                    Task::none()
+                }
             }
             Message::CloseContactsDialog => {
                 self.show_contacts_dialog = false;
+                self.contacts_list.clear();
+                self.contacts_loading = false;
+                Task::none()
+            }
+            Message::ContactsLoaded(_device_id, contacts) => {
+                self.contacts_list = contacts;
+                self.contacts_loading = false;
                 Task::none()
             }
             // Settings dialog handlers

@@ -48,6 +48,10 @@ pub enum DisplayStreamError {
     #[error("Streaming error: {0}")]
     Streaming(String),
 
+    /// Input event handling error
+    #[error("Input error: {0}")]
+    Input(String),
+
     /// Generic I/O error
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

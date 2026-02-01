@@ -5,7 +5,7 @@
 //!
 //! ## Architecture
 //!
-//! The implementation is divided into three phases:
+//! The implementation is divided into four phases:
 //!
 //! ### Phase 1: Screen Capture
 //! - Use xdg-desktop-portal for screen capture permissions
@@ -19,11 +19,18 @@
 //! - Configurable quality, bitrate, and low-latency settings
 //! - Automatic hardware encoder detection
 //!
-//! ### Phase 3: Network Streaming (Current)
+//! ### Phase 3: Network Streaming
 //! - Stream encoded video over WebRTC
 //! - WebSocket-based signaling server for peer connection setup
 //! - ICE/STUN for NAT traversal
 //! - Support for WiFi and USB (ADB) transport modes
+//!
+//! ### Phase 4: Input Event Handling (Current)
+//! - Receive touch events from Android client
+//! - Convert tablet coordinates to desktop coordinates
+//! - Map to virtual display position in desktop space
+//! - Inject pointer events using libei or Wayland virtual input protocols
+//! - Support multi-touch gestures
 //!
 //! ## Usage Example
 //!
@@ -79,6 +86,7 @@
 pub mod capture;
 pub mod encoder;
 pub mod error;
+pub mod input;
 pub mod output;
 pub mod pipewire;
 pub mod streaming;
@@ -86,6 +94,7 @@ pub mod streaming;
 pub use capture::{ScreenCapture, SessionState, VideoFrame, FrameStream};
 pub use encoder::{VideoEncoder, EncoderConfig, EncoderType, EncodedFrame};
 pub use error::{DisplayStreamError, Result};
+pub use input::{InputHandler, TouchEvent, TouchAction, DesktopCoordinates, DisplayGeometry, InputStatistics};
 pub use output::OutputInfo;
 pub use streaming::{StreamingServer, StreamConfig, TransportMode, ConnectionStats};
 

@@ -712,6 +712,125 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Lock a device remotely
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to lock
+    async fn lock_device(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: LockDevice called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create lock packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.lock.request", json!({}));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send lock request: {}", e))
+            })?;
+
+        info!("DBus: Lock request sent successfully to {}", device_id);
+        Ok(())
+    }
+
+    /// Send a power control action to a device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to control
+    /// * `action` - Power action: "shutdown", "hibernate", "suspend"
+    async fn power_action(&self, device_id: String, action: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: PowerAction called for {} with action: {}", device_id, action);
+
+        // Validate action
+        match action.as_str() {
+            "shutdown" | "hibernate" | "suspend" => {}
+            _ => {
+                return Err(zbus::fdo::Error::Failed(format!(
+                    "Invalid power action: {}. Must be 'shutdown', 'hibernate', or 'suspend'",
+                    action
+                )));
+            }
+        }
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        if !device.is_connected() {
+            return Err(zbus::fdo::Error::Failed("Device not connected".to_string()));
+        }
+
+        drop(device_manager);
+
+        // Create power packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.power.request", json!({ "action": action }));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send power action: {}", e))
+            })?;
+
+        info!("DBus: Power action '{}' sent successfully to {}", action, device_id);
+        Ok(())
+    }
+
+    /// Wake a device using Wake-on-LAN
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to wake
+    async fn wake_device(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: WakeDevice called for {}", device_id);
+
+        let device_manager = self.device_manager.read().await;
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        drop(device_manager);
+
+        // Create WOL packet
+        use cosmic_connect_protocol::Packet;
+        use serde_json::json;
+
+        let packet = Packet::new("cconnect.wol.request", json!({}));
+
+        // Send packet via ConnectionManager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("Failed to send wake request: {}", e))
+            })?;
+
+        info!("DBus: Wake request sent successfully to {}", device_id);
+        Ok(())
+    }
+
     /// Share a file with a device
     ///
     /// # Arguments

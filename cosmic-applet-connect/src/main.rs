@@ -230,6 +230,76 @@ const PLUGINS: &[PluginMetadata] = &[
         icon: "camera-web-symbolic",
         capability: "cconnect.camera",
     },
+    PluginMetadata {
+        id: "systemvolume",
+        name: "Volume Control",
+        description: "Control device volume",
+        icon: "audio-volume-high-symbolic",
+        capability: "cconnect.systemvolume",
+    },
+    PluginMetadata {
+        id: "systemmonitor",
+        name: "System Monitor",
+        description: "View device system info",
+        icon: "utilities-system-monitor-symbolic",
+        capability: "cconnect.systemmonitor",
+    },
+    PluginMetadata {
+        id: "screenshot",
+        name: "Screenshot",
+        description: "Take device screenshots",
+        icon: "applets-screenshooter-symbolic",
+        capability: "cconnect.screenshot",
+    },
+    PluginMetadata {
+        id: "lock",
+        name: "Lock Screen",
+        description: "Lock device remotely",
+        icon: "system-lock-screen-symbolic",
+        capability: "cconnect.lock",
+    },
+    PluginMetadata {
+        id: "power",
+        name: "Power Control",
+        description: "Shutdown/hibernate device",
+        icon: "system-shutdown-symbolic",
+        capability: "cconnect.power",
+    },
+    PluginMetadata {
+        id: "wol",
+        name: "Wake on LAN",
+        description: "Wake device remotely",
+        icon: "network-wired-symbolic",
+        capability: "cconnect.wol",
+    },
+    PluginMetadata {
+        id: "telephony",
+        name: "Phone Calls",
+        description: "Handle phone calls",
+        icon: "call-start-symbolic",
+        capability: "cconnect.telephony",
+    },
+    PluginMetadata {
+        id: "sms",
+        name: "SMS Messages",
+        description: "Send and receive SMS",
+        icon: "mail-message-new-symbolic",
+        capability: "cconnect.sms",
+    },
+    PluginMetadata {
+        id: "audiostream",
+        name: "Audio Stream",
+        description: "Stream audio to/from device",
+        icon: "audio-speakers-symbolic",
+        capability: "cconnect.audiostream",
+    },
+    PluginMetadata {
+        id: "presenter",
+        name: "Presentation Mode",
+        description: "Use device as presentation remote",
+        icon: "x-office-presentation-symbolic",
+        capability: "cconnect.presenter",
+    },
 ];
 
 #[derive(Debug, Clone)]
@@ -462,6 +532,17 @@ struct CameraStats {
     resolution: String,
 }
 
+/// System information from remote device
+#[derive(Debug, Clone)]
+struct SystemInfo {
+    cpu_usage: f64,
+    memory_usage: f64,
+    total_memory: u64,
+    used_memory: u64,
+    disk_usage: f64,
+    uptime: u64,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum Message {
@@ -500,6 +581,22 @@ enum Message {
     SelectCamera(String, u32),             // device_id, camera_id
     SelectCameraResolution(String, String), // device_id, resolution ("480p", "720p", "1080p")
     CameraStatsUpdated(String, CameraStats), // device_id, stats
+
+    // System Volume controls
+    SetDeviceVolume(String, f64),  // device_id, volume (0.0-1.0)
+    
+    // System Monitor
+    RequestSystemInfo(String),  // device_id
+    SystemInfoReceived(String, SystemInfo),  // device_id, info
+    
+    // Screenshot
+    TakeScreenshot(String),  // device_id
+    ScreenshotReceived(String, Vec<u8>),  // device_id, image data
+
+    // Power Control
+    LockDevice(String),  // device_id
+    PowerAction(String, String),  // device_id, action ("shutdown", "hibernate", "suspend")
+    WakeDevice(String),  // device_id
 
     // Renaming
     StartRenaming(String), // device_id
@@ -1363,6 +1460,100 @@ impl cosmic::Application for CConnectApplet {
             }
             Message::CameraStatsUpdated(device_id, stats) => {
                 self.camera_stats.insert(device_id, stats);
+                Task::none()
+            }
+
+            // System Volume
+            Message::SetDeviceVolume(_device_id, _volume) => {
+                // TODO: Implement DBus call to set device volume
+                tracing::info!("SetDeviceVolume not yet implemented");
+                Task::none()
+            }
+
+            // System Monitor
+            Message::RequestSystemInfo(_device_id) => {
+                // TODO: Implement DBus call to request system info
+                tracing::info!("RequestSystemInfo not yet implemented");
+                Task::none()
+            }
+            Message::SystemInfoReceived(_device_id, _info) => {
+                // TODO: Store and display system info
+                tracing::info!("SystemInfoReceived not yet implemented");
+                Task::none()
+            }
+
+            // Screenshot
+            Message::TakeScreenshot(_device_id) => {
+                // TODO: Implement DBus call to request screenshot
+                tracing::info!("TakeScreenshot not yet implemented");
+                Task::none()
+            }
+            Message::ScreenshotReceived(_device_id, _image_data) => {
+                // TODO: Save and display screenshot
+                tracing::info!("ScreenshotReceived not yet implemented");
+                Task::none()
+            }
+
+            // Power Control handlers
+            Message::LockDevice(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    return cosmic::task::future(async move {
+                        match client.lock_device(&device_id).await {
+                            Ok(_) => Message::ShowNotification(
+                                "Lock command sent".to_string(),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to lock device: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
+                Task::none()
+            }
+            Message::PowerAction(device_id, action) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    let action_clone = action.clone();
+                    return cosmic::task::future(async move {
+                        match client.power_action(&device_id, &action_clone).await {
+                            Ok(_) => Message::ShowNotification(
+                                format!("Power action '{}' sent", action_clone),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to send power action: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
+                Task::none()
+            }
+            Message::WakeDevice(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    return cosmic::task::future(async move {
+                        match client.wake_device(&device_id).await {
+                            Ok(_) => Message::ShowNotification(
+                                "Wake-on-LAN sent".to_string(),
+                                NotificationType::Success,
+                                None,
+                            ),
+                            Err(e) => Message::ShowNotification(
+                                format!("Failed to wake device: {}", e),
+                                NotificationType::Error,
+                                None,
+                            ),
+                        }
+                    });
+                }
                 Task::none()
             }
 
@@ -4248,6 +4439,33 @@ impl CConnectApplet {
                     "Ring device",
                     Message::FindPhone(device_id.to_string()),
                     is_ringing,
+                ));
+            }
+
+            // Lock device button
+            if device.has_incoming_capability("cconnect.lock.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "system-lock-screen-symbolic",
+                    "Lock device",
+                    Message::LockDevice(device_id.to_string()),
+                ));
+            }
+
+            // Power control button (shutdown)
+            if device.has_incoming_capability("cconnect.power.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "system-shutdown-symbolic",
+                    "Shutdown device",
+                    Message::PowerAction(device_id.to_string(), "shutdown".to_string()),
+                ));
+            }
+
+            // Wake-on-LAN button (for offline devices)
+            if device.has_incoming_capability("cconnect.wol.request") {
+                actions = actions.push(action_button_with_tooltip(
+                    "network-wired-symbolic",
+                    "Wake device",
+                    Message::WakeDevice(device_id.to_string()),
                 ));
             }
 

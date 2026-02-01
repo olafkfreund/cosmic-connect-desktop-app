@@ -401,6 +401,15 @@ trait CConnect {
     /// Trigger find phone on a device
     async fn find_phone(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
+    /// Lock a device remotely
+    async fn lock_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Send a power control action to a device
+    async fn power_action(&self, device_id: &str, action: &str) -> zbus::fdo::Result<()>;
+
+    /// Wake a device using Wake-on-LAN
+    async fn wake_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
     /// Share a file with a device
     async fn share_file(&self, device_id: &str, path: &str) -> zbus::fdo::Result<()>;
 
@@ -589,6 +598,17 @@ trait CConnect {
         x: f32,
         y: f32,
         action: String,
+    ) -> zbus::fdo::Result<()>;
+
+    /// Mute ringer for incoming call
+    async fn mute_call(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
+    /// Send SMS message
+    async fn send_sms(
+        &self,
+        device_id: &str,
+        phone_number: &str,
+        message: &str,
     ) -> zbus::fdo::Result<()>;
 
     /// Signal: File transfer complete
@@ -991,6 +1011,33 @@ impl DbusClient {
             .find_phone(device_id)
             .await
             .context("Failed to trigger find phone")
+    }
+
+    /// Lock a device remotely
+    pub async fn lock_device(&self, device_id: &str) -> Result<()> {
+        info!("Locking device {}", device_id);
+        self.proxy
+            .lock_device(device_id)
+            .await
+            .context("Failed to lock device")
+    }
+
+    /// Send a power control action to a device
+    pub async fn power_action(&self, device_id: &str, action: &str) -> Result<()> {
+        info!("Sending power action '{}' to device {}", action, device_id);
+        self.proxy
+            .power_action(device_id, action)
+            .await
+            .context("Failed to send power action")
+    }
+
+    /// Wake a device using Wake-on-LAN
+    pub async fn wake_device(&self, device_id: &str) -> Result<()> {
+        info!("Waking device {}", device_id);
+        self.proxy
+            .wake_device(device_id)
+            .await
+            .context("Failed to wake device")
     }
 
     /// Share a file with a device
@@ -1433,6 +1480,32 @@ impl DbusClient {
             .open_file_on_phone(path, device_id)
             .await
             .context("Failed to open file on phone")
+    }
+
+    /// Mute ringer for incoming call on device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    pub async fn mute_call(&self, device_id: &str) -> Result<()> {
+        info!("Muting call on device {}", device_id);
+        self.proxy
+            .mute_call(device_id)
+            .await
+            .context("Failed to mute call")
+    }
+
+    /// Send SMS message from device
+    ///
+    /// # Arguments
+    /// * `device_id` - Device ID
+    /// * `phone_number` - Recipient phone number
+    /// * `message` - Message body
+    pub async fn send_sms(&self, device_id: &str, phone_number: &str, message: &str) -> Result<()> {
+        info!("Sending SMS via device {} to {}", device_id, phone_number);
+        self.proxy
+            .send_sms(device_id, phone_number, message)
+            .await
+            .context("Failed to send SMS")
     }
 }
 

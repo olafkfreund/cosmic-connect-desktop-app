@@ -137,7 +137,8 @@ struct Daemon {
     connection_attempts: Arc<RwLock<std::collections::HashMap<String, (std::time::Instant, u32)>>>,
 
     /// Receiver for captured notifications from the notification listener
-    notification_receiver: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<CapturedNotification>>>>,
+    notification_receiver:
+        Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<CapturedNotification>>>>,
 }
 
 impl Daemon {
@@ -855,6 +856,18 @@ impl Daemon {
                     }
                 }
 
+                // Create desktop icon for paired device
+                {
+                    let dev_manager = device_manager.read().await;
+                    if let Some(device) = dev_manager.get_device(&device_id) {
+                        if let Err(e) = desktop_icons::sync_desktop_icon(device, None) {
+                            warn!("Failed to create desktop icon for device {}: {}", device_id, e);
+                        } else {
+                            info!("Created desktop icon for device {}", device_id);
+                        }
+                    }
+                }
+
                 if let Some(dbus) = dbus_server {
                     if let Err(e) = dbus.emit_pairing_status_changed(&device_id, "paired").await {
                         warn!("Failed to emit PairingStatusChanged signal: {}", e);
@@ -890,6 +903,13 @@ impl Daemon {
                     );
                 } else if let Err(e) = manager.save_registry() {
                     warn!("Failed to save device registry: {}", e);
+                }
+
+                // Remove desktop icon for unpaired device
+                if let Err(e) = desktop_icons::remove_desktop_icon(&device_id) {
+                    warn!("Failed to remove desktop icon for device {}: {}", device_id, e);
+                } else {
+                    info!("Removed desktop icon for device {}", device_id);
                 }
             }
             PairingEvent::PairingTimeout { device_id } => {
@@ -1475,7 +1495,10 @@ impl Daemon {
                             };
 
                             if !supports_notifications {
-                                trace!("Device {} does not support notifications, skipping", device_id);
+                                trace!(
+                                    "Device {} does not support notifications, skipping",
+                                    device_id
+                                );
                                 continue;
                             }
 

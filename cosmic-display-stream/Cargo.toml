@@ -14,6 +14,11 @@ ashpd = { workspace = true }
 # PipeWire bindings for video stream handling
 pipewire = "0.8"
 
+# Video Encoding (GStreamer with hardware acceleration)
+gstreamer = { workspace = true }
+gstreamer-app = { workspace = true }
+gstreamer-video = { workspace = true }
+
 # Async runtime
 tokio = { workspace = true }
 futures = { workspace = true }

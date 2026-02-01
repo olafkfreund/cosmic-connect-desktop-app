@@ -7,21 +7,22 @@
 //!
 //! The implementation is divided into three phases:
 //!
-//! ### Phase 1: Screen Capture (Current)
+//! ### Phase 1: Screen Capture
 //! - Use xdg-desktop-portal for screen capture permissions
 //! - Connect to PipeWire streams for video data
 //! - Filter for HDMI dummy display outputs only
 //! - Receive raw video frames
 //!
-//! ### Phase 2: Video Encoding (Future)
-//! - Encode frames to H.264 using hardware acceleration (VAAPI/NVENC)
-//! - Implement configurable quality and bitrate settings
-//! - Add frame buffering and rate limiting
+//! ### Phase 2: Video Encoding (Current)
+//! - Encode frames to H.264 using hardware acceleration
+//! - Support VAAPI (Intel/AMD), NVENC (NVIDIA), and software (x264) encoding
+//! - Configurable quality, bitrate, and low-latency settings
+//! - Automatic hardware encoder detection
 //!
 //! ### Phase 3: Network Streaming (Future)
-//! - Stream encoded video over KDE Connect protocol
-//! - Implement custom packet format for display streaming
-//! - Add latency optimization and adaptive bitrate
+//! - Stream encoded video over WebRTC or custom protocol
+//! - Implement adaptive bitrate streaming
+//! - Add latency optimization
 //!
 //! ## Usage Example
 //!
@@ -75,11 +76,13 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod capture;
+pub mod encoder;
 pub mod error;
 pub mod output;
 pub mod pipewire;
 
 pub use capture::{ScreenCapture, SessionState, VideoFrame, FrameStream};
+pub use encoder::{VideoEncoder, EncoderConfig, EncoderType, EncodedFrame};
 pub use error::{DisplayStreamError, Result};
 pub use output::OutputInfo;
 

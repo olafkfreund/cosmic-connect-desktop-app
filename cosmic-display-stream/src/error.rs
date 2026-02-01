@@ -40,6 +40,10 @@ pub enum DisplayStreamError {
     #[error("Stream not started")]
     StreamNotStarted,
 
+    /// Video encoder error
+    #[error("Encoder error: {0}")]
+    Encoder(String),
+
     /// Generic I/O error
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

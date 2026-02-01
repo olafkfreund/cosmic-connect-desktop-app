@@ -74,6 +74,11 @@ keyring = "3.0"
 ashpd = "0.12"
 pipewire = "0.8"
 
+# Video Encoding (GStreamer)
+gstreamer = "0.23"
+gstreamer-app = "0.23"
+gstreamer-video = "0.23"
+
 # Configuration
 toml = "0.9"
 

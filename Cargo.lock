@@ -1854,6 +1854,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "async-stream",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "cosmic-connect-protocol",

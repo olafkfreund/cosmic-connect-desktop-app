@@ -57,6 +57,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use cosmic_connect_protocol::plugins::remotedesktop::RemoteDesktopPluginFactory;
 use std::sync::Arc;
+use base64::{engine::general_purpose, Engine as _};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, trace, warn};
@@ -2017,6 +2018,12 @@ impl Daemon {
                                             .get("title")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("Notification");
+
+                                        // Extract body text - prefer richBody over plain text
+                                        let rich_body = packet
+                                            .body
+                                            .get("richBody")
+                                            .and_then(|v| v.as_str());
                                         let text = packet
                                             .body
                                             .get("text")
@@ -2054,6 +2061,7 @@ impl Daemon {
                                                     app_name,
                                                     title,
                                                     text,
+                                                    rich_body,
                                                     web_url,
                                                 )
                                                 .await
@@ -2084,16 +2092,80 @@ impl Daemon {
                                                 }
                                             }
                                         } else if should_show {
-                                            if let Err(e) = notifier
-                                                .notify_from_device(
-                                                    &device_name,
-                                                    app_name,
-                                                    title,
-                                                    text,
-                                                )
-                                                .await
-                                            {
-                                                warn!("Failed to send device notification: {}", e);
+                                            // Extract notification ID for rich notifications
+                                            let notification_id = packet
+                                                .body
+                                                .get("id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+
+                                            // Check for image data
+                                            let image_data = packet
+                                                .body
+                                                .get("imageData")
+                                                .and_then(|v| v.as_str());
+
+                                            // Process image if present
+                                            let image_bytes = if let Some(base64_data) = image_data {
+                                                // Decode base64 to bytes
+                                                match general_purpose::STANDARD.decode(base64_data) {
+                                                    Ok(bytes) => {
+                                                        // Load as image to get dimensions
+                                                        match image::load_from_memory(&bytes) {
+                                                            Ok(img) => {
+                                                                let width = img.width() as i32;
+                                                                let height = img.height() as i32;
+                                                                // Convert to RGBA8 and get raw bytes
+                                                                let rgba = img.to_rgba8();
+                                                                Some((rgba.into_raw(), width, height))
+                                                            }
+                                                            Err(e) => {
+                                                                warn!("Failed to decode notification image: {}", e);
+                                                                None
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        warn!("Failed to decode base64 image data: {}", e);
+                                                        None
+                                                    }
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            // Send notification with or without image
+                                            if image_bytes.is_some() {
+                                                // Use rich notification with image
+                                                if let Err(e) = notifier
+                                                    .notify_rich_from_device(
+                                                        notification_id,
+                                                        &device_name,
+                                                        app_name,
+                                                        title,
+                                                        text,
+                                                        None, // rich_body
+                                                        image_bytes,
+                                                        Vec::new(), // links
+                                                    )
+                                                    .await
+                                                {
+                                                    warn!("Failed to send rich notification: {}", e);
+                                                }
+                                            } else {
+                                                // Use simple notification without image
+                                                if let Err(e) = notifier
+                                                    .notify_from_device(
+                                                        &device_name,
+                                                        app_name,
+                                                        title,
+                                                        text,
+                                                        None, // rich_body
+                                                    )
+                                                    .await
+                                                {
+                                                    warn!("Failed to send device notification: {}", e);
+                                                }
                                             }
                                         } else {
                                             debug!(

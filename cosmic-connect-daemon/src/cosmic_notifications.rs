@@ -75,8 +75,7 @@ impl NotificationBuilder {
     ///
     /// Converts HTML to freedesktop-safe subset: <b>, <i>, <u>, <a>
     /// Strips all other tags and dangerous attributes.
-    #[allow(dead_code)]
-    fn sanitize_html(html: &str) -> String {
+    pub fn sanitize_html(html: &str) -> String {
         // Simple HTML sanitizer for freedesktop notification spec
         // Allowed tags: <b>, <i>, <u>, <a href="...">
         let mut result = html.to_string();
@@ -347,27 +346,41 @@ impl CosmicNotifier {
     }
 
     /// Send a notification forwarded from a device
+    ///
+    /// If `rich_body` is provided, it will be sanitized and used instead of plain text.
     pub async fn notify_from_device(
         &self,
         device_name: &str,
         app_name: &str,
         title: &str,
         text: &str,
+        rich_body: Option<&str>,
     ) -> Result<u32> {
         let summary = format!("{} ({})", title, device_name);
-        let body = if !app_name.is_empty() {
-            format!("{}\n{}", app_name, text)
-        } else {
-            text.to_string()
-        };
 
-        self.send(
-            NotificationBuilder::new(summary)
-                .body(body)
-                .icon("phone-symbolic")
-                .timeout(10000), // 10 seconds for device notifications
-        )
-        .await
+        let mut builder = NotificationBuilder::new(summary)
+            .icon("phone-symbolic")
+            .timeout(10000);
+
+        // Use rich body if available, otherwise plain text
+        if let Some(html) = rich_body {
+            let sanitized = NotificationBuilder::sanitize_html(html);
+            let body = if !app_name.is_empty() {
+                format!("{}\n{}", app_name, sanitized)
+            } else {
+                sanitized
+            };
+            builder = builder.body(body);
+        } else {
+            let body = if !app_name.is_empty() {
+                format!("{}\n{}", app_name, text)
+            } else {
+                text.to_string()
+            };
+            builder = builder.body(body);
+        }
+
+        self.send(builder).await
     }
 
     /// Send a rich notification from a device
@@ -419,16 +432,26 @@ impl CosmicNotifier {
     }
 
     /// Send a messaging notification with potentially actionable web URL
+    ///
+    /// If `rich_body` is provided, it will be sanitized and used instead of plain text.
     pub async fn notify_messaging(
         &self,
         device_name: &str,
         app_name: &str,
         sender: &str,
         message: &str,
+        rich_body: Option<&str>,
         web_url: Option<&str>,
     ) -> Result<u32> {
         let summary = format!("{} ({})", sender, device_name);
-        let body = format!("{}\n{}", app_name, message);
+
+        // Use rich body if available, otherwise plain text
+        let body = if let Some(html) = rich_body {
+            let sanitized = NotificationBuilder::sanitize_html(html);
+            format!("{}\n{}", app_name, sanitized)
+        } else {
+            format!("{}\n{}", app_name, message)
+        };
 
         let mut builder = NotificationBuilder::new(summary)
             .body(body)

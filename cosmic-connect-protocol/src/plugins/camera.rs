@@ -639,15 +639,18 @@ impl Plugin for CameraPlugin {
     }
 
     fn incoming_capabilities(&self) -> Vec<String> {
+        // Note: INCOMING_CAPABILITY and CAMERA_FRAME are both "cconnect.camera"
+        // so we only include unique capabilities
         vec![
             INCOMING_CAPABILITY.to_string(),
-            CAMERA_FRAME.to_string(),
             "kdeconnect.camera".to_string(),
         ]
     }
 
     fn outgoing_capabilities(&self) -> Vec<String> {
-        vec![OUTGOING_CAPABILITY.to_string(), CAMERA_REQUEST.to_string()]
+        // Note: OUTGOING_CAPABILITY and CAMERA_REQUEST are both "cconnect.camera.request"
+        // so we only include unique capabilities
+        vec![OUTGOING_CAPABILITY.to_string()]
     }
 
     async fn init(
@@ -721,15 +724,18 @@ impl PluginFactory for CameraPluginFactory {
     }
 
     fn incoming_capabilities(&self) -> Vec<String> {
+        // Note: INCOMING_CAPABILITY and CAMERA_FRAME are both "cconnect.camera"
+        // so we only include unique capabilities
         vec![
             INCOMING_CAPABILITY.to_string(),
-            CAMERA_FRAME.to_string(),
             "kdeconnect.camera".to_string(),
         ]
     }
 
     fn outgoing_capabilities(&self) -> Vec<String> {
-        vec![OUTGOING_CAPABILITY.to_string(), CAMERA_REQUEST.to_string()]
+        // Note: OUTGOING_CAPABILITY and CAMERA_REQUEST are both "cconnect.camera.request"
+        // so we only include unique capabilities
+        vec![OUTGOING_CAPABILITY.to_string()]
     }
 
     fn create(&self) -> Box<dyn Plugin> {

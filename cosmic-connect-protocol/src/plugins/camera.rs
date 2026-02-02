@@ -472,6 +472,8 @@ impl CameraPlugin {
         );
 
         // Parse resolution (format: "1280x720")
+        // Note: width/height used only when video feature is enabled
+        #[allow(unused_variables)]
         let (width, height) = resolution
             .split_once('x')
             .and_then(|(w, h)| {
@@ -609,6 +611,7 @@ impl CameraPlugin {
     }
 
     /// Handle incoming camera frame
+    #[allow(unused_variables)] // packet used only when video feature is enabled
     async fn handle_camera_frame(&self, packet: &Packet, device: &Device) -> Result<()> {
         debug!("Received camera frame from {}", device.name());
 

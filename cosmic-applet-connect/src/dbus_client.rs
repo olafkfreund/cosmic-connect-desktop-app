@@ -1574,6 +1574,7 @@ impl DbusClient {
     }
 
     /// Request remote device to share their screen with us
+    #[allow(dead_code)] // API available for future UI integration
     pub async fn request_screen_share_from(&self, device_id: &str) -> Result<()> {
         self.proxy
             .request_screen_share(device_id)

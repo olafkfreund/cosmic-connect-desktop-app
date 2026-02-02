@@ -8,11 +8,11 @@
 with lib;
 
 let
-  cfg = config.security.pam.services.cosmic-connect;
+  cfg = config.services.cosmic-connect.phoneAuth;
 
 in
 {
-  options.security.pam.services.cosmic-connect = {
+  options.services.cosmic-connect.phoneAuth = {
     enable = mkEnableOption "COSMIC Connect phone authentication for PAM services";
 
     timeout = mkOption {
@@ -30,7 +30,6 @@ in
       default = [
         "login"
         "sudo"
-        "cosmic-greeter"
       ];
       example = [
         "login"
@@ -59,7 +58,7 @@ in
 
     package = mkOption {
       type = types.package;
-      default = pkgs.cosmic-connect or (throw "cosmic-connect package not available in nixpkgs");
+      default = pkgs.cosmic-connect or (throw "cosmic-connect package not available");
       defaultText = literalExpression "pkgs.cosmic-connect";
       description = ''
         The cosmic-connect package that provides the PAM module.
@@ -73,73 +72,48 @@ in
     assertions = [
       {
         assertion = cfg.timeout > 0;
-        message = "security.pam.services.cosmic-connect.timeout must be greater than 0";
+        message = "services.cosmic-connect.phoneAuth.timeout must be greater than 0";
       }
       {
         assertion = cfg.services != [ ];
-        message = "security.pam.services.cosmic-connect.services must not be empty";
+        message = "services.cosmic-connect.phoneAuth.services must not be empty";
       }
       {
         assertion = cfg.fallbackToPassword || (builtins.elem "sudo" cfg.services == false);
         message = ''
           Disabling fallbackToPassword for sudo service is extremely dangerous.
-          You may lock yourself out of the system. Please reconsider this configuration.
+          You may lock yourself out of the system.
         '';
       }
     ];
 
     # Warning for security considerations
     warnings =
-      optional
-        (!cfg.fallbackToPassword)
-        ''
-          COSMIC Connect phone authentication is configured WITHOUT password fallback.
-          If your phone is unavailable or the daemon fails, you will be locked out.
-          This configuration is NOT recommended for production systems.
-        ''
-      ++ optional
-        (builtins.elem "polkit-1" cfg.services)
-        ''
-          Phone authentication is enabled for polkit-1. This affects all PolicyKit
-          authentication dialogs. Ensure your phone is always available when using
-          applications that require elevated privileges.
-        '';
+      optional (!cfg.fallbackToPassword) ''
+        COSMIC Connect phone authentication is configured WITHOUT password fallback.
+        If your phone is unavailable or the daemon fails, you will be locked out.
+      ''
+      ++ optional (builtins.elem "polkit-1" cfg.services) ''
+        Phone authentication is enabled for polkit-1. This affects all PolicyKit
+        authentication dialogs.
+      '';
 
     # Ensure the PAM module is available system-wide
-    # The actual .so file should be at: ${cfg.package}/lib/security/pam_cosmic_connect.so
     environment.systemPackages = [ cfg.package ];
 
-    # Configure PAM services
+    # Configure PAM services using the standard NixOS PAM interface
     security.pam.services = genAttrs cfg.services (serviceName: {
       text = mkBefore ''
         # COSMIC Connect phone authentication
-        # Request authentication from paired phone via D-Bus
-        # [success=done] means if this succeeds, skip remaining auth modules
-        # [default=ignore] means if this fails, continue to next auth module
         auth  [success=done default=ignore]  pam_cosmic_connect.so timeout=${toString cfg.timeout}
       '';
-
-      # Ensure standard password authentication is available as fallback
-      # This is critical for system stability
-      rules = mkIf cfg.fallbackToPassword {
-        auth = {
-          unix = {
-            control = "required";
-            modulePath = "${pkgs.pam}/lib/security/pam_unix.so";
-            settings = [ "try_first_pass" ];
-          };
-        };
-      };
     });
 
     # Ensure D-Bus service is available for PAM module communication
     services.dbus.packages = [ cfg.package ];
 
     # Configure Polkit policy for phone authentication requests
-    # This allows the PAM module to communicate with the daemon
     security.polkit.extraConfig = ''
-      // COSMIC Connect Phone Authentication Policy
-      // Allow local active sessions to request phone authentication
       polkit.addRule(function(action, subject) {
         if (action.id == "org.cosmicde.PhoneAuth.request" &&
             subject.local && subject.active) {
@@ -148,40 +122,14 @@ in
       });
     '';
 
-    # Ensure the daemon is running for PAM authentication to work
-    # The daemon must be available as a user service
-    systemd.user.services.cosmic-connect-daemon = {
-      # If the main module hasn't enabled the daemon, we need to ensure it exists
-      # This is a runtime dependency for PAM authentication
-      after = [ "network.target" ];
-      wants = [ "network.target" ];
-
-      # Add a condition to restart if it crashes during auth
-      serviceConfig = {
-        Restart = mkDefault "on-failure";
-        RestartSec = mkDefault 3;
-      };
-    };
-
     # Configuration file for phone auth preferences
-    # This is read by the PAM module to determine behavior
     environment.etc."xdg/cosmic-connect/phone-auth.toml".text = ''
       # COSMIC Connect Phone Authentication Configuration
-      # Generated by NixOS module
 
       [auth]
-      # Timeout for phone authentication requests (seconds)
       timeout = ${toString cfg.timeout}
-
-      # Whether to fall back to password if phone auth fails
       fallback_to_password = ${if cfg.fallbackToPassword then "true" else "false"}
-
-      # Enabled services
       services = [${concatMapStringsSep ", " (s: ''"${s}"'') cfg.services}]
     '';
-  };
-
-  meta = {
-    maintainers = with maintainers; [ ]; # Add maintainer info
   };
 }

@@ -793,14 +793,31 @@ impl Plugin for CameraPlugin {
             || packet.is_type("kdeconnect.camera.status")
         {
             // Handle camera status updates from remote device
+            // Check both formats: "streaming" boolean (legacy) and "status" string (Android)
             let streaming = packet
                 .body
                 .get("streaming")
                 .and_then(|v| v.as_bool())
+                .or_else(|| {
+                    // Android sends "status" string: "starting", "streaming", "stopping", "stopped", "error"
+                    packet
+                        .body
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s == "streaming" || s == "starting")
+                })
                 .unwrap_or(false);
+
+            let status_str = packet
+                .body
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
             info!(
-                "Camera status update from {}: streaming={}",
+                "Camera status update from {}: status={}, streaming={}",
                 device.name(),
+                status_str,
                 streaming
             );
             // Update local session state based on remote status

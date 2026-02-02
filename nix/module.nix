@@ -146,22 +146,20 @@ in
 
       remotedesktop = mkOption {
         type = types.bool;
-        default = false;
+        default = true;
         description = ''
           Enable RemoteDesktop plugin (VNC-based remote desktop).
           Allows screen sharing and remote control between devices.
           Requires PipeWire and Wayland portal support.
-          Security: Disabled by default, requires explicit opt-in.
         '';
       };
 
       runcommand = mkOption {
         type = types.bool;
-        default = false;
+        default = true;
         description = ''
           Enable RunCommand plugin for remote command execution.
           Allows executing predefined commands on paired devices.
-          Security: Disabled by default, requires explicit opt-in for security.
         '';
       };
 
@@ -203,16 +201,16 @@ in
 
       presenter = mkOption {
         type = types.bool;
-        default = false;
+        default = true;
         description = ''
           Enable Presenter plugin for laser pointer and presentation controls.
-          Specialized use case - can be enabled when needed for presentations.
+          Useful for presentations and remote control.
         '';
       };
 
       contacts = mkOption {
         type = types.bool;
-        default = false;
+        default = true;
         description = ''
           Enable Contacts plugin for contact list synchronization.
           Syncs contact information between devices via vCard format.
@@ -243,6 +241,96 @@ in
         description = ''
           Enable Screenshot plugin for remote desktop screen capture.
           Capture and transfer screenshots from remote desktops.
+        '';
+      };
+
+      camera = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Camera plugin for remote camera/webcam access.
+          Use mobile device camera as webcam on desktop.
+        '';
+      };
+
+      screenshare = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable ScreenShare plugin for one-way screen sharing.
+          Useful for presentations and demonstrations.
+        '';
+      };
+
+      power = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Power plugin for remote power management.
+          Control shutdown, reboot, and sleep on remote devices.
+        '';
+      };
+
+      clipboardhistory = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable ClipboardHistory plugin for persistent clipboard history.
+          Maintains a history of clipboard entries with sync support.
+        '';
+      };
+
+      macro = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Macro plugin for automation scripts.
+          Execute predefined automation sequences on devices.
+        '';
+      };
+
+      chat = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable Chat plugin for instant messaging.
+          Send and receive messages between connected devices.
+        '';
+      };
+
+      audiostream = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable AudioStream plugin for audio streaming.
+          Stream audio between desktop devices via PipeWire.
+        '';
+      };
+
+      filesync = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable FileSync plugin for automatic file synchronization.
+          Keep directories in sync between connected desktops.
+        '';
+      };
+
+      mousekeyboardshare = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable MouseKeyboardShare plugin (Synergy-like input sharing).
+          Share mouse and keyboard seamlessly across multiple desktops.
+        '';
+      };
+
+      networkshare = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable NetworkShare plugin for SFTP mounting.
+          Mount remote device filesystems via secure SFTP.
         '';
       };
     };
@@ -388,6 +476,16 @@ in
               enable_wol = cfg.plugins.wol;
               enable_screenshot = cfg.plugins.screenshot;
               enable_remotedesktop = cfg.plugins.remotedesktop;
+              enable_camera = cfg.plugins.camera;
+              enable_screenshare = cfg.plugins.screenshare;
+              enable_power = cfg.plugins.power;
+              enable_clipboardhistory = cfg.plugins.clipboardhistory;
+              enable_macro = cfg.plugins.macro;
+              enable_chat = cfg.plugins.chat;
+              enable_audiostream = cfg.plugins.audiostream;
+              enable_filesync = cfg.plugins.filesync;
+              enable_mousekeyboardshare = cfg.plugins.mousekeyboardshare;
+              enable_networkshare = cfg.plugins.networkshare;
             };
           };
           # Merge user settings with plugin config

@@ -133,6 +133,10 @@ rustPlatform.buildRustPackage rec {
 
   # bindgenHook automatically sets LIBCLANG_PATH and BINDGEN_EXTRA_CLANG_ARGS
 
+  # Tell audiopus_sys to use system opus library instead of building from source
+  OPUS_LIB_DIR = "${libopus}/lib";
+  OPUS_INCLUDE_DIR = "${libopus}/include";
+
   # Ensure proper library paths at runtime
   postInstall = ''
     # Install systemd service

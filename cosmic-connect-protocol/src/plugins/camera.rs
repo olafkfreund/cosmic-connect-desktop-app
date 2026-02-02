@@ -496,6 +496,8 @@ impl CameraPlugin {
                 height,
                 fps: fps as u32,
                 output_format: PixelFormat::YUYV,
+                queue_size: 5,
+                enable_perf_monitoring: true,
             };
 
             let mut daemon = CameraDaemon::new(config);
@@ -562,6 +564,8 @@ impl CameraPlugin {
                 height,
                 fps: fps as u32,
                 output_format: PixelFormat::YUYV,
+                queue_size: 5,
+                enable_perf_monitoring: true,
             };
 
             let mut daemon = CameraDaemon::new(config);

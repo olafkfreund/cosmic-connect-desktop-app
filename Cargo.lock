@@ -1813,7 +1813,7 @@ dependencies = [
 [[package]]
 name = "cosmic-connect-core"
 version = "0.1.0"
-source = "git+https://github.com/olafkfreund/cosmic-connect-core.git?branch=main#e8a7b43684950650ece86106cd4a7c63835a4e98"
+source = "git+https://github.com/olafkfreund/cosmic-connect-core.git?branch=main#6f1150d5479d7448c287df64f849dc11a84ff839"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -11,6 +11,11 @@ use crate::{ProtocolError, Result};
 use super::audio_backend::AudioSample;
 
 /// Opus codec wrapper
+///
+/// # Safety
+/// The Opus encoder/decoder contain raw pointers that aren't `Send` by default.
+/// We implement `Send` because access is protected by `RwLock` in the plugin,
+/// ensuring only one thread accesses the codec at a time.
 #[cfg(feature = "opus")]
 pub struct OpusCodec {
     encoder: OpusEncoder,
@@ -19,6 +24,16 @@ pub struct OpusCodec {
     channels: u8,
     frame_size: usize,
 }
+
+// SAFETY: OpusCodec is protected by RwLock in AudioStreamPlugin,
+// ensuring exclusive mutable access. The raw pointers in Opus
+// encoder/decoder are only accessed through &mut self methods.
+// We implement both Send and Sync because async functions that take
+// &mut self across await points require the type to be Send + Sync.
+#[cfg(feature = "opus")]
+unsafe impl Send for OpusCodec {}
+#[cfg(feature = "opus")]
+unsafe impl Sync for OpusCodec {}
 
 /// Stub Opus codec when feature is disabled
 #[cfg(not(feature = "opus"))]

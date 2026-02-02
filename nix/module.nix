@@ -18,9 +18,8 @@ let
 
 in
 {
-  imports = [
-    ./modules/pam-cosmic-connect.nix
-  ];
+  # PAM module import disabled until Phone Auth is fully implemented
+  # imports = [ ./modules/pam-cosmic-connect.nix ];
 
   options.services.cosmic-connect = {
     enable = mkEnableOption "COSMIC Connect - Device connectivity for COSMIC Desktop";

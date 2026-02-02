@@ -605,6 +605,13 @@ trait CConnect {
         command_id: String,
     ) -> zbus::fdo::Result<()>;
 
+    /// Execute a run command on a remote device
+    async fn execute_run_command(
+        &self,
+        device_id: String,
+        command_key: String,
+    ) -> zbus::fdo::Result<()>;
+
     /// Get run commands (returns JSON string map of id -> Command)
     async fn get_run_commands(&self, device_id: String) -> zbus::fdo::Result<String>;
 
@@ -1479,6 +1486,14 @@ impl DbusClient {
             .remove_run_command(device_id, command_id)
             .await
             .context("Failed to call remove_run_command")
+    }
+
+    /// Execute a run command on a remote device
+    pub async fn execute_run_command(&self, device_id: String, command_key: String) -> Result<()> {
+        self.proxy
+            .execute_run_command(device_id, command_key)
+            .await
+            .context("Failed to call execute_run_command")
     }
 
     /// Start screen share

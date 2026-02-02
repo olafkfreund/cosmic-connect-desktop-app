@@ -2403,6 +2403,48 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Execute a run command on a remote device
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to execute the command on
+    /// * `command_key` - The command key/ID to execute
+    async fn execute_run_command(
+        &self,
+        device_id: String,
+        command_key: String,
+    ) -> Result<(), zbus::fdo::Error> {
+        info!(
+            "DBus: ExecuteRunCommand called for {} - Key: {}",
+            device_id, command_key
+        );
+
+        // Create packet to trigger command execution on remote device
+        let packet = cosmic_connect_protocol::Packet::new(
+            "cconnect.runcommand.request",
+            serde_json::json!({
+                "key": command_key
+            }),
+        );
+
+        // Send packet via connection manager
+        let conn_manager = self.connection_manager.read().await;
+        conn_manager
+            .send_packet(&device_id, &packet)
+            .await
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!(
+                    "Failed to send command execution request: {}",
+                    e
+                ))
+            })?;
+
+        info!(
+            "DBus: Command execution request sent for key '{}' to device {}",
+            command_key, device_id
+        );
+        Ok(())
+    }
+
     /// Start screen share session
     ///
     /// Configures the ScreenShare plugin with the local port to receive the stream.
@@ -4222,14 +4264,88 @@ impl OpenInterface {
         let device = self.get_target_device(device_id_opt).await?;
         debug!("Opening file on device: {}", device.name());
 
-        // TODO: Implement file transfer + open
-        // This requires integration with the Share plugin and payload transfer
-        // For now, return a placeholder error
-        warn!("File transfer not yet implemented");
-        Err(zbus::fdo::Error::Failed(
-            "File transfer + open not yet implemented. Use share plugin directly for now."
-                .to_string(),
-        ))
+        // Spawn file transfer task
+        let file_path_clone = path.clone();
+        let device_id_clone = device.id().to_string();
+        let device_name = device.name().to_string();
+        let conn_manager = self.connection_manager.clone();
+
+        tokio::spawn(async move {
+            use cosmic_connect_protocol::plugins::share::{FileShareInfo, SharePlugin};
+            use cosmic_connect_protocol::{FileTransferInfo, TlsPayloadServer};
+
+            // Extract file metadata
+            let file_info = match FileTransferInfo::from_path(&file_path_clone).await {
+                Ok(info) => info,
+                Err(e) => {
+                    error!("Failed to read file metadata for open: {}", e);
+                    return;
+                }
+            };
+
+            info!(
+                "Opening file '{}' ({} bytes) on device {}",
+                file_info.filename, file_info.size, device_name
+            );
+
+            // Get TLS config from connection manager
+            let tls_config = {
+                let conn_mgr = conn_manager.read().await;
+                conn_mgr.tls_config()
+            };
+
+            // Create TLS payload server
+            let server = match TlsPayloadServer::new(tls_config).await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to create TLS payload server: {}", e);
+                    return;
+                }
+            };
+
+            let port = server.port();
+            debug!("TLS payload server listening on port {}", port);
+
+            // Create share plugin and packet with open=true
+            let share_plugin = SharePlugin::new();
+            let share_info = FileShareInfo {
+                filename: file_info.filename.clone(),
+                size: file_info.size as i64,
+                creation_time: file_info.creation_time,
+                last_modified: file_info.last_modified,
+                open: true, // Auto-open after transfer
+            };
+
+            let packet = share_plugin.create_file_packet(share_info, port);
+
+            // Send packet via connection manager
+            let conn_mgr = conn_manager.read().await;
+            if let Err(e) = conn_mgr.send_packet(&device_id_clone, &packet).await {
+                error!("Failed to send file open packet to {}: {}", device_name, e);
+                return;
+            }
+
+            debug!("Sent file open packet to {}", device_name);
+
+            // Send the file payload
+            match server.send_file(&file_path_clone).await {
+                Ok(_) => {
+                    info!(
+                        "Successfully transferred file '{}' to {} for opening",
+                        file_info.filename, device_name
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to transfer file '{}' to {}: {}",
+                        file_info.filename, device_name, e
+                    );
+                }
+            }
+        });
+
+        info!("File open request initiated for device {}", device.name());
+        Ok("File transfer initiated".to_string())
     }
 
     /// List devices that support opening content

@@ -1,10 +1,67 @@
 //! Frame Encoding for VNC
 //!
-//! Implements multiple encoding types for VNC framebuffer updates:
-//! - Raw: Uncompressed pixel data
-//! - LZ4: Fast lossless compression
-//! - H.264: Video compression (TODO: Phase 3)
-//! - Hextile: VNC standard tile-based encoding (TODO: Phase 4)
+//! Implements multiple encoding types for VNC framebuffer updates.
+//!
+//! ## Current Implementation Status
+//!
+//! ### Phase 1: Core Encodings (Implemented)
+//!
+//! - **Raw**: Uncompressed pixel data (RFC 6143 Section 7.7.1)
+//!   - No compression, maximum compatibility
+//!   - Used for high-quality mode
+//!
+//! - **LZ4**: Fast lossless compression
+//!   - LZ4 block compression for quick turnaround
+//!   - Good balance between speed and compression ratio
+//!   - Used for medium-quality mode
+//!
+//! ### Phase 2: Video Compression (Implemented)
+//!
+//! - **H.264**: Advanced video compression (RFC 6143 Section 7.8.11)
+//!   - Hardware-accelerated encoding/decoding support
+//!   - Best compression for video content and low bandwidth
+//!   - RGBA to YUV420 color space conversion
+//!   - Configurable bitrate based on quality preset
+//!   - Used for low-quality/bandwidth-constrained mode
+//!
+//! ### Phase 3: VNC Standard Encodings (Implemented)
+//!
+//! - **Hextile**: VNC standard tile-based encoding (RFC 6143 Section 7.7.4)
+//!   - Divides framebuffer into 16x16 tiles
+//!   - Solid color optimization for uniform tiles
+//!   - Falls back to raw encoding for complex tiles
+//!   - Good for static content with limited color palette
+//!
+//! ## Future Enhancement Opportunities
+//!
+//! ### Advanced Hextile Implementation
+//!
+//! The current Hextile implementation uses a simplified approach (solid color
+//! detection + raw fallback). A complete RFC 6143 implementation could add:
+//!
+//! - Subrectangle encoding for partial tile updates
+//! - Foreground/background color coding
+//! - Run-length encoding for repeated colors
+//! - Colored subrectangle support
+//!
+//! These optimizations can significantly improve compression for UI content
+//! with limited color palettes (terminals, text editors, etc.).
+//!
+//! ### Additional Encoding Types (Future Phases)
+//!
+//! - **ZRLE** (Zlib Run-Length Encoding): Better than Hextile for complex screens
+//! - **Tight**: Combines multiple compression techniques (JPEG + zlib)
+//! - **TRLE** (Tight Run-Length Encoding): Simplified Tight variant
+//!
+//! ## Usage
+//!
+//! ```ignore
+//! use cosmic_connect_protocol::plugins::remotedesktop::vnc::encoding::FrameEncoder;
+//! use cosmic_connect_protocol::plugins::remotedesktop::capture::QualityPreset;
+//!
+//! let mut encoder = FrameEncoder::new(QualityPreset::Medium);
+//! let encoded_frame = encoder.encode(&raw_frame)?;
+//! ```
 
 use crate::plugins::remotedesktop::capture::{EncodedFrame, EncodingType, QualityPreset, RawFrame};
 use crate::Result;

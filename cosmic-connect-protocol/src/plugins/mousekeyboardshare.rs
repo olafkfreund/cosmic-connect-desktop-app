@@ -912,10 +912,22 @@ impl Plugin for MouseKeyboardSharePlugin {
             // Remote desktop's cursor entered this screen
             info!("Remote cursor entered from {}", device.name());
 
+            // Extract entry edge from packet (sent by remote in create_enter_packet)
+            let entry_edge = packet
+                .get_body_field::<String>("entryEdge")
+                .and_then(|edge_str| match edge_str.as_str() {
+                    "top" => Some(ScreenEdge::Top),
+                    "bottom" => Some(ScreenEdge::Bottom),
+                    "left" => Some(ScreenEdge::Left),
+                    "right" => Some(ScreenEdge::Right),
+                    _ => None,
+                })
+                .unwrap_or(ScreenEdge::Left); // Fallback to Left if not specified
+
             // Mark that we're receiving input from remote
             self.state = ShareState::Remote {
                 device_id: device.id().to_string(),
-                entry_edge: ScreenEdge::Left, // TODO: get from packet
+                entry_edge,
             };
             self.sharing_active.store(true, Ordering::SeqCst);
         } else if packet.is_type("cconnect.mkshare.leave") {

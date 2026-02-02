@@ -395,6 +395,85 @@ impl AacCodec {
     ///
     /// # Returns
     /// Encoded AAC packet as bytes
+    ///
+    /// # Implementation Notes
+    ///
+    /// This method is not yet fully implemented. AAC encoding requires integration
+    /// with an external AAC encoder library.
+    ///
+    /// ## Recommended Implementation Approaches
+    ///
+    /// ### Option 1: fdk-aac (Fraunhofer FDK AAC)
+    ///
+    /// The industry-standard AAC encoder/decoder library.
+    ///
+    /// **Rust Bindings:**
+    /// - `fdk-aac-sys`: Low-level FFI bindings to libfdk-aac
+    /// - `fdk-aac`: Higher-level Rust wrapper (may need custom wrapper)
+    ///
+    /// **System Dependencies:**
+    /// ```bash
+    /// # Debian/Ubuntu
+    /// sudo apt-get install libfdk-aac-dev
+    ///
+    /// # macOS
+    /// brew install fdk-aac
+    /// ```
+    ///
+    /// **Key Functions:**
+    /// - `aacEncOpen()`: Create encoder instance
+    /// - `aacEncoder_SetParam()`: Configure bitrate, sample rate, channels
+    /// - `aacEncEncode()`: Encode audio frames
+    /// - `aacEncClose()`: Clean up encoder
+    ///
+    /// ### Option 2: FFmpeg's libavcodec
+    ///
+    /// Using FFmpeg's AAC encoder through Rust bindings.
+    ///
+    /// **Rust Bindings:**
+    /// - `ffmpeg-next`: Safe Rust bindings to FFmpeg
+    /// - More features but heavier dependency
+    ///
+    /// ### Option 3: Native Rust Implementation
+    ///
+    /// Currently no production-ready pure Rust AAC encoder exists.
+    /// This would be a significant undertaking.
+    ///
+    /// ## Implementation Pattern (fdk-aac example)
+    ///
+    /// ```ignore
+    /// use fdk_aac_sys::*;
+    ///
+    /// // 1. Create encoder handle
+    /// let mut encoder: HANDLE_AACENCODER = std::ptr::null_mut();
+    /// aacEncOpen(&mut encoder, 0, self.channels as u32);
+    ///
+    /// // 2. Configure encoder
+    /// aacEncoder_SetParam(encoder, AACENC_AOT, AOT_AAC_LC as i32); // AAC-LC profile
+    /// aacEncoder_SetParam(encoder, AACENC_SAMPLERATE, self.sample_rate as i32);
+    /// aacEncoder_SetParam(encoder, AACENC_CHANNELMODE, MODE_2 as i32); // Stereo
+    /// aacEncoder_SetParam(encoder, AACENC_BITRATE, self.bitrate as i32);
+    /// aacEncEncode(encoder, std::ptr::null(), std::ptr::null_mut(), &mut out_args);
+    ///
+    /// // 3. Convert f32 samples to i16
+    /// let pcm_samples: Vec<i16> = samples.iter()
+    ///     .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+    ///     .collect();
+    ///
+    /// // 4. Setup buffers and encode
+    /// // ... (buffer configuration omitted for brevity)
+    /// aacEncEncode(encoder, &mut in_args, &mut out_args);
+    ///
+    /// // 5. Collect output and cleanup
+    /// // ... (output handling and aacEncClose)
+    /// ```
+    ///
+    /// ## Testing Considerations
+    ///
+    /// - Verify output with standard AAC decoders (ffplay, VLC)
+    /// - Test various bitrates (64kbps - 320kbps)
+    /// - Validate frame alignment and sample rates
+    /// - Handle encoder initialization failures gracefully
     pub fn encode(&mut self, samples: &[AudioSample]) -> Result<Vec<u8>> {
         // Check if we have enough samples for a frame
         let expected_samples = self.frame_size * self.channels as usize;
@@ -406,8 +485,7 @@ impl AacCodec {
             )));
         }
 
-        // TODO: Implement AAC encoding using fdk-aac or similar library
-        // For now, return placeholder error
+        // AAC encoding requires fdk-aac library integration (see implementation notes above)
         Err(ProtocolError::InvalidPacket(
             "AAC encoding not yet implemented - requires fdk-aac library integration".to_string(),
         ))
@@ -420,9 +498,79 @@ impl AacCodec {
     ///
     /// # Returns
     /// Decoded audio samples as interleaved f32
+    ///
+    /// # Implementation Notes
+    ///
+    /// This method is not yet fully implemented. AAC decoding requires integration
+    /// with an external AAC decoder library.
+    ///
+    /// ## Recommended Implementation Approaches
+    ///
+    /// ### Option 1: fdk-aac (Fraunhofer FDK AAC)
+    ///
+    /// Same library as encoding, provides both encoder and decoder.
+    ///
+    /// **Key Decoder Functions:**
+    /// - `aacDecoder_Open()`: Create decoder instance
+    /// - `aacDecoder_ConfigRaw()`: Configure decoder with audio info
+    /// - `aacDecoder_Fill()`: Feed encoded data to decoder
+    /// - `aacDecoder_DecodeFrame()`: Decode one frame
+    /// - `aacDecoder_Close()`: Clean up decoder
+    ///
+    /// ### Option 2: FFmpeg's libavcodec
+    ///
+    /// More robust error handling and format support.
+    ///
+    /// ### Option 3: mp4parse + External Decoder
+    ///
+    /// Parse AAC bitstream with pure Rust, decode with C library.
+    ///
+    /// ## Implementation Pattern (fdk-aac example)
+    ///
+    /// ```ignore
+    /// use fdk_aac_sys::*;
+    ///
+    /// // 1. Create decoder handle
+    /// let decoder = aacDecoder_Open(TT_MP4_ADTS, 1); // ADTS transport format
+    ///
+    /// // 2. Feed input data
+    /// let mut bytes_valid = packet.len();
+    /// let mut input_ptr = packet.as_ptr();
+    /// aacDecoder_Fill(decoder, &mut input_ptr, &packet.len(), &mut bytes_valid);
+    ///
+    /// // 3. Decode frame
+    /// let mut output_buffer = vec![0i16; self.frame_size * self.channels as usize];
+    /// aacDecoder_DecodeFrame(
+    ///     decoder,
+    ///     output_buffer.as_mut_ptr(),
+    ///     output_buffer.len() as i32,
+    ///     0
+    /// );
+    ///
+    /// // 4. Convert i16 to f32
+    /// let samples: Vec<f32> = output_buffer.iter()
+    ///     .map(|&s| s as f32 / 32767.0)
+    ///     .collect();
+    ///
+    /// // 5. Cleanup
+    /// aacDecoder_Close(decoder);
+    /// ```
+    ///
+    /// ## Error Handling
+    ///
+    /// - Validate packet size before decoding
+    /// - Handle decoder errors (corrupted packets, format mismatches)
+    /// - Implement packet loss concealment (silence or repeat last frame)
+    /// - Reset decoder on stream discontinuities
+    ///
+    /// ## Testing Considerations
+    ///
+    /// - Test with packets generated by the encoder
+    /// - Validate with standard AAC test vectors
+    /// - Test error recovery (missing packets, corrupted data)
+    /// - Verify sample rate and channel count match configuration
     pub fn decode(&mut self, _packet: &[u8]) -> Result<Vec<AudioSample>> {
-        // TODO: Implement AAC decoding using fdk-aac or similar library
-        // For now, return placeholder error
+        // AAC decoding requires fdk-aac library integration (see implementation notes above)
         Err(ProtocolError::InvalidPacket(
             "AAC decoding not yet implemented - requires fdk-aac library integration".to_string(),
         ))

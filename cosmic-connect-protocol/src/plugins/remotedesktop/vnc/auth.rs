@@ -60,11 +60,24 @@ impl VncAuth {
     }
 
     /// Generate random 16-byte challenge
+    ///
+    /// ## Current Implementation
+    ///
+    /// Uses timestamp-based pseudo-random generation for development/testing.
+    ///
+    /// ## Production Requirements
+    ///
+    /// For production use, this should be replaced with a cryptographically secure
+    /// random number generator such as:
+    /// - `ring::rand::SystemRandom` with `ring::rand::SecureRandom`
+    /// - `rand::rngs::OsRng` from the `rand` crate
+    /// - `getrandom::getrandom()` for system entropy
+    ///
+    /// The challenge must be unpredictable to prevent replay attacks.
     fn generate_challenge() -> [u8; 16] {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        // Simple pseudo-random challenge based on timestamp
-        // TODO: Use proper cryptographic RNG for production
+        // Simple pseudo-random challenge based on timestamp (development only)
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -90,16 +103,62 @@ impl VncAuth {
     /// For development, this uses a simplified verification:
     /// - Compare response against simple XOR of challenge with password
     ///
-    /// ## Production Implementation
+    /// ## Production Implementation Requirements
     ///
-    /// For production, this should implement proper DES encryption:
-    /// 1. Mirror password bits (VNC DES quirk)
-    /// 2. Pad password to 8 bytes
-    /// 3. Encrypt challenge with DES-ECB
-    /// 4. Compare with client response
+    /// For production, this should implement proper VNC DES encryption as specified
+    /// in RFC 6143 Section 7.2.2:
+    ///
+    /// 1. **Bit Mirroring**: VNC uses DES with mirrored bits for each byte
+    ///    - Reverse bit order in each byte of password (VNC-specific quirk)
+    ///    - For example: `01234567` becomes `76543210` in bit order
+    ///
+    /// 2. **Password Padding**: Pad or truncate password to 8 bytes
+    ///    - Passwords shorter than 8 bytes are padded with zeros
+    ///    - Passwords longer than 8 bytes are truncated
+    ///
+    /// 3. **DES Encryption**: Encrypt challenge with DES-ECB mode
+    ///    - Use the mirrored, padded password as the DES key
+    ///    - Encrypt all 16 bytes of challenge in two 8-byte blocks
+    ///    - No chaining between blocks (ECB mode)
+    ///
+    /// 4. **Verification**: Compare encrypted result with client response
+    ///
+    /// ### Suggested Libraries
+    ///
+    /// - `des` crate: Provides DES encryption implementation
+    /// - Manual bit mirroring required for VNC compatibility
+    ///
+    /// ### Example Implementation Pattern
+    ///
+    /// ```ignore
+    /// use des::cipher::{BlockEncrypt, KeyInit};
+    /// use des::Des;
+    ///
+    /// fn mirror_bits(byte: u8) -> u8 {
+    ///     byte.reverse_bits()
+    /// }
+    ///
+    /// fn vnc_encrypt(password: &str, challenge: &[u8; 16]) -> [u8; 16] {
+    ///     // 1. Prepare key with bit mirroring
+    ///     let mut key = [0u8; 8];
+    ///     for (i, &b) in password.as_bytes().iter().take(8).enumerate() {
+    ///         key[i] = mirror_bits(b);
+    ///     }
+    ///
+    ///     // 2. Create DES cipher
+    ///     let cipher = Des::new(&key.into());
+    ///
+    ///     // 3. Encrypt challenge in two blocks
+    ///     let mut result = *challenge;
+    ///     cipher.encrypt_block((&mut result[0..8]).into());
+    ///     cipher.encrypt_block((&mut result[8..16]).into());
+    ///
+    ///     result
+    /// }
+    /// ```
     pub fn verify_response(&self, response: &[u8; 16]) -> bool {
         // Simplified verification for development
-        // TODO: Implement proper DES encryption for production
+        // Production implementation should follow the pattern documented above
 
         // For now, accept any response if password is empty (no auth mode)
         if self.password.is_empty() {

@@ -78,10 +78,24 @@ impl WaylandInputBackend {
 
     /// Get screen geometry from Wayland compositor
     ///
-    /// TODO: Implement via wl_output or COSMIC-specific DBus API
+    /// ## Implementation Notes
+    ///
+    /// Full screen detection on Wayland requires compositor-specific protocols:
+    /// - **wl_output**: Wayland core protocol for screen info (requires Wayland connection)
+    /// - **COSMIC DBus API**: COSMIC-specific D-Bus interface for display management
+    /// - **wlr-output-management**: wlroots protocol for output configuration
+    ///
+    /// Current implementation returns placeholder geometry. Screen configuration
+    /// should be provided via MkShareConfig instead of runtime detection.
+    ///
+    /// ## Future Work
+    ///
+    /// - Integrate with COSMIC compositor D-Bus API when available
+    /// - Use wayland-client to enumerate wl_output objects
+    /// - Support multi-monitor configurations with proper coordinates
     fn detect_screens(&self) -> Vec<ScreenGeometry> {
-        // Placeholder: Return a default screen
-        // In production, query wl_output or use COSMIC APIs
+        // Placeholder: Return default screen geometry
+        // Screen configuration should be provided via MkShareConfig.local_geometry
         vec![ScreenGeometry::new(0, 0, 1920, 1080, "WAYLAND-1")]
     }
 

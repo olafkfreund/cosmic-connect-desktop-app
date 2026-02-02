@@ -2433,14 +2433,25 @@ impl Application for CosmicConnectManager {
             }
             Message::ExecuteCommand(device_id, command_id) => {
                 tracing::info!("Executing command {} on device {}", command_id, device_id);
-                // TODO: Need to add DBus method to trigger command execution via plugin
-                // Commands are executed by the RunCommand plugin when it receives a packet
-                // with "key" field containing the command_id
-                // For now, just close the dialog
+
+                // Close the dialog first
                 self.show_runcommand_dialog = false;
                 self.runcommand_device_id = None;
                 self.available_commands.clear();
-                Task::none()
+
+                // Trigger command execution via D-Bus
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    cosmic::task::future(async move {
+                        if let Err(e) = client.execute_run_command(device_id, command_id).await {
+                            tracing::error!("Failed to execute command: {}", e);
+                        }
+                        Message::None
+                    })
+                } else {
+                    tracing::warn!("DBus client not available for command execution");
+                    Task::none()
+                }
             }
             // SMS dialog handlers
             Message::OpenSmsDialog(device_id) => {

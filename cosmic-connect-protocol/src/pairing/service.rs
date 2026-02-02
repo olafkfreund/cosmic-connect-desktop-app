@@ -3,8 +3,9 @@
 //! Manages pairing for multiple devices simultaneously.
 
 use super::events::PairingEvent;
-use super::handler::{LegacyCertificateInfo, PairingHandler, PairingStatus};
+use super::handler::{PairingHandler, PairingStatus};
 use crate::{DeviceInfo, Packet, Result};
+use cosmic_connect_core::crypto::CertificateInfo;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -50,7 +51,7 @@ impl Default for PairingConfig {
 /// Pairing service for managing device pairing
 pub struct PairingService {
     /// Our device certificate
-    certificate: Arc<LegacyCertificateInfo>,
+    certificate: Arc<CertificateInfo>,
 
     /// Pairing handler
     handler: Arc<RwLock<PairingHandler>>,
@@ -120,7 +121,7 @@ impl PairingService {
     }
 
     /// Get our device certificate
-    pub fn certificate(&self) -> &LegacyCertificateInfo {
+    pub fn certificate(&self) -> &CertificateInfo {
         &self.certificate
     }
 
@@ -273,7 +274,7 @@ impl PairingService {
                 );
                 drop(requests);
 
-                let fingerprint = LegacyCertificateInfo::calculate_fingerprint(device_cert);
+                let fingerprint = CertificateInfo::calculate_fingerprint(device_cert);
 
                 let _ = self.event_tx.send(PairingEvent::RequestReceived {
                     device_id: device_id.clone(),
@@ -292,7 +293,7 @@ impl PairingService {
                 requests.remove(device_id);
                 drop(requests);
 
-                let fingerprint = LegacyCertificateInfo::calculate_fingerprint(device_cert);
+                let fingerprint = CertificateInfo::calculate_fingerprint(device_cert);
 
                 let _ = self.event_tx.send(PairingEvent::PairingAccepted {
                     device_id: device_id.clone(),
@@ -435,7 +436,7 @@ impl PairingService {
         let _ = self.event_tx.send(PairingEvent::PairingAccepted {
             device_id: device_id.to_string(),
             device_name: device_info.device_name.clone(),
-            certificate_fingerprint: LegacyCertificateInfo::calculate_fingerprint(&device_cert),
+            certificate_fingerprint: CertificateInfo::calculate_fingerprint(&device_cert),
         });
 
         info!("Successfully accepted pairing with device {}", device_id);
@@ -481,8 +482,17 @@ impl PairingService {
     pub async fn unpair(&self, device_id: &str) -> Result<()> {
         info!("Unpairing from device {}", device_id);
 
-        // TODO(#31): Send unpair packet via TLS connection
-        let _packet = self.handler.write().await.unpair(device_id)?;
+        // Generate unpair packet and update pairing state
+        let packet = self.handler.write().await.unpair(device_id)?;
+
+        // Send unpair packet to the device via TLS connection
+        if let Err(e) = self.send_pairing_packet(&packet, device_id).await {
+            warn!("Failed to send unpair packet to {}: {}", device_id, e);
+            // Continue with local unpair even if packet sending fails
+            // The device may be unreachable, but we still want to unpair locally
+        } else {
+            debug!("Unpair packet sent successfully to {}", device_id);
+        }
 
         let _ = self.event_tx.send(PairingEvent::DeviceUnpaired {
             device_id: device_id.to_string(),

@@ -175,7 +175,19 @@ impl ScreenCapture {
                 }
                 if let Some(hz_part) = line.split("Hz").next() {
                     if let Some(hz_str) = hz_part.split(',').next_back() {
-                        refresh = hz_str.trim().parse::<f32>().map(|f| f as u32).unwrap_or(60);
+                        refresh = hz_str
+                            .trim()
+                            .parse::<f32>()
+                            .map(|f| {
+                                // Clamp to valid u32 range before conversion
+                                #[allow(
+                                    clippy::cast_sign_loss,
+                                    clippy::cast_possible_truncation,
+                                    clippy::cast_precision_loss
+                                )]
+                                { f.round().clamp(0.0, u32::MAX as f32) as u32 }
+                            })
+                            .unwrap_or(60);
                     }
                 }
                 break;
@@ -457,8 +469,10 @@ mod tests {
             Ok(_) => {
                 // Success case (if HDMI dummy exists)
             }
-            Err(DisplayStreamError::OutputNotFound(_))
-            | Err(DisplayStreamError::InvalidConfiguration(_)) => {
+            Err(
+                DisplayStreamError::OutputNotFound(_)
+                | DisplayStreamError::InvalidConfiguration(_),
+            ) => {
                 // Expected errors if no HDMI dummy
             }
             Err(e) => panic!("Unexpected error: {}", e),

@@ -213,9 +213,11 @@ fn run_pipewire_loop(
                 let datas = buffer.datas_mut();
                 if let Some(data) = datas.first_mut() {
                     let chunk = data.chunk();
-                    let offset = chunk.offset() as usize;
-                    let size = chunk.size() as usize;
-                    let stride = chunk.stride() as usize;
+                    // These casts are safe: u32 always fits in usize on 32/64-bit
+                    let offset = usize::try_from(chunk.offset()).unwrap_or(0);
+                    let size = usize::try_from(chunk.size()).unwrap_or(0);
+                    // Stride can be i32 (negative for bottom-up images), use absolute value
+                    let stride = usize::try_from(chunk.stride().unsigned_abs()).unwrap_or(0);
 
                     if let Some(slice) = data.data() {
                         if size > 0 && offset + size <= slice.len() {
@@ -226,13 +228,14 @@ fn run_pipewire_loop(
                             let seq = frame_sequence_clone.fetch_add(1, Ordering::Relaxed);
 
                             // Infer dimensions from stride if needed
+                            // Dimensions from video frames are always within u32 range
                             let inferred_width = if stride > 0 {
-                                (stride / 4) as u32
+                                u32::try_from(stride / 4).unwrap_or(width)
                             } else {
                                 width
                             };
                             let inferred_height = if size > 0 && stride > 0 {
-                                (size / stride) as u32
+                                u32::try_from(size / stride).unwrap_or(height)
                             } else {
                                 height
                             };
@@ -244,7 +247,7 @@ fn run_pipewire_loop(
                                 "BGRx".to_string(), // Most common format from screen capture
                                 std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_micros() as i64)
+                                    .map(|d| i64::try_from(d.as_micros()).unwrap_or(i64::MAX))
                                     .unwrap_or(0),
                                 seq,
                             );

@@ -240,14 +240,19 @@ impl VideoEncoder {
         let pipeline = gst::Pipeline::new();
 
         // Create elements
+        // Video dimensions and framerate are always within i32 range for practical use
+        let width = i32::try_from(config.width).unwrap_or(1920);
+        let height = i32::try_from(config.height).unwrap_or(1080);
+        let framerate = i32::try_from(config.framerate).unwrap_or(30);
+
         let appsrc = gst_app::AppSrc::builder()
             .name("source")
             .caps(
                 &gst_video::VideoCapsBuilder::new()
                     .format(gst_video::VideoFormat::Bgrx)
-                    .width(config.width as i32)
-                    .height(config.height as i32)
-                    .framerate(gst::Fraction::new(config.framerate as i32, 1))
+                    .width(width)
+                    .height(height)
+                    .framerate(gst::Fraction::new(framerate, 1))
                     .build(),
             )
             .format(gst::Format::Time)
@@ -338,7 +343,10 @@ impl VideoEncoder {
             EncoderType::Nvenc => {
                 // NVENC-specific settings
                 encoder.set_property("bitrate", config.bitrate / 1000); // kbps
-                encoder.set_property("gop-size", config.keyframe_interval as i32);
+                encoder.set_property(
+                    "gop-size",
+                    i32::try_from(config.keyframe_interval).unwrap_or(30),
+                );
                 if config.low_latency {
                     encoder.set_property("preset", 5u32); // low-latency-hq
                     encoder.set_property("zerolatency", true);
@@ -420,8 +428,10 @@ impl VideoEncoder {
                 DisplayStreamError::Encoder("Failed to get mutable buffer reference".to_string())
             })?;
 
-            // Set timestamp
-            buffer_ref.set_pts(gst::ClockTime::from_useconds(timestamp as u64));
+            // Set timestamp (negative timestamps are invalid for ClockTime)
+            buffer_ref.set_pts(gst::ClockTime::from_useconds(
+                u64::try_from(timestamp).unwrap_or(0),
+            ));
 
             // Copy frame data
             let mut map = buffer_ref
@@ -468,8 +478,12 @@ impl VideoEncoder {
                     DisplayStreamError::Encoder(format!("Failed to map encoded buffer: {e}"))
                 })?;
 
-                let pts = buffer.pts().map_or(0, |t| t.useconds() as i64);
-                let duration = buffer.duration().map_or(0, |t| t.useconds() as i64);
+                let pts = buffer
+                    .pts()
+                    .map_or(0, |t| i64::try_from(t.useconds()).unwrap_or(i64::MAX));
+                let duration = buffer
+                    .duration()
+                    .map_or(0, |t| i64::try_from(t.useconds()).unwrap_or(i64::MAX));
 
                 // Check for keyframe flag
                 let is_keyframe = !buffer.flags().contains(gst::BufferFlags::DELTA_UNIT);

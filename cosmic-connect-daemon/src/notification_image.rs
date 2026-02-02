@@ -354,9 +354,9 @@ mod tests {
         ];
 
         let image_data = ImageData {
-            width: width as i32,
-            height: height as i32,
-            rowstride: (width * 4) as i32,
+            width,
+            height,
+            rowstride: width * 4,
             has_alpha: true,
             bits_per_sample: 8,
             channels: 4,
@@ -381,9 +381,9 @@ mod tests {
         ];
 
         let image_data = ImageData {
-            width: width as i32,
-            height: height as i32,
-            rowstride: (width * 3) as i32,
+            width,
+            height,
+            rowstride: width * 3,
             has_alpha: false,
             bits_per_sample: 8,
             channels: 3,
@@ -408,8 +408,8 @@ mod tests {
         ];
 
         let image_data = ImageData {
-            width: width as i32,
-            height: height as i32,
+            width,
+            height,
             rowstride: 12,
             has_alpha: true,
             bits_per_sample: 8,

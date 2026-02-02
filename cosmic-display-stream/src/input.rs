@@ -47,7 +47,9 @@
 //! - Proper permissions for emulated input
 
 use crate::error::{DisplayStreamError, Result};
-use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
+#[cfg(not(test))]
+use enigo::Settings;
+use enigo::{Button, Coordinate, Direction, Enigo, Mouse};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, trace, warn};
@@ -287,6 +289,8 @@ impl InputHandler {
     ///
     /// Returns error if enigo initialization fails (e.g., no libei support)
     fn ensure_enigo_initialized(&self) -> Result<bool> {
+        // mut is needed in non-test builds for the assignment in cfg(not(test)) block
+        #[allow(unused_mut)]
         let mut enigo_guard = self.enigo.lock().map_err(|e| {
             DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
         })?;
@@ -302,7 +306,7 @@ impl InputHandler {
             #[cfg(not(test))]
             {
                 debug!("Initializing enigo for input injection");
-                match Enigo::new(&Settings::default()) {
+                return match Enigo::new(&Settings::default()) {
                     Ok(enigo) => {
                         *enigo_guard = Some(enigo);
                         debug!("Enigo initialized successfully");
@@ -316,11 +320,10 @@ impl InputHandler {
                         );
                         Ok(false)
                     }
-                }
+                };
             }
-        } else {
-            Ok(true)
         }
+        Ok(true)
     }
 
     /// Update the virtual display geometry

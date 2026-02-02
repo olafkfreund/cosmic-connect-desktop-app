@@ -238,6 +238,8 @@ impl StreamConfig {
 }
 
 /// Active audio stream state
+/// Note: Some fields/methods reserved for future streaming implementation
+#[allow(dead_code)]
 struct AudioStream {
     /// Stream configuration
     config: StreamConfig,
@@ -278,6 +280,7 @@ struct AudioStream {
     playback_tx: Option<mpsc::Sender<Vec<AudioSample>>>,
 }
 
+#[allow(dead_code)]
 impl AudioStream {
     fn new(config: StreamConfig) -> Self {
         Self {

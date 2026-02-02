@@ -112,7 +112,7 @@ use tracing::error;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "video")]
-use cosmic_connect_core::plugins::camera::{CameraFrame as CoreCameraFrame, FrameType};
+use cosmic_connect_core::plugins::camera::CameraFrame as CoreCameraFrame;
 #[cfg(feature = "video")]
 use cosmic_connect_core::video::{CameraDaemon, CameraDaemonConfig, PixelFormat};
 
@@ -472,12 +472,12 @@ impl CameraPlugin {
         );
 
         // Parse resolution (format: "1280x720")
-        let (_width, _height) = resolution
+        let (width, height) = resolution
             .split_once('x')
             .and_then(|(w, h)| {
-                let width = w.parse::<u32>().ok()?;
-                let height = h.parse::<u32>().ok()?;
-                Some((width, height))
+                let w_parsed = w.parse::<u32>().ok()?;
+                let h_parsed = h.parse::<u32>().ok()?;
+                Some((w_parsed, h_parsed))
             })
             .unwrap_or((1280, 720));
 
@@ -496,8 +496,72 @@ impl CameraPlugin {
                 height,
                 fps: fps as u32,
                 output_format: PixelFormat::YUYV,
-                queue_size: 5,
-                enable_perf_monitoring: true,
+            };
+
+            let mut daemon = CameraDaemon::new(config);
+            if let Err(e) = daemon.start().await {
+                error!("Failed to start camera daemon: {}", e);
+                return;
+            }
+
+            info!("Camera daemon started successfully");
+            *self.camera_daemon.lock().await = Some(daemon);
+        }
+
+        #[cfg(not(feature = "video"))]
+        {
+            debug!("Camera start handling not available (video feature disabled)");
+        }
+    }
+
+    /// Handle start camera request (new format with structured resolution)
+    async fn handle_start_request_v2(&self, packet: &Packet, device: &Device) {
+        info!("Received camera start request (v2) from {}", device.name());
+
+        // Parse camera ID (numeric)
+        let camera_id = packet
+            .body
+            .get("cameraId")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        // Parse resolution object
+        let (width, height) = packet
+            .body
+            .get("resolution")
+            .and_then(|r| {
+                let w = r.get("width").and_then(|v| v.as_u64())? as u32;
+                let h = r.get("height").and_then(|v| v.as_u64())? as u32;
+                Some((w, h))
+            })
+            .unwrap_or((1280, 720));
+
+        let fps = packet
+            .body
+            .get("fps")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(30) as u8;
+
+        info!(
+            "Starting camera {} at {}x{} @ {}fps",
+            camera_id, width, height, fps
+        );
+
+        // Create session with formatted values for compatibility
+        let camera_id_str = format!("camera-{}", camera_id);
+        let resolution_str = format!("{}x{}", width, height);
+        let session = CameraSession::new(&camera_id_str, &resolution_str, fps, CameraQuality::Medium);
+        *self.session.lock().await = Some(session);
+
+        // Start camera daemon for V4L2 output (if video feature enabled)
+        #[cfg(feature = "video")]
+        {
+            let config = CameraDaemonConfig {
+                device_path: std::path::PathBuf::from("/dev/video10"),
+                width,
+                height,
+                fps: fps as u32,
+                output_format: PixelFormat::YUYV,
             };
 
             let mut daemon = CameraDaemon::new(config);
@@ -541,15 +605,15 @@ impl CameraPlugin {
     }
 
     /// Handle incoming camera frame
-    async fn handle_camera_frame(&self, _packet: &Packet, device: &Device) -> Result<()> {
+    async fn handle_camera_frame(&self, packet: &Packet, device: &Device) -> Result<()> {
         debug!("Received camera frame from {}", device.name());
 
         #[cfg(feature = "video")]
         {
             // Extract frame metadata from packet body
-            let frame = CoreCameraFrame::from_packet(packet).map_err(|e| {
+            let frame: CoreCameraFrame = serde_json::from_value(packet.body.clone()).map_err(|e| {
                 warn!("Failed to parse camera frame packet: {}", e);
-                e
+                crate::ProtocolError::InvalidPacket(format!("Camera frame parse error: {}", e))
             })?;
 
             debug!(
@@ -603,7 +667,8 @@ impl CameraPlugin {
         payload: Vec<u8>,
     ) -> Result<()> {
         // Parse frame metadata
-        let frame = CoreCameraFrame::from_packet(packet)?;
+        let frame: CoreCameraFrame = serde_json::from_value(packet.body.clone())
+            .map_err(|e| crate::ProtocolError::InvalidPacket(format!("Camera frame parse error: {}", e)))?;
 
         debug!(
             "Processing camera frame: type={:?}, seq={}, size={}",
@@ -619,7 +684,7 @@ impl CameraPlugin {
                 .await
                 .map_err(|e| {
                     error!("Failed to process camera frame: {}", e);
-                    crate::ProtocolError::Other(format!("Camera frame processing failed: {}", e))
+                    crate::ProtocolError::invalid_state(format!("Camera frame processing failed: {}", e))
                 })?;
 
             debug!("Camera frame processed successfully");
@@ -701,7 +766,7 @@ impl Plugin for CameraPlugin {
 
     async fn handle_packet(&mut self, packet: &Packet, device: &mut Device) -> Result<()> {
         if packet.is_type(CAMERA_REQUEST) {
-            // Parse command from packet body
+            // Parse command from packet body (legacy format)
             if let Some(command) = packet.body.get("command").and_then(|v| v.as_str()) {
                 match command {
                     "list" => self.handle_list_request(packet, device).await,
@@ -712,6 +777,12 @@ impl Plugin for CameraPlugin {
                     }
                 }
             }
+        } else if packet.is_type("cconnect.camera.start") {
+            // New format: handle start request with structured resolution
+            self.handle_start_request_v2(packet, device).await;
+        } else if packet.is_type("cconnect.camera.stop") {
+            // New format: handle stop request
+            self.handle_stop_request(packet, device).await;
         } else if packet.is_type(CAMERA_FRAME)
             || packet.is_type("cconnect.camera.frame")
             || packet.is_type("kdeconnect.camera")
@@ -823,62 +894,61 @@ pub fn create_camera_list_request() -> Packet {
 /// Create a start camera request packet
 ///
 /// Requests to start a camera stream with specified configuration.
+/// Uses the format compatible with Android/KDE Connect protocol.
 ///
 /// # Parameters
 ///
-/// - `camera_id`: Camera identifier to start
-/// - `resolution`: Desired resolution (e.g., "1280x720")
+/// - `camera_id`: Camera identifier (numeric index, e.g., 0 for back camera)
+/// - `width`: Desired video width in pixels
+/// - `height`: Desired video height in pixels
 /// - `fps`: Desired frame rate
-/// - `quality`: Quality setting
+/// - `bitrate`: Video bitrate in kbps (e.g., 2000 for 2 Mbps)
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use cosmic_connect_core::plugins::camera::{create_camera_start_request, CameraQuality};
+/// use cosmic_connect_protocol::plugins::camera::create_camera_start_request;
 ///
-/// let packet = create_camera_start_request(
-///     "camera-0",
-///     "1280x720",
-///     30,
-///     CameraQuality::Medium
-/// );
+/// // Start back camera at 720p, 30fps, 2Mbps
+/// let packet = create_camera_start_request(0, 1280, 720, 30, 2000);
 /// // Send packet to device...
 /// ```
 pub fn create_camera_start_request(
-    camera_id: &str,
-    resolution: &str,
-    fps: u8,
-    quality: CameraQuality,
+    camera_id: u32,
+    width: u32,
+    height: u32,
+    fps: u32,
+    bitrate: u32,
 ) -> Packet {
     let body = json!({
-        "command": "start",
         "cameraId": camera_id,
-        "resolution": resolution,
+        "resolution": {
+            "width": width,
+            "height": height
+        },
         "fps": fps,
-        "quality": quality.as_str()
+        "bitrate": bitrate,
+        "codec": "h264"
     });
 
-    Packet::new(CAMERA_REQUEST, body)
+    Packet::new("cconnect.camera.start", body)
 }
 
 /// Create a stop camera request packet
 ///
 /// Requests to stop the active camera stream.
+/// Uses the format compatible with Android/KDE Connect protocol.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use cosmic_connect_core::plugins::camera::create_camera_stop_request;
+/// use cosmic_connect_protocol::plugins::camera::create_camera_stop_request;
 ///
 /// let packet = create_camera_stop_request();
 /// // Send packet to device...
 /// ```
 pub fn create_camera_stop_request() -> Packet {
-    let body = json!({
-        "command": "stop"
-    });
-
-    Packet::new(CAMERA_REQUEST, body)
+    Packet::new("cconnect.camera.stop", json!({}))
 }
 
 #[cfg(test)]
@@ -960,32 +1030,25 @@ mod tests {
 
     #[test]
     fn test_create_start_request() {
-        let packet = create_camera_start_request("camera-0", "1280x720", 30, CameraQuality::Medium);
+        let packet = create_camera_start_request(0, 1280, 720, 30, 2000);
 
-        assert_eq!(packet.packet_type, "cconnect.camera.request");
-        assert_eq!(
-            packet.body.get("command").and_then(|v| v.as_str()),
-            Some("start")
-        );
-        assert_eq!(
-            packet.body.get("cameraId").and_then(|v| v.as_str()),
-            Some("camera-0")
-        );
-        assert_eq!(
-            packet.body.get("resolution").and_then(|v| v.as_str()),
-            Some("1280x720")
-        );
+        assert_eq!(packet.packet_type, "cconnect.camera.start");
+        assert_eq!(packet.body.get("cameraId").and_then(|v| v.as_u64()), Some(0));
+
+        let resolution = packet.body.get("resolution").unwrap();
+        assert_eq!(resolution.get("width").and_then(|v| v.as_u64()), Some(1280));
+        assert_eq!(resolution.get("height").and_then(|v| v.as_u64()), Some(720));
+
         assert_eq!(packet.body.get("fps").and_then(|v| v.as_u64()), Some(30));
+        assert_eq!(packet.body.get("bitrate").and_then(|v| v.as_u64()), Some(2000));
+        assert_eq!(packet.body.get("codec").and_then(|v| v.as_str()), Some("h264"));
     }
 
     #[test]
     fn test_create_stop_request() {
         let packet = create_camera_stop_request();
-        assert_eq!(packet.packet_type, "cconnect.camera.request");
-        assert_eq!(
-            packet.body.get("command").and_then(|v| v.as_str()),
-            Some("stop")
-        );
+        assert_eq!(packet.packet_type, "cconnect.camera.stop");
+        assert!(packet.body.as_object().map(|o| o.is_empty()).unwrap_or(false));
     }
 
     #[tokio::test]
@@ -1015,7 +1078,8 @@ mod tests {
         plugin.start().await.unwrap();
 
         let mut device = create_test_device();
-        let packet = create_camera_start_request("camera-0", "1920x1080", 30, CameraQuality::High);
+        // Use new format: camera_id=0, 1920x1080, 30fps, 3000kbps
+        let packet = create_camera_start_request(0, 1920, 1080, 30, 3000);
 
         plugin.handle_packet(&packet, &mut device).await.unwrap();
 

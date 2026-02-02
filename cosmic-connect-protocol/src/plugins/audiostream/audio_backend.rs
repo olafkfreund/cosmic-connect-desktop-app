@@ -223,6 +223,7 @@ impl AudioBackend {
     }
 
     /// Get current configuration
+    #[allow(dead_code)]
     pub fn config(&self) -> &BackendConfig {
         &self.config
     }

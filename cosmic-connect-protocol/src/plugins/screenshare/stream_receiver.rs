@@ -11,8 +11,10 @@ use tracing::info;
 const MAGIC_HEADER: &[u8; 4] = b"CSMR";
 
 #[cfg(feature = "remotedesktop")]
+#[allow(dead_code)]
 const HEADER_SIZE: usize = 12;
 #[cfg(feature = "remotedesktop")]
+#[allow(dead_code)]
 const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024; // 10MB sanity limit
 
 /// Stream receiver that handles the TCP connection and parses frames

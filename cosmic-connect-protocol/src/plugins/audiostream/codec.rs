@@ -37,6 +37,7 @@ unsafe impl Sync for OpusCodec {}
 
 /// Stub Opus codec when feature is disabled
 #[cfg(not(feature = "opus"))]
+#[allow(dead_code)]
 pub struct OpusCodec {
     sample_rate: u32,
     channels: u8,
@@ -215,16 +216,19 @@ impl OpusCodec {
     }
 
     /// Get frame size in samples per channel
+    #[allow(dead_code)]
     pub fn frame_size(&self) -> usize {
         self.frame_size
     }
 
     /// Get sample rate
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     /// Get channel count
+    #[allow(dead_code)]
     pub fn channels(&self) -> u8 {
         self.channels
     }
@@ -262,22 +266,26 @@ impl OpusCodec {
     }
 
     /// Get frame size in samples per channel
+    #[allow(dead_code)]
     pub fn frame_size(&self) -> usize {
         960 // 20ms at 48kHz
     }
 
     /// Get sample rate
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     /// Get channel count
+    #[allow(dead_code)]
     pub fn channels(&self) -> u8 {
         self.channels
     }
 }
 
 /// PCM codec (uncompressed)
+#[allow(dead_code)]
 pub struct PcmCodec {
     sample_rate: u32,
     channels: u8,
@@ -328,11 +336,13 @@ impl PcmCodec {
     }
 
     /// Get sample rate
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     /// Get channel count
+    #[allow(dead_code)]
     pub fn channels(&self) -> u8 {
         self.channels
     }
@@ -349,6 +359,7 @@ pub struct AacCodec {
 
 /// Stub AAC codec when feature is disabled
 #[cfg(not(feature = "aac"))]
+#[allow(dead_code)]
 pub struct AacCodec {
     sample_rate: u32,
     channels: u8,
@@ -592,21 +603,25 @@ impl AacCodec {
     }
 
     /// Get frame size in samples per channel
+    #[allow(dead_code)]
     pub fn frame_size(&self) -> usize {
         self.frame_size
     }
 
     /// Get sample rate
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     /// Get channel count
+    #[allow(dead_code)]
     pub fn channels(&self) -> u8 {
         self.channels
     }
 
     /// Get bitrate
+    #[allow(dead_code)]
     pub fn bitrate(&self) -> u32 {
         self.bitrate
     }
@@ -615,7 +630,7 @@ impl AacCodec {
 #[cfg(not(feature = "aac"))]
 impl AacCodec {
     /// Create new AAC codec (stub - always fails)
-    pub fn new(sample_rate: u32, channels: u8, bitrate: u32) -> Result<Self> {
+    pub fn new(_sample_rate: u32, _channels: u8, _bitrate: u32) -> Result<Self> {
         Err(ProtocolError::InvalidPacket(
             "AAC codec not available - compile with 'aac' feature and install required libraries"
                 .to_string(),
@@ -637,21 +652,25 @@ impl AacCodec {
     }
 
     /// Get frame size in samples per channel
+    #[allow(dead_code)]
     pub fn frame_size(&self) -> usize {
         1024 // Default AAC frame size at 48kHz
     }
 
     /// Get sample rate
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
     /// Get channel count
+    #[allow(dead_code)]
     pub fn channels(&self) -> u8 {
         self.channels
     }
 
     /// Get bitrate
+    #[allow(dead_code)]
     pub fn bitrate(&self) -> u32 {
         self.bitrate
     }

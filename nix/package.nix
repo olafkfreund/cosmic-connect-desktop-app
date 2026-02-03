@@ -41,7 +41,7 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "cosmic-connect";
-  version = "0.9.1";
+  version = "0.11.1";
 
   # Use cleanSourceWith to exclude cosmic-connect-core (git submodule)
   # Cargo will fetch cosmic-connect-core as a git dependency via allowBuiltinFetchGit
@@ -121,7 +121,7 @@ rustPlatform.buildRustPackage rec {
     "--workspace"
     "--bins"
     "--features"
-    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus"
+    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/audiostream-opus,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus"
   ];
 
   # Skip tests for now - test compilation has issues with json! macro imports

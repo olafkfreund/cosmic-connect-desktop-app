@@ -41,7 +41,9 @@ name = "cosmic-connect-daemon"
 path = "src/main.rs"
 
 [features]
-default = ["video"]
+default = ["video", "screenshare", "remotedesktop", "audiostream"]
 remotedesktop = ["cosmic-connect-protocol/remotedesktop"]
 screenshare = ["cosmic-connect-protocol/screenshare"]
 video = ["cosmic-connect-protocol/video"]
+audiostream = ["cosmic-connect-protocol/audiostream"]
+audiostream-opus = ["cosmic-connect-protocol/audiostream-opus"]

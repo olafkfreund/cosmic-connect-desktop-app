@@ -646,10 +646,16 @@ impl ConnectionManager {
                         match cmd {
                             ConnectionCommand::SendPacket(packet) => {
                                 // Convert applet Packet to core Packet for TLS
+                                debug!("Connection task sending packet '{}' to {}", packet.packet_type, device_id);
                                 let core_packet = packet.to_core_packet();
-                                if let Err(e) = connection.send_packet(&core_packet).await {
-                                    error!("Failed to send packet to {}: {}", device_id, e);
-                                    break;
+                                match connection.send_packet(&core_packet).await {
+                                    Ok(_) => {
+                                        debug!("Packet '{}' successfully written to socket for {}", packet.packet_type, device_id);
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to send packet '{}' to {}: {}", packet.packet_type, device_id, e);
+                                        break;
+                                    }
                                 }
                             }
                             ConnectionCommand::Close => {

@@ -3450,15 +3450,23 @@ impl CConnectInterface {
             "bitrate": bitrate,
             "codec": "h264",
         });
-        let packet = Packet::new("cconnect.camera.start", body);
+        let packet = Packet::new("cconnect.camera.start", body.clone());
+
+        debug!(
+            "Camera start packet created: type={}, body={}",
+            packet.packet_type,
+            serde_json::to_string(&body).unwrap_or_default()
+        );
 
         let conn_manager = self.connection_manager.read().await;
+        debug!("Sending camera start packet to connection manager");
+
         conn_manager
             .send_packet(&device_id, &packet)
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to send packet: {}", e)))?;
 
-        info!("Camera stream start request sent to device {}", device_id);
+        info!("Camera stream start request sent to device {} - packet type: {}", device_id, packet.packet_type);
         Ok(())
     }
 

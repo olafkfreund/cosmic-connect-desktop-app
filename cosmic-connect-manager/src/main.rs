@@ -51,10 +51,29 @@ const APP_ID: &str = "com.system76.CosmicConnectManager";
 #[command(name = "cosmic-connect-manager")]
 #[command(about = "COSMIC Connect Device Manager")]
 pub struct Args {
+    /// Device ID to work with (legacy)
     #[arg(long)]
     pub device: Option<String>,
+
+    /// Action to perform (legacy)
     #[arg(long)]
     pub action: Option<String>,
+
+    /// Select and show device details on launch (for desktop icons)
+    #[arg(long)]
+    pub select_device: Option<String>,
+
+    /// Navigate to specific tab (share, files, remote-desktop, etc.)
+    #[arg(long)]
+    pub tab: Option<String>,
+
+    /// Execute device action immediately (ping, find, send-file, clipboard, etc.)
+    #[arg(long)]
+    pub device_action: Option<String>,
+
+    /// Files to send to the device (for drag & drop support)
+    #[arg(last = true)]
+    pub files: Vec<String>,
 }
 
 /// Device type category for filtering actions
@@ -282,6 +301,60 @@ fn connection_status(device: &DeviceInfo) -> &'static str {
     }
 }
 
+/// Convert a file:// URI to a filesystem path
+///
+/// Desktop entries use %U which passes file:// URIs. This function
+/// extracts the path component and handles URL decoding.
+fn url_to_path(uri: &str) -> Option<String> {
+    if !uri.starts_with("file://") {
+        return None;
+    }
+
+    // Extract path after file://
+    let path = uri.strip_prefix("file://")?;
+
+    // URL-decode the path (handle %20 -> space, etc.)
+    let decoded = urlencoding_decode(path);
+
+    // Handle file://localhost/path and file:///path
+    let path = if decoded.starts_with("localhost/") {
+        decoded.strip_prefix("localhost")?.to_string()
+    } else if decoded.starts_with('/') {
+        decoded
+    } else {
+        // Relative path, prepend /
+        format!("/{}", decoded)
+    };
+
+    Some(path)
+}
+
+/// Simple URL decoding for file paths (handles common cases like %20 -> space)
+fn urlencoding_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            // Try to decode %XX
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            // Invalid escape, keep as-is
+            result.push('%');
+            result.push_str(&hex);
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -386,6 +459,9 @@ pub enum Message {
     ActionSuccess(String),
     ActionError(String),
     ClearStatusMessage,
+    // CLI args processing (Issue #143 - Desktop icons)
+    ProcessPendingCliArgs,
+    SendFilesToDevice(String, Vec<String>), // device_id, file_paths
     None,
 }
 
@@ -399,6 +475,11 @@ pub struct CosmicConnectManager {
     selected_device: Option<String>,
     _initial_device: Option<String>,
     _initial_action: Option<DeviceAction>,
+    // CLI args for desktop icon integration (Issue #143)
+    pending_select_device: Option<String>,
+    pending_tab: Option<String>,
+    pending_device_action: Option<String>,
+    pending_files: Vec<String>,
     dbus_ready: bool,
     auto_start_enabled: bool,
     show_notifications: bool,
@@ -1688,6 +1769,28 @@ impl Application for CosmicConnectManager {
         let initial_device = flags.device.clone();
         let initial_action = flags.action.as_deref().and_then(DeviceAction::from_str);
 
+        // Issue #143: Desktop icons CLI args
+        // Prefer select_device over device for desktop icon integration
+        let pending_select_device = flags.select_device.clone().or_else(|| flags.device.clone());
+        let pending_tab = flags.tab.clone();
+        let pending_device_action = flags.device_action.clone();
+        let pending_files = flags.files.clone();
+
+        // Log CLI args for debugging
+        if pending_select_device.is_some()
+            || pending_tab.is_some()
+            || pending_device_action.is_some()
+            || !pending_files.is_empty()
+        {
+            tracing::info!(
+                "CLI args: select_device={:?}, tab={:?}, device_action={:?}, files={:?}",
+                pending_select_device,
+                pending_tab,
+                pending_device_action,
+                pending_files
+            );
+        }
+
         let mut plugin_states = HashMap::new();
         plugin_states.insert("battery".to_string(), true);
         plugin_states.insert("clipboard".to_string(), true);
@@ -1731,6 +1834,11 @@ impl Application for CosmicConnectManager {
                 selected_device: initial_device.clone(),
                 _initial_device: initial_device,
                 _initial_action: initial_action,
+                // CLI args for desktop icon integration (Issue #143)
+                pending_select_device,
+                pending_tab,
+                pending_device_action,
+                pending_files,
                 dbus_ready: false,
                 auto_start_enabled: true,
                 show_notifications: true,
@@ -1889,6 +1997,8 @@ impl Application for CosmicConnectManager {
                 Task::batch(vec![
                     cosmic::task::future(async { Message::RefreshDevices }),
                     cosmic::task::future(async { Message::RefreshMprisPlayers }),
+                    // Issue #143: Process CLI args after DBus is ready
+                    cosmic::task::future(async { Message::ProcessPendingCliArgs }),
                 ])
             }
             Message::DbusError(err) => {
@@ -2746,6 +2856,106 @@ impl Application for CosmicConnectManager {
             Message::ClearStatusMessage => {
                 self.status_message = None;
                 Task::none()
+            }
+            // Issue #143: Desktop icons CLI args processing
+            Message::ProcessPendingCliArgs => {
+                let mut tasks = Vec::new();
+
+                // Handle --tab: navigate to specific tab (works independently)
+                if let Some(tab) = self.pending_tab.take() {
+                    tracing::info!("Processing CLI arg: tab={}", tab);
+                    let page = match tab.to_lowercase().as_str() {
+                        "share" | "files" => Page::Transfers,
+                        "settings" => Page::Settings,
+                        "history" => Page::History,
+                        _ => Page::Devices,
+                    };
+                    self.active_page = page;
+                }
+
+                // Handle --select-device: select the device
+                if let Some(device_id) = self.pending_select_device.take() {
+                    tracing::info!("Processing CLI arg: select_device={}", device_id);
+                    self.selected_device = Some(device_id.clone());
+
+                    // Handle --device-action: execute action immediately (requires device)
+                    if let Some(action_str) = self.pending_device_action.take() {
+                        tracing::info!(
+                            "Processing CLI arg: device_action={} for device={}",
+                            action_str,
+                            device_id
+                        );
+                        if let Some(action) = DeviceAction::from_str(&action_str) {
+                            tasks.push(self.update(Message::ExecuteAction(device_id.clone(), action)));
+                        }
+                    }
+
+                    // Handle files: send files to device (requires device)
+                    let files = std::mem::take(&mut self.pending_files);
+                    if !files.is_empty() {
+                        tracing::info!("Processing CLI arg: {} files to send", files.len());
+                        tasks.push(self.update(Message::SendFilesToDevice(device_id, files)));
+                    }
+                } else {
+                    // Clear device-dependent args if no device specified
+                    if self.pending_device_action.take().is_some() {
+                        tracing::warn!("--device-action requires --select-device, ignoring");
+                    }
+                    if !self.pending_files.is_empty() {
+                        self.pending_files.clear();
+                        tracing::warn!("File arguments require --select-device, ignoring");
+                    }
+                }
+
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
+            }
+            Message::SendFilesToDevice(device_id, files) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    cosmic::task::future(async move {
+                        for file_arg in files {
+                            // Convert file:// URIs to paths (%U in .desktop passes URIs)
+                            let file_path = if file_arg.starts_with("file://") {
+                                // URL-decode and extract path from file:// URI
+                                match url_to_path(&file_arg) {
+                                    Some(path) => path,
+                                    None => {
+                                        tracing::warn!("Invalid file URI: {}", file_arg);
+                                        continue;
+                                    }
+                                }
+                            } else if file_arg.starts_with("http://")
+                                || file_arg.starts_with("https://")
+                            {
+                                tracing::warn!("Cannot send remote URL: {}", file_arg);
+                                continue;
+                            } else {
+                                file_arg.clone()
+                            };
+
+                            tracing::info!("Sending file {} to device {}", file_path, device_id);
+                            match client.share_file(&device_id, &file_path).await {
+                                Ok(_) => {
+                                    tracing::info!("File {} sent successfully", file_path);
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to send file {}: {}", file_path, e);
+                                    return Message::ActionError(format!(
+                                        "Failed to send file: {}",
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                        Message::ActionSuccess("Files sent successfully".to_string())
+                    })
+                } else {
+                    Task::none()
+                }
             }
             Message::None => Task::none(),
         }

@@ -24,6 +24,25 @@ fn get_device_icon(device_type: DeviceType) -> &'static str {
     }
 }
 
+/// Sanitize a string for use in .desktop file fields
+///
+/// Removes control characters (newlines, carriage returns, etc.) that could
+/// break the .desktop file format or potentially inject malicious keys.
+///
+/// # Arguments
+///
+/// * `input` - The string to sanitize
+///
+/// # Returns
+///
+/// Sanitized string safe for use in .desktop files
+fn sanitize_desktop_field(input: &str) -> String {
+    input
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
+}
+
 /// Generate .desktop file content for a device
 ///
 /// Creates a complete desktop entry with the device name, type-appropriate icon,
@@ -38,9 +57,11 @@ fn get_device_icon(device_type: DeviceType) -> &'static str {
 ///
 /// String containing the complete .desktop file content
 pub fn generate_desktop_entry(device: &Device, config: Option<&DeviceConfig>) -> String {
-    let device_name = config
+    // Sanitize device name to prevent .desktop file injection attacks
+    let raw_name = config
         .and_then(|c| c.nickname.as_ref())
         .unwrap_or(&device.info.device_name);
+    let device_name = sanitize_desktop_field(raw_name);
 
     let icon = get_device_icon(device.info.device_type);
     let device_id = &device.info.device_id;
@@ -53,17 +74,20 @@ pub fn generate_desktop_entry(device: &Device, config: Option<&DeviceConfig>) ->
         "Available"
     };
 
+    // Issue #143: Updated desktop entry with correct CLI args and drag & drop support
     format!(
         r#"[Desktop Entry]
 Version=1.0
 Type=Application
 Name={name}
-Comment={status} {device_type} device
+Comment={status} {device_type} device - Drop files here to send
 Icon={icon}
-Exec=cosmic-connect-manager --select-device {device_id}
+Exec=cosmic-connect-manager --select-device {device_id} %U
 Terminal=false
-Categories=Network;
-Keywords=phone;device;sync;transfer;
+Categories=Network;FileTransfer;
+Keywords=phone;device;sync;transfer;connect;
+MimeType=application/octet-stream;text/plain;image/*;video/*;audio/*;
+Actions=SendFile;Ping;Find;Browse;
 
 [Desktop Action SendFile]
 Name=Send File
@@ -71,11 +95,11 @@ Exec=cosmic-connect-manager --select-device {device_id} --tab share
 
 [Desktop Action Ping]
 Name=Ping Device
-Exec=cosmic-connect-manager --device-action {device_id} ping
+Exec=cosmic-connect-manager --select-device {device_id} --device-action ping
 
 [Desktop Action Find]
 Name=Find Device
-Exec=cosmic-connect-manager --device-action {device_id} findmyphone
+Exec=cosmic-connect-manager --select-device {device_id} --device-action find
 
 [Desktop Action Browse]
 Name=Browse Files
@@ -89,7 +113,7 @@ Exec=cosmic-connect-manager --select-device {device_id} --tab files
     )
 }
 
-/// Get the path where desktop icons should be saved
+/// Get the path where desktop icons should be saved in applications directory
 ///
 /// Returns `~/.local/share/applications/cosmic-connect-{device_id}.desktop`
 ///
@@ -108,6 +132,28 @@ pub fn get_desktop_icon_path(device_id: &str) -> PathBuf {
         .join("applications");
 
     applications_dir.join(format!("cosmic-connect-{}.desktop", device_id))
+}
+
+/// Get the path for desktop icon on the actual desktop (Issue #143)
+///
+/// Uses `dirs::desktop_dir()` to correctly respect the user's configured Desktop
+/// location from `~/.config/user-dirs.dirs`, with fallback to `~/Desktop`.
+///
+/// # Arguments
+///
+/// * `device_id` - The device ID
+///
+/// # Returns
+///
+/// PathBuf to the desktop file location on the actual desktop
+pub fn get_user_desktop_icon_path(device_id: &str) -> PathBuf {
+    // Use dirs crate to properly read XDG user-dirs.dirs configuration
+    let desktop_dir = dirs::desktop_dir().unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join("Desktop")
+    });
+
+    desktop_dir.join(format!("cosmic-connect-{}.desktop", device_id))
 }
 
 /// Save desktop icon file for a device
@@ -138,10 +184,51 @@ pub fn save_desktop_icon(device_id: &str, content: &str) -> Result<()> {
     Ok(())
 }
 
+/// Save desktop icon file to user's Desktop folder (Issue #143)
+///
+/// Creates the desktop entry file on the actual desktop (~/Desktop/) for
+/// visibility and drag & drop support.
+///
+/// # Arguments
+///
+/// * `device_id` - The device ID
+/// * `content` - The .desktop file content
+///
+/// # Returns
+///
+/// Result indicating success or failure
+pub fn save_user_desktop_icon(device_id: &str, content: &str) -> Result<()> {
+    let desktop_path = get_user_desktop_icon_path(device_id);
+
+    // Ensure Desktop directory exists
+    if let Some(parent) = desktop_path.parent() {
+        // Only create if it doesn't exist - don't fail if Desktop doesn't exist
+        if !parent.exists() {
+            debug!("Desktop directory doesn't exist: {:?}", parent);
+            return Ok(());
+        }
+    }
+
+    // Write desktop file
+    fs::write(&desktop_path, content).context("Failed to write desktop file to Desktop")?;
+
+    // Make executable (required for .desktop files on desktop)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&desktop_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&desktop_path, perms)?;
+    }
+
+    info!("Created desktop icon on Desktop at {:?}", desktop_path);
+    Ok(())
+}
+
 /// Remove desktop icon file for a device
 ///
 /// Deletes the desktop entry file if it exists. Does not fail if the file
-/// doesn't exist.
+/// doesn't exist. Also removes from user's Desktop folder.
 ///
 /// # Arguments
 ///
@@ -151,13 +238,20 @@ pub fn save_desktop_icon(device_id: &str, content: &str) -> Result<()> {
 ///
 /// Result indicating success or failure
 pub fn remove_desktop_icon(device_id: &str) -> Result<()> {
+    // Remove from applications directory
     let desktop_path = get_desktop_icon_path(device_id);
-
     if desktop_path.exists() {
         fs::remove_file(&desktop_path).context("Failed to remove desktop file")?;
         info!("Removed desktop icon at {:?}", desktop_path);
     } else {
         debug!("Desktop icon does not exist: {:?}", desktop_path);
+    }
+
+    // Also remove from user's Desktop (Issue #143)
+    let user_desktop_path = get_user_desktop_icon_path(device_id);
+    if user_desktop_path.exists() {
+        fs::remove_file(&user_desktop_path).context("Failed to remove desktop file from Desktop")?;
+        info!("Removed desktop icon from Desktop at {:?}", user_desktop_path);
     }
 
     Ok(())
@@ -178,7 +272,13 @@ pub fn remove_desktop_icon(device_id: &str) -> Result<()> {
 /// Result indicating success or failure
 pub fn update_desktop_icon(device: &Device, config: Option<&DeviceConfig>) -> Result<()> {
     let content = generate_desktop_entry(device, config);
+
+    // Save to applications directory (for app launchers)
     save_desktop_icon(&device.info.device_id, &content)?;
+
+    // Issue #143: Also save to user's Desktop for visibility and drag & drop
+    save_user_desktop_icon(&device.info.device_id, &content)?;
+
     debug!("Updated desktop icon for device: {}", device.info.device_id);
     Ok(())
 }
@@ -239,7 +339,7 @@ mod tests {
         assert!(content.contains("Type=Application"));
         assert!(content.contains("Name=Test Phone"));
         assert!(content.contains("Icon=phone-symbolic"));
-        assert!(content.contains("Comment=Connected phone device"));
+        assert!(content.contains("Comment=Connected phone device - Drop files here to send"));
         assert!(content.contains(&device.info.device_id));
 
         // Verify actions
@@ -368,19 +468,19 @@ mod tests {
         // Test connected device
         let connected = create_test_device();
         let content = generate_desktop_entry(&connected, None);
-        assert!(content.contains("Comment=Connected phone device"));
+        assert!(content.contains("Comment=Connected phone device - Drop files here to send"));
 
         // Test paired but disconnected
         let mut paired = connected.clone();
         paired.connection_state = cosmic_connect_protocol::ConnectionState::Disconnected;
         let content = generate_desktop_entry(&paired, None);
-        assert!(content.contains("Comment=Paired phone device"));
+        assert!(content.contains("Comment=Paired phone device - Drop files here to send"));
 
         // Test unpaired
         let mut unpaired = paired.clone();
         unpaired.pairing_status = PairingStatus::Unpaired;
         unpaired.is_trusted = false;
         let content = generate_desktop_entry(&unpaired, None);
-        assert!(content.contains("Comment=Available phone device"));
+        assert!(content.contains("Comment=Available phone device - Drop files here to send"));
     }
 }

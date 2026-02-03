@@ -258,7 +258,6 @@ impl NotificationUrgency {
     }
 }
 
-
 /// Notification action button
 ///
 /// Represents an actionable button in a notification with both an identifier
@@ -642,7 +641,8 @@ impl Notification {
     /// assert!(notif.has_image());
     /// ```
     pub fn has_image(&self) -> bool {
-        self.image_data.is_some() || self.sender_avatar.is_some()
+        // Issue #180: Check all image sources including app_icon as fallback
+        self.image_data.is_some() || self.sender_avatar.is_some() || self.app_icon.is_some()
     }
 
     /// Check if notification has clickable links
@@ -676,11 +676,20 @@ impl Notification {
     pub fn get_image_bytes(&self) -> Option<Vec<u8>> {
         use base64::{engine::general_purpose, Engine as _};
 
+        // Issue #180: Priority order for images:
+        // 1. image_data - Main notification image/large icon
+        // 2. sender_avatar - For messaging notifications
+        // 3. app_icon - Fallback to app icon
         self.image_data
             .as_ref()
             .and_then(|data| general_purpose::STANDARD.decode(data).ok())
             .or_else(|| {
                 self.sender_avatar
+                    .as_ref()
+                    .and_then(|data| general_purpose::STANDARD.decode(data).ok())
+            })
+            .or_else(|| {
+                self.app_icon
                     .as_ref()
                     .and_then(|data| general_purpose::STANDARD.decode(data).ok())
             })
@@ -2087,6 +2096,34 @@ mod tests {
 
         let decoded = notif.get_app_icon_bytes().unwrap();
         assert_eq!(decoded, icon_data);
+    }
+
+    // Issue #180: Test app_icon fallback in get_image_bytes()
+    #[test]
+    fn test_get_image_bytes_app_icon_fallback() {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let mut notif = Notification::new("1", "App", "Title", "Text", true);
+
+        // No images - should return None
+        assert!(notif.get_image_bytes().is_none());
+        assert!(!notif.has_image());
+
+        // Only app_icon - should use it as fallback
+        let icon_data = b"app icon data";
+        notif.app_icon = Some(general_purpose::STANDARD.encode(icon_data));
+        assert!(notif.has_image());
+        assert_eq!(notif.get_image_bytes().unwrap(), icon_data);
+
+        // Add sender_avatar - should take priority over app_icon
+        let avatar_data = b"sender avatar data";
+        notif.sender_avatar = Some(general_purpose::STANDARD.encode(avatar_data));
+        assert_eq!(notif.get_image_bytes().unwrap(), avatar_data);
+
+        // Add image_data - should take priority over all others
+        let image_data = b"main image data";
+        notif.image_data = Some(general_purpose::STANDARD.encode(image_data));
+        assert_eq!(notif.get_image_bytes().unwrap(), image_data);
     }
 
     #[test]

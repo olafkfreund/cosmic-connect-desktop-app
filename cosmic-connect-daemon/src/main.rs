@@ -55,9 +55,9 @@ use dbus::DbusServer;
 use diagnostics::{BuildInfo, Cli, DiagnosticCommand, Metrics};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
+use base64::{engine::general_purpose, Engine as _};
 use cosmic_connect_protocol::plugins::remotedesktop::RemoteDesktopPluginFactory;
 use std::sync::Arc;
-use base64::{engine::general_purpose, Engine as _};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, trace, warn};
@@ -1771,8 +1771,15 @@ impl Daemon {
                 //     }
                 // }
             }
-            ConnectionEvent::Disconnected { device_id, reason, reconnect } => {
-                info!("Device {} disconnected (reason: {:?}, reconnect: {})", device_id, reason, reconnect);
+            ConnectionEvent::Disconnected {
+                device_id,
+                reason,
+                reconnect,
+            } => {
+                info!(
+                    "Device {} disconnected (reason: {:?}, reconnect: {})",
+                    device_id, reason, reconnect
+                );
 
                 // Get device name for notifications
                 let _device_name = {
@@ -1791,7 +1798,10 @@ impl Daemon {
                         info!("Cleaned up plugins for device {}", device_id);
                     }
                 } else {
-                    info!("Socket replacement for {} - preserving plugin state", device_id);
+                    info!(
+                        "Socket replacement for {} - preserving plugin state",
+                        device_id
+                    );
                 }
 
                 // Emit DBus signal for device state changed
@@ -1947,7 +1957,9 @@ impl Daemon {
                             if let Some(port) = port_value.as_u64() {
                                 debug!(
                                     "Receiving camera frame payload: {} bytes from {}:{}",
-                                    payload_size, remote_addr.ip(), port
+                                    payload_size,
+                                    remote_addr.ip(),
+                                    port
                                 );
 
                                 // Spawn task to receive payload without blocking the event loop
@@ -1959,7 +1971,8 @@ impl Daemon {
 
                                 tokio::spawn(async move {
                                     // Connect to payload port on Android device
-                                    let payload_addr = std::net::SocketAddr::new(remote_ip, port as u16);
+                                    let payload_addr =
+                                        std::net::SocketAddr::new(remote_ip, port as u16);
 
                                     // Android uses TRADITIONAL TLS roles for payload transfers (not inverted):
                                     // - TCP initiator (us) acts as TLS CLIENT
@@ -1967,10 +1980,15 @@ impl Daemon {
                                     // This differs from the main connection which uses inverted roles.
                                     match tokio::net::TcpStream::connect(payload_addr).await {
                                         Ok(tcp_stream) => {
-                                            debug!("TCP connected to payload port {} for camera frame", payload_addr);
+                                            debug!(
+                                                "TCP connected to payload port {} for camera frame",
+                                                payload_addr
+                                            );
 
                                             // Perform TLS handshake as CLIENT (traditional role for payload transfers)
-                                            let connector = TlsConnector::from(tls_config_clone.client_config());
+                                            let connector = TlsConnector::from(
+                                                tls_config_clone.client_config(),
+                                            );
                                             let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from("kdeconnect")
                                                 .expect("invalid server name");
 
@@ -1981,15 +1999,26 @@ impl Daemon {
                                                     // Read payload over TLS
                                                     use tokio::io::AsyncReadExt;
 
-                                                    let mut payload = vec![0u8; payload_size as usize];
-                                                    match tls_stream.read_exact(&mut payload).await {
+                                                    let mut payload =
+                                                        vec![0u8; payload_size as usize];
+                                                    match tls_stream.read_exact(&mut payload).await
+                                                    {
                                                         Ok(_) => {
                                                             debug!("Received complete camera frame payload: {} bytes over TLS", payload_size);
 
                                                             // Pass payload to camera plugin
-                                                            let plug_manager = plugin_manager_clone.write().await;
-                                                            if let Some(camera_plugin) = plug_manager.get_device_plugin(&device_id_clone, "camera") {
-                                                                if let Some(camera) = camera_plugin.as_any().downcast_ref::<CameraPlugin>() {
+                                                            let plug_manager =
+                                                                plugin_manager_clone.write().await;
+                                                            if let Some(camera_plugin) =
+                                                                plug_manager.get_device_plugin(
+                                                                    &device_id_clone,
+                                                                    "camera",
+                                                                )
+                                                            {
+                                                                if let Some(camera) = camera_plugin
+                                                                    .as_any()
+                                                                    .downcast_ref::<CameraPlugin>()
+                                                                {
                                                                     if let Err(e) = camera.process_camera_frame_payload(&packet_clone, payload).await {
                                                                         error!("Failed to process camera frame payload: {}", e);
                                                                     } else {
@@ -2013,7 +2042,10 @@ impl Daemon {
                                             }
                                         }
                                         Err(e) => {
-                                            error!("Failed to connect to payload port {}: {}", payload_addr, e);
+                                            error!(
+                                                "Failed to connect to payload port {}: {}",
+                                                payload_addr, e
+                                            );
                                         }
                                     }
                                 });
@@ -2126,10 +2158,8 @@ impl Daemon {
                                             .unwrap_or("Notification");
 
                                         // Extract body text - prefer richBody over plain text
-                                        let rich_body = packet
-                                            .body
-                                            .get("richBody")
-                                            .and_then(|v| v.as_str());
+                                        let rich_body =
+                                            packet.body.get("richBody").and_then(|v| v.as_str());
                                         let text = packet
                                             .body
                                             .get("text")
@@ -2205,40 +2235,66 @@ impl Daemon {
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("");
 
-                                            // Check for image data
-                                            let image_data = packet
-                                                .body
-                                                .get("imageData")
-                                                .and_then(|v| v.as_str());
+                                            // Issue #180: Check multiple image sources from Android
+                                            // Priority order:
+                                            // 1. imageData - Main notification image/large icon
+                                            // 2. senderAvatar - For messaging notifications
+                                            // 3. appIcon - Fallback to app icon
+                                            debug!(
+                                                "Notification image sources: imageData={}, senderAvatar={}, appIcon={}",
+                                                packet.body.get("imageData").is_some(),
+                                                packet.body.get("senderAvatar").is_some(),
+                                                packet.body.get("appIcon").is_some()
+                                            );
 
-                                            // Process image if present
-                                            let image_bytes = if let Some(base64_data) = image_data {
-                                                // Decode base64 to bytes
-                                                match general_purpose::STANDARD.decode(base64_data) {
-                                                    Ok(bytes) => {
-                                                        // Load as image to get dimensions
-                                                        match image::load_from_memory(&bytes) {
-                                                            Ok(img) => {
-                                                                let width = img.width() as i32;
-                                                                let height = img.height() as i32;
-                                                                // Convert to RGBA8 and get raw bytes
-                                                                let rgba = img.to_rgba8();
-                                                                Some((rgba.into_raw(), width, height))
-                                                            }
-                                                            Err(e) => {
-                                                                warn!("Failed to decode notification image: {}", e);
-                                                                None
-                                                            }
+                                            // Helper closure to decode base64 image field
+                                            let try_decode_image_field =
+                                                |field: &str| -> Option<(Vec<u8>, i32, i32)> {
+                                                    let base64_data =
+                                                        packet.body.get(field)?.as_str()?;
+
+                                                    // Decode base64 to bytes
+                                                    let bytes = match general_purpose::STANDARD
+                                                        .decode(base64_data)
+                                                    {
+                                                        Ok(b) => b,
+                                                        Err(e) => {
+                                                            debug!("Failed to decode base64 for {}: {}", field, e);
+                                                            return None;
+                                                        }
+                                                    };
+
+                                                    // Load as image to get dimensions
+                                                    match image::load_from_memory(&bytes) {
+                                                        Ok(img) => {
+                                                            let width = img.width() as i32;
+                                                            let height = img.height() as i32;
+                                                            // Convert to RGBA8 and get raw bytes
+                                                            let rgba = img.to_rgba8();
+                                                            debug!(
+                                                                "Decoded {} image: {}x{}",
+                                                                field, width, height
+                                                            );
+                                                            Some((rgba.into_raw(), width, height))
+                                                        }
+                                                        Err(e) => {
+                                                            debug!(
+                                                                "Failed to decode image for {}: {}",
+                                                                field, e
+                                                            );
+                                                            None
                                                         }
                                                     }
-                                                    Err(e) => {
-                                                        warn!("Failed to decode base64 image data: {}", e);
-                                                        None
-                                                    }
-                                                }
-                                            } else {
-                                                None
-                                            };
+                                                };
+
+                                            // Extract best available image (Issue #180)
+                                            let image_bytes = try_decode_image_field("imageData")
+                                                .or_else(|| try_decode_image_field("senderAvatar"))
+                                                .or_else(|| try_decode_image_field("appIcon"));
+
+                                            if let Some((_, w, h)) = &image_bytes {
+                                                debug!("Using notification image: {}x{}", w, h);
+                                            }
 
                                             // Send notification with or without image
                                             if image_bytes.is_some() {
@@ -2256,7 +2312,10 @@ impl Daemon {
                                                     )
                                                     .await
                                                 {
-                                                    warn!("Failed to send rich notification: {}", e);
+                                                    warn!(
+                                                        "Failed to send rich notification: {}",
+                                                        e
+                                                    );
                                                 }
                                             } else {
                                                 // Use simple notification without image
@@ -2270,7 +2329,10 @@ impl Daemon {
                                                     )
                                                     .await
                                                 {
-                                                    warn!("Failed to send device notification: {}", e);
+                                                    warn!(
+                                                        "Failed to send device notification: {}",
+                                                        e
+                                                    );
                                                 }
                                             }
                                         } else {

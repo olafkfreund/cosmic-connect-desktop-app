@@ -116,12 +116,19 @@ rustPlatform.buildRustPackage rec {
   ];
 
   # Build all workspace members with all features enabled
-  # Enable all plugin features for both daemon and protocol crates
+  # Enable all plugin features for daemon, protocol, and applet crates
+  # Features:
+  #   - remotedesktop: VNC-based remote desktop (requires pipewire, openh264)
+  #   - screenshare: One-way screen sharing (requires gstreamer)
+  #   - video: V4L2 camera support
+  #   - audiostream: Audio streaming between devices (requires pipewire)
+  #   - audiostream-opus: Opus codec for audio (requires libopus)
+  #   - low_latency: Performance optimizations for remote desktop
   cargoBuildFlags = [
     "--workspace"
     "--bins"
     "--features"
-    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/audiostream-opus,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus"
+    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/audiostream-opus,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus,cosmic-connect-protocol/low_latency,cosmic-applet-connect/screenshare"
   ];
 
   # Skip tests for now - test compilation has issues with json! macro imports
@@ -263,6 +270,19 @@ rustPlatform.buildRustPackage rec {
         libGL
         libglvnd
         mesa
+      ]}"
+
+    # Wrap mirror viewer with GStreamer plugin paths for screenshare decoding
+    wrapProgram $out/bin/cosmic-connect-mirror \
+      --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${gstPluginPath}" \
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
+        wayland
+        libxkbcommon
+        libGL
+        libglvnd
+        mesa
+        gst_all_1.gstreamer
+        gst_all_1.gst-plugins-base
       ]}"
 
     # Wrap daemon with GStreamer plugin paths for screenshare capture

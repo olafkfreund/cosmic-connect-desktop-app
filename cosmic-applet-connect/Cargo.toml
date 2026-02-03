@@ -35,3 +35,7 @@ path = "src/main.rs"
 [[bin]]
 name = "cosmic-connect-mirror"
 path = "src/bin/mirror.rs"
+
+[features]
+default = ["screenshare"]
+screenshare = ["cosmic-connect-protocol/screenshare"]

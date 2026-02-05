@@ -37,6 +37,58 @@ const ICON_L: u16 = 32;    // Large icons (device icons)
 const ICON_XL: u16 = 48;   // Hero/Empty state icons
 const ICON_14: u16 = 14;   // Compact icons (close buttons)
 
+// Theme spacing helper functions - reduces verbosity throughout the codebase
+// These wrap theme::active().cosmic().space_*() for cleaner code
+
+/// No spacing (0)
+fn space_none() -> u16 {
+    theme::active().cosmic().space_none()
+}
+
+/// Minimal spacing (~4px)
+fn space_xxxs() -> u16 {
+    theme::active().cosmic().space_xxxs()
+}
+
+/// Tight spacing (~8px)
+fn space_xxs() -> u16 {
+    theme::active().cosmic().space_xxs()
+}
+
+/// Extra small spacing (~12px)
+fn space_xs() -> u16 {
+    theme::active().cosmic().space_xs()
+}
+
+/// Small spacing (~16px)
+fn space_s() -> u16 {
+    theme::active().cosmic().space_s()
+}
+
+/// Medium spacing (~24px)
+fn space_m() -> u16 {
+    theme::active().cosmic().space_m()
+}
+
+/// Large spacing (~32px) - for major sections
+#[allow(dead_code)]
+fn space_l() -> u16 {
+    theme::active().cosmic().space_l()
+}
+
+/// Extra large spacing (~48px) - for hero elements
+#[allow(dead_code)]
+fn space_xl() -> u16 {
+    theme::active().cosmic().space_xl()
+}
+
+// Float variants for use with Padding::new() and arithmetic operations
+
+/// Tight spacing as f32
+fn space_xxs_f32() -> f32 {
+    f32::from(theme::active().cosmic().space_xxs())
+}
+
 /// Convert cosmic theme Srgba color to iced Color
 fn theme_color_to_iced(srgba: cosmic::theme::CosmicColor) -> Color {
     Color::from_rgba(srgba.red, srgba.green, srgba.blue, srgba.alpha)
@@ -3067,9 +3119,9 @@ impl CConnectApplet {
             horizontal_space(),
             button::icon(icon::from_name("window-close-symbolic"))
                 .on_press(Message::CloseSettingsWindow)
-                .padding(theme::active().cosmic().space_xxxs())
+                .padding(space_xxxs())
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Create content sections for different settings
@@ -3120,8 +3172,8 @@ impl CConnectApplet {
             text("For now, configure plugins globally in:").size(12),
             text("~/.config/cosmic-connect/config.toml").size(12),
         ]
-        .spacing(theme::active().cosmic().space_xs())
-        .padding(theme::active().cosmic().space_xs());
+        .spacing(space_xs())
+        .padding(space_xs());
 
         container(content)
             .width(Length::Fill)
@@ -3260,14 +3312,14 @@ impl CConnectApplet {
     }
 
     fn history_view(&self) -> Element<'_, Message> {
-        let mut history_list = column![].spacing(theme::active().cosmic().space_xxxs());
+        let mut history_list = column![].spacing(space_xxxs());
 
         if self.history.is_empty() {
             history_list = history_list.push(
                 container(cosmic::widget::text::body("No history events"))
                     .width(Length::Fill)
                     .align_x(cosmic::iced::Alignment::Center)
-                    .padding(theme::active().cosmic().space_s()),
+                    .padding(space_s()),
             );
         } else {
             // In reverse order (newest first)
@@ -3285,7 +3337,7 @@ impl CConnectApplet {
 
                 history_list = history_list.push(
                     container(row)
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .class(cosmic::theme::Container::Card),
                 );
             }
@@ -3295,7 +3347,7 @@ impl CConnectApplet {
     }
 
     fn transfer_queue_view(&self) -> Element<'_, Message> {
-        let mut transfers_list = column![].spacing(theme::active().cosmic().space_xxs());
+        let mut transfers_list = column![].spacing(space_xxs());
 
         if self.active_transfers.is_empty() {
             transfers_list = transfers_list.push(
@@ -3304,12 +3356,12 @@ impl CConnectApplet {
                         icon::from_name("folder-download-symbolic").size(ICON_XL),
                         text("No active transfers"),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_x(Horizontal::Center),
                 )
                 .width(Length::Fill)
                 .align_x(cosmic::iced::Alignment::Center)
-                .padding(theme::active().cosmic().space_s()),
+                .padding(space_s()),
             );
         } else {
             for (id, state) in &self.active_transfers {
@@ -3332,7 +3384,7 @@ impl CConnectApplet {
                 };
 
                 let menu_button = button::icon(icon::from_name("view-more-symbolic").size(ICON_S))
-                    .padding(theme::active().cosmic().space_xxxs())
+                    .padding(space_xxxs())
                     .class(cosmic::theme::Button::Transparent)
                     .on_press(menu_message);
 
@@ -3364,11 +3416,11 @@ impl CConnectApplet {
                             cosmic::widget::text::caption(format!("{:.0}%", progress)),
                         ]
                     ]
-                    .spacing(theme::active().cosmic().space_xxxs())
+                    .spacing(space_xxxs())
                     .width(Length::Fill),
                     menu_button,
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center);
 
                 // Show context menu if this transfer's menu is open
@@ -3376,8 +3428,8 @@ impl CConnectApplet {
                     let menu_items =
                         self.build_transfer_context_menu(&transfer_id, &filename, is_receiving);
 
-                    let context_menu = container(column(menu_items).spacing(theme::active().cosmic().space_xxxs()))
-                        .padding(theme::active().cosmic().space_xxxs())
+                    let context_menu = container(column(menu_items).spacing(space_xxxs()))
+                        .padding(space_xxxs())
                         .class(cosmic::theme::Container::Secondary);
 
                     transfer_row = transfer_row.push(context_menu);
@@ -3385,14 +3437,14 @@ impl CConnectApplet {
 
                 transfers_list = transfers_list.push(
                     container(transfer_row)
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .class(cosmic::theme::Container::Card),
                 );
             }
         }
 
         // Build received files history section
-        let mut history_section = column![].spacing(theme::active().cosmic().space_xxs());
+        let mut history_section = column![].spacing(space_xxs());
 
         if !self.received_files_history.is_empty() {
             history_section = history_section.push(
@@ -3400,7 +3452,7 @@ impl CConnectApplet {
                     icon::from_name("folder-recent-symbolic").size(ICON_S),
                     cosmic::widget::text::heading("Recently Received"),
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center),
             );
 
@@ -3419,7 +3471,7 @@ impl CConnectApplet {
                 let open_button: Element<'_, Message> = if received.success {
                     cosmic::widget::tooltip(
                         button::icon(icon::from_name("document-open-symbolic").size(ICON_S))
-                            .padding(theme::active().cosmic().space_xxxs())
+                            .padding(space_xxxs())
                             .class(cosmic::theme::Button::Transparent)
                             .on_press(Message::OpenTransferFile(received.filename.clone())),
                         "Open file",
@@ -3441,26 +3493,26 @@ impl CConnectApplet {
                                 received.device_name, time_str
                             )),
                         ]
-                        .spacing(theme::active().cosmic().space_xxxs())
+                        .spacing(space_xxxs())
                         .align_y(cosmic::iced::Alignment::Center),
                     ]
-                    .spacing(theme::active().cosmic().space_xxxs())
+                    .spacing(space_xxxs())
                     .width(Length::Fill),
                     open_button,
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center);
 
                 history_section = history_section.push(
                     container(file_row)
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .class(cosmic::theme::Container::Card),
                 );
             }
         }
 
         // Combine active transfers and history
-        let mut all_content = column![transfers_list].spacing(theme::active().cosmic().space_xs());
+        let mut all_content = column![transfers_list].spacing(space_xs());
 
         if !self.received_files_history.is_empty() {
             all_content = all_content.push(history_section);
@@ -3471,19 +3523,19 @@ impl CConnectApplet {
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("go-previous-symbolic").size(ICON_S))
                         .on_press(Message::SetViewMode(ViewMode::Devices))
-                        .padding(theme::active().cosmic().space_xxs()),
+                        .padding(space_xxs()),
                     "Back",
                     cosmic::widget::tooltip::Position::Bottom,
                 ),
                 cosmic::widget::text::title4("Transfer Queue"),
                 horizontal_space(),
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .align_y(cosmic::iced::Alignment::Center),
             scrollable(all_content).height(Length::Fill)
         ]
-        .spacing(theme::active().cosmic().space_xs())
-        .padding(theme::active().cosmic().space_xs())
+        .spacing(space_xs())
+        .padding(space_xs())
         .into()
     }
 
@@ -3529,7 +3581,7 @@ impl CConnectApplet {
             let include_audio = screen_share.include_audio;
 
             // Build control buttons
-            let mut controls = row![].spacing(theme::active().cosmic().space_xxs());
+            let mut controls = row![].spacing(space_xxs());
 
             // Audio toggle (only for sender)
             if is_sender {
@@ -3546,11 +3598,11 @@ impl CConnectApplet {
                 let pause_resume_btn = if is_paused {
                     button::standard("Resume")
                         .on_press(Message::ResumeScreenShare(device_id_for_pause))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                 } else {
                     button::standard("Pause")
                         .on_press(Message::PauseScreenShare(device_id_for_pause))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                 };
                 controls = controls.push(pause_resume_btn);
             }
@@ -3559,7 +3611,7 @@ impl CConnectApplet {
             controls = controls.push(
                 button::destructive("Stop")
                     .on_press(Message::StopScreenShare(device_id))
-                    .padding(theme::active().cosmic().space_xxxs()),
+                    .padding(space_xxxs()),
             );
 
             let control_row = row![
@@ -3568,17 +3620,17 @@ impl CConnectApplet {
                     text(status_text),
                     cosmic::widget::text::caption(status_caption),
                 ]
-                .spacing(theme::active().cosmic().space_xxxs()),
+                .spacing(space_xxxs()),
                 horizontal_space(),
                 controls,
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .align_y(cosmic::iced::Alignment::Center);
 
             // Quality settings panel (only for sender)
             let mut overlay_content = vec![container(control_row)
                 .width(Length::Fill)
-                .padding(theme::active().cosmic().space_xxs())
+                .padding(space_xxs())
                 .class(cosmic::theme::Container::Primary)
                 .into()];
 
@@ -3591,7 +3643,7 @@ impl CConnectApplet {
                     text("Quality:").width(Length::Fixed(60.0)),
                     button::text("Low")
                         .on_press(Message::SetScreenShareQuality("low".to_string()))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_quality == "low" {
                             cosmic::theme::Button::Suggested
                         } else {
@@ -3599,7 +3651,7 @@ impl CConnectApplet {
                         }),
                     button::text("Medium")
                         .on_press(Message::SetScreenShareQuality("medium".to_string()))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_quality == "medium" {
                             cosmic::theme::Button::Suggested
                         } else {
@@ -3607,14 +3659,14 @@ impl CConnectApplet {
                         }),
                     button::text("High")
                         .on_press(Message::SetScreenShareQuality("high".to_string()))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_quality == "high" {
                             cosmic::theme::Button::Suggested
                         } else {
                             cosmic::theme::Button::Standard
                         }),
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center);
 
                 // FPS buttons
@@ -3622,7 +3674,7 @@ impl CConnectApplet {
                     text("FPS:").width(Length::Fixed(60.0)),
                     button::text("15")
                         .on_press(Message::SetScreenShareFps(15))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_fps == 15 {
                             cosmic::theme::Button::Suggested
                         } else {
@@ -3630,7 +3682,7 @@ impl CConnectApplet {
                         }),
                     button::text("30")
                         .on_press(Message::SetScreenShareFps(30))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_fps == 30 {
                             cosmic::theme::Button::Suggested
                         } else {
@@ -3638,22 +3690,22 @@ impl CConnectApplet {
                         }),
                     button::text("60")
                         .on_press(Message::SetScreenShareFps(60))
-                        .padding(theme::active().cosmic().space_xxxs())
+                        .padding(space_xxxs())
                         .class(if current_fps == 60 {
                             cosmic::theme::Button::Suggested
                         } else {
                             cosmic::theme::Button::Standard
                         }),
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center);
 
-                let settings_panel = column![quality_buttons, fps_buttons,].spacing(theme::active().cosmic().space_xxs());
+                let settings_panel = column![quality_buttons, fps_buttons,].spacing(space_xxs());
 
                 overlay_content.push(
                     container(settings_panel)
                         .width(Length::Fill)
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .class(cosmic::theme::Container::Secondary)
                         .into(),
                 );
@@ -3661,7 +3713,7 @@ impl CConnectApplet {
 
             overlay_content.push(content);
 
-            content = column(overlay_content).spacing(theme::active().cosmic().space_xxs()).into();
+            content = column(overlay_content).spacing(space_xxs()).into();
         }
 
         // Keyboard shortcuts help dialog
@@ -3672,7 +3724,7 @@ impl CConnectApplet {
                     cosmic::widget::tooltip(
                         button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
                             .on_press(Message::ToggleKeyboardShortcutsHelp)
-                            .padding(theme::active().cosmic().space_xxxs()),
+                            .padding(space_xxxs()),
                         "Close",
                         cosmic::widget::tooltip::Position::Bottom,
                     )
@@ -3685,34 +3737,34 @@ impl CConnectApplet {
                         cosmic::widget::text::body("Close dialogs/overlays")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Ctrl+R").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Refresh devices").width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Ctrl+F").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Focus search").width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Ctrl+,").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Toggle device settings")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Ctrl+M").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Open Manager").width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("F1 or ?").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Show this help dialog")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     divider::horizontal::light(),
                     cosmic::widget::text::title4("Navigation"),
                     row![
@@ -3720,31 +3772,31 @@ impl CConnectApplet {
                         cosmic::widget::text::body("Next/Previous element")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Arrow Keys").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Navigate elements")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                     row![
                         cosmic::widget::text::body("Enter / Space").width(Length::FillPortion(2)),
                         cosmic::widget::text::body("Activate focused element")
                             .width(Length::FillPortion(3)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs()),
+                    .spacing(space_xxs()),
                 ]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
             ]
-            .spacing(theme::active().cosmic().space_xxs());
+            .spacing(space_xxs());
 
             content = column![
                 container(shortcuts_content)
-                    .padding(theme::active().cosmic().space_xs())
+                    .padding(space_xs())
                     .class(cosmic::theme::Container::Card),
                 content
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .into();
         }
 
@@ -3767,21 +3819,21 @@ impl CConnectApplet {
                 icon::from_name(icon_name),
                 text(notification.message.clone()).width(Length::Fill),
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .align_y(cosmic::iced::Alignment::Center);
 
             if let Some((label, msg)) = &notification.action {
                 notification_row = notification_row.push(
                     button::text(label)
                         .on_press(Message::Loop(msg.clone()))
-                        .padding(theme::active().cosmic().space_xxxs()),
+                        .padding(space_xxxs()),
                 );
             }
 
             column![
                 container(
                     container(notification_row)
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .class(cosmic::theme::Container::Card)
                 )
                 .height(Length::Fixed(self.notification_progress * 50.0))
@@ -3789,9 +3841,9 @@ impl CConnectApplet {
                 content
             ]
             .spacing(if self.notification_progress > 0.0 {
-                theme::active().cosmic().space_xxs()
+                space_xxs()
             } else {
-                0
+                space_none()
             })
             .into()
         } else if !self.daemon_connected {
@@ -3801,15 +3853,15 @@ impl CConnectApplet {
                         icon::from_name("dialog-warning-symbolic").size(ICON_XS),
                         cosmic::widget::text::caption("Disconnected from background daemon"),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_y(cosmic::iced::Alignment::Center)
                 )
                 .width(Length::Fill)
-                .padding(theme::active().cosmic().space_xxxs())
+                .padding(space_xxxs())
                 .class(cosmic::theme::Container::Card),
                 content
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .into()
         } else {
             content
@@ -3854,7 +3906,7 @@ impl CConnectApplet {
                 .on_press(Message::SetViewMode(ViewMode::History))
                 .width(Length::Fill)
         ]
-        .spacing(theme::active().cosmic().space_xxxs())
+        .spacing(space_xxxs())
         .width(Length::Fill);
 
         if self.view_mode == ViewMode::History {
@@ -3863,8 +3915,8 @@ impl CConnectApplet {
                 divider::horizontal::default(),
                 self.history_view()
             ]
-            .spacing(theme::active().cosmic().space_xxs())
-            .padding(theme::active().cosmic().space_xs())
+            .spacing(space_xxs())
+            .padding(space_xs())
             .into();
         }
 
@@ -3877,7 +3929,7 @@ impl CConnectApplet {
         );
 
         let header = row![view_switcher,]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill);
 
@@ -3889,38 +3941,38 @@ impl CConnectApplet {
                         icon::from_name("process-working-symbolic").size(ICON_S),
                         cosmic::widget::text::caption("Scanning..."),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_y(cosmic::iced::Alignment::Center)
                 )
-                .padding(theme::active().cosmic().space_xxxs())
+                .padding(space_xxxs())
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
         } else {
             row![
                 search_input,
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("view-refresh-symbolic"))
                         .on_press(Message::RefreshDevices)
-                        .padding(theme::active().cosmic().space_xxxs()),
+                        .padding(space_xxxs()),
                     "Refresh devices (Ctrl+R)",
                     cosmic::widget::tooltip::Position::Bottom,
                 ),
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("help-about-symbolic").size(ICON_S))
                         .on_press(Message::ToggleKeyboardShortcutsHelp)
-                        .padding(theme::active().cosmic().space_xxxs()),
+                        .padding(space_xxxs()),
                     "Keyboard shortcuts",
                     cosmic::widget::tooltip::Position::Bottom,
                 ),
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("preferences-desktop-apps-symbolic").size(ICON_S))
                         .on_press(Message::OpenManager)
-                        .padding(theme::active().cosmic().space_xxxs()),
+                        .padding(space_xxxs()),
                     "Open Manager (Ctrl+M)",
                     cosmic::widget::tooltip::Position::Bottom,
                 )
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
         };
 
         // MPRIS media controls section
@@ -3933,26 +3985,26 @@ impl CConnectApplet {
             container(
                 column![
                     container(icon::from_name("phone-disconnected-symbolic").size(ICON_XL))
-                        .padding(Padding::new(0.0).bottom(theme::active().cosmic().space_xs())),
+                        .padding(Padding::new(0.0).bottom(space_xs())),
                     cosmic::widget::text::heading("No Devices Connected"),
                     column![
                         cosmic::widget::text::body("Make sure your devices are:"),
                         cosmic::widget::text::caption("• On the same network"),
                         cosmic::widget::text::caption("• Running the CConnect app"),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_x(Horizontal::Center),
                     container(
                         button::text("Refresh Devices")
                             .on_press(Message::RefreshDevices)
-                            .padding(theme::active().cosmic().space_xxs())
+                            .padding(space_xxs())
                     )
-                    .padding(Padding::new(0.0).top(theme::active().cosmic().space_xs())),
+                    .padding(Padding::new(0.0).top(space_xs())),
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_x(Horizontal::Center),
             )
-            .padding(theme::active().cosmic().space_m())
+            .padding(space_m())
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Horizontal::Center)
@@ -4007,7 +4059,7 @@ impl CConnectApplet {
             available.sort_by(sort_by_pinned);
             offline.sort_by(sort_by_pinned);
 
-            let mut device_groups = column![].spacing(theme::active().cosmic().space_xxxs()).width(Length::Fill);
+            let mut device_groups = column![].spacing(space_xxxs()).width(Length::Fill);
             // Track device index for focus navigation (matches filtered_devices() order)
             let mut device_index = 0usize;
 
@@ -4015,7 +4067,7 @@ impl CConnectApplet {
             if !connected.is_empty() {
                 device_groups = device_groups.push(
                     container(cosmic::widget::text::caption("Connected"))
-                        .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs(), theme::active().cosmic().space_xxxs(), theme::active().cosmic().space_xs()]))
+                        .padding(Padding::from([space_xxs(), space_xs(), space_xxxs(), space_xs()]))
                         .width(Length::Fill),
                 );
                 for device_state in &connected {
@@ -4031,7 +4083,7 @@ impl CConnectApplet {
                 }
                 device_groups = device_groups.push(
                     container(cosmic::widget::text::caption("Available"))
-                        .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs(), theme::active().cosmic().space_xxxs(), theme::active().cosmic().space_xs()]))
+                        .padding(Padding::from([space_xxs(), space_xs(), space_xxxs(), space_xs()]))
                         .width(Length::Fill),
                 );
                 for device_state in &available {
@@ -4047,7 +4099,7 @@ impl CConnectApplet {
                 }
                 device_groups = device_groups.push(
                     container(cosmic::widget::text::caption("Offline"))
-                        .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs(), theme::active().cosmic().space_xxxs(), theme::active().cosmic().space_xs()]))
+                        .padding(Padding::from([space_xxs(), space_xs(), space_xxxs(), space_xs()]))
                         .width(Length::Fill),
                 );
                 for device_state in &offline {
@@ -4063,10 +4115,10 @@ impl CConnectApplet {
 
         let popup_content = column![
             container(header)
-                .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs()]))
+                .padding(Padding::from([space_xxs(), space_xs()]))
                 .width(Length::Fill),
             container(controls)
-                .padding(Padding::from([0, theme::active().cosmic().space_xs(), theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs()]))
+                .padding(Padding::from([0, space_xs(), space_xxs(), space_xs()]))
                 .width(Length::Fill),
             divider::horizontal::default(),
             mpris_section,
@@ -4102,7 +4154,7 @@ impl CConnectApplet {
         };
 
         let menu_button = button::icon(icon::from_name("view-more-symbolic").size(ICON_S))
-            .padding(theme::active().cosmic().space_xxxs())
+            .padding(space_xxxs())
             .class(cosmic::theme::Button::Transparent)
             .on_press(menu_message);
 
@@ -4112,7 +4164,7 @@ impl CConnectApplet {
             horizontal_space(),
             menu_button,
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Metadata display
@@ -4153,7 +4205,7 @@ impl CConnectApplet {
                         selected_player.clone(),
                         "Previous".to_string(),
                     ))
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "Previous",
                 cosmic::widget::tooltip::Position::Bottom,
             ),
@@ -4163,7 +4215,7 @@ impl CConnectApplet {
                         selected_player.clone(),
                         play_action.to_string()
                     ))
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 play_action,
                 cosmic::widget::tooltip::Position::Bottom,
             ),
@@ -4173,7 +4225,7 @@ impl CConnectApplet {
                         selected_player.clone(),
                         "Stop".to_string(),
                     ))
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "Stop",
                 cosmic::widget::tooltip::Position::Bottom,
             ),
@@ -4183,12 +4235,12 @@ impl CConnectApplet {
                         selected_player.clone(),
                         "Next".to_string(),
                     ))
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "Next",
                 cosmic::widget::tooltip::Position::Bottom,
             ),
         ]
-        .spacing(theme::active().cosmic().space_xxxs())
+        .spacing(space_xxxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         let art_handle = self.mpris_album_art.get(selected_player);
@@ -4201,7 +4253,7 @@ impl CConnectApplet {
                     .content_fit(cosmic::iced::ContentFit::Cover),
                 metadata_col
             ]
-            .spacing(theme::active().cosmic().space_xs())
+            .spacing(space_xs())
             .align_y(cosmic::iced::Alignment::Center)
         } else {
             row![
@@ -4210,13 +4262,13 @@ impl CConnectApplet {
                     .align_x(cosmic::iced::Alignment::Center),
                 metadata_col
             ]
-            .spacing(theme::active().cosmic().space_xs())
+            .spacing(space_xs())
             .align_y(cosmic::iced::Alignment::Center)
         };
 
         let mut content = column![player_name, info_row, controls]
-            .spacing(theme::active().cosmic().space_xxs())
-            .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs()]));
+            .spacing(space_xxs())
+            .padding(Padding::from([space_xxs(), space_xs()]));
 
         // Show context menu if open
         if self.context_menu_mpris {
@@ -4229,11 +4281,11 @@ impl CConnectApplet {
                         icon::from_name(icon_name).size(ICON_S),
                         cosmic::widget::text::body(label),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_y(cosmic::iced::Alignment::Center),
                 )
                 .width(Length::Fill)
-                .padding([theme::active().cosmic().space_xxxs(), theme::active().cosmic().space_xxs()])
+                .padding([space_xxxs(), space_xxs()])
                 .class(cosmic::theme::Button::MenuItem)
                 .on_press(message)
                 .into()
@@ -4252,8 +4304,8 @@ impl CConnectApplet {
                 ),
             ];
 
-            let context_menu = container(column(menu_items).spacing(theme::active().cosmic().space_xxxs()))
-                .padding(theme::active().cosmic().space_xxxs())
+            let context_menu = container(column(menu_items).spacing(space_xxxs()))
+                .padding(space_xxxs())
                 .class(cosmic::theme::Container::Secondary);
 
             content = content.push(context_menu);
@@ -4336,10 +4388,10 @@ impl CConnectApplet {
             cosmic::widget::toggler(is_streaming)
                 .on_toggle(move |_| Message::ToggleCameraStreaming(device_id.clone()))
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
-        let mut content_col = column![camera_header].spacing(theme::active().cosmic().space_xxs());
+        let mut content_col = column![camera_header].spacing(space_xxs());
 
         // Show controls only when streaming
         if is_streaming {
@@ -4354,7 +4406,7 @@ impl CConnectApplet {
                         "Front"
                     }),
                 ]
-                .spacing(theme::active().cosmic().space_xxs());
+                .spacing(space_xxs());
 
                 // Resolution display
                 let resolution_label = row![
@@ -4362,7 +4414,7 @@ impl CConnectApplet {
                     horizontal_space(),
                     cosmic::widget::text::caption(&stats.resolution),
                 ]
-                .spacing(theme::active().cosmic().space_xxs());
+                .spacing(space_xxs());
 
                 // Statistics
                 let stats_row = row![
@@ -4370,15 +4422,15 @@ impl CConnectApplet {
                         cosmic::widget::text::caption("FPS:"),
                         cosmic::widget::text::body(format!("{}", stats.fps)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxxs()),
+                    .spacing(space_xxxs()),
                     horizontal_space(),
                     column![
                         cosmic::widget::text::caption("Bitrate:"),
                         cosmic::widget::text::body(format!("{} kbps", stats.bitrate)),
                     ]
-                    .spacing(theme::active().cosmic().space_xxxs()),
+                    .spacing(space_xxxs()),
                 ]
-                .spacing(theme::active().cosmic().space_xs());
+                .spacing(space_xs());
 
                 content_col = content_col.push(divider::horizontal::default());
                 content_col = content_col.push(camera_label);
@@ -4393,7 +4445,7 @@ impl CConnectApplet {
             content_col = content_col.push(helper_text);
         }
 
-        container(content_col.padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xs()])))
+        container(content_col.padding(Padding::from([space_xxs(), space_xs()])))
             .width(Length::Fill)
             .class(cosmic::theme::Container::Card)
             .into()
@@ -4406,7 +4458,7 @@ impl CConnectApplet {
             .find(|d| d.device.info.device_id == device_id);
 
         let Some(device_state) = device_state else {
-            return container(text("Device not found")).padding(theme::active().cosmic().space_xs()).into();
+            return container(text("Device not found")).padding(space_xs()).into();
         };
 
         let device = &device_state.device;
@@ -4416,14 +4468,14 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("go-previous-symbolic").size(ICON_S))
                     .on_press(Message::CloseDeviceDetails)
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "Back",
                 cosmic::widget::tooltip::Position::Bottom,
             ),
             cosmic::widget::text::title4(&device.info.device_name),
             horizontal_space(),
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Basic Info
@@ -4432,17 +4484,17 @@ impl CConnectApplet {
                 text("Status:").width(Length::Fixed(100.0)),
                 connection_status_styled_text(device.connection_state, device.pairing_status)
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
             row![
                 text("Type:").width(Length::Fixed(100.0)),
                 text(format!("{:?}", device.info.device_type))
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
             row![
                 text("IP Address:").width(Length::Fixed(100.0)),
                 text(device.host.as_deref().unwrap_or("Unknown"))
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
             row![
                 text("ID:").width(Length::Fixed(100.0)),
                 text(if device_id.len() > 20 {
@@ -4451,18 +4503,18 @@ impl CConnectApplet {
                     device_id.to_string()
                 })
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
         ]
-        .spacing(theme::active().cosmic().space_xxs());
+        .spacing(space_xxs());
 
         let mut content = column![
             header,
             container(info_card)
-                .padding(theme::active().cosmic().space_xs())
+                .padding(space_xs())
                 .width(Length::Fill)
                 .class(cosmic::theme::Container::Card),
         ]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         // System Info card (if available)
         if let Some(info) = self.system_info.get(device_id) {
@@ -4470,13 +4522,13 @@ impl CConnectApplet {
                 row![text("System Information")
                     .size(ICON_S)
                     .class(theme::Text::Color(theme_accent_color()))]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
                 divider::horizontal::default(),
                 row![
                     text("CPU Usage:").width(Length::Fixed(120.0)),
                     text(format!("{:.1}%", info.cpu_usage))
                 ]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
                 row![
                     text("Memory Usage:").width(Length::Fixed(120.0)),
                     text(format!(
@@ -4486,23 +4538,23 @@ impl CConnectApplet {
                         info.total_memory / 1024 / 1024
                     ))
                 ]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
                 row![
                     text("Disk Usage:").width(Length::Fixed(120.0)),
                     text(format!("{:.1}%", info.disk_usage))
                 ]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
                 row![
                     text("Uptime:").width(Length::Fixed(120.0)),
                     text(format_uptime(info.uptime))
                 ]
-                .spacing(theme::active().cosmic().space_xxs()),
+                .spacing(space_xxs()),
             ]
-            .spacing(theme::active().cosmic().space_xxs());
+            .spacing(space_xxs());
 
             content = content.push(
                 container(system_info_card)
-                    .padding(theme::active().cosmic().space_xs())
+                    .padding(space_xs())
                     .width(Length::Fill)
                     .class(cosmic::theme::Container::Card),
             );
@@ -4513,13 +4565,13 @@ impl CConnectApplet {
                     button::standard("Request System Info")
                         .on_press(Message::RequestSystemInfo(device_id.to_string())),
                 )
-                .padding(theme::active().cosmic().space_xs())
+                .padding(space_xs())
                 .width(Length::Fill)
                 .class(cosmic::theme::Container::Card),
             );
         }
 
-        content.padding(theme::active().cosmic().space_xs()).into()
+        content.padding(space_xs()).into()
     }
 
     fn device_row<'a>(
@@ -4552,7 +4604,7 @@ impl CConnectApplet {
             device.connection_state,
             device.pairing_status
         )]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Add battery if available
@@ -4569,7 +4621,7 @@ impl CConnectApplet {
                     icon::from_name(battery_icon).size(ICON_XS),
                     cosmic::widget::text::caption(format!("{}%", level)),
                 ]
-                .spacing(theme::active().cosmic().space_xxxs())
+                .spacing(space_xxxs())
                 .align_y(cosmic::iced::Alignment::Center),
             );
         } else if self.loading_battery && device.is_connected() {
@@ -4595,7 +4647,7 @@ impl CConnectApplet {
 
         // Combine Name + Metadata
         let info_col = column![cosmic::widget::text::heading(display_name), metadata_row]
-            .spacing(theme::active().cosmic().space_xxxs())
+            .spacing(space_xxxs())
             .width(Length::Fill);
 
         // Pin/favorite button
@@ -4608,7 +4660,7 @@ impl CConnectApplet {
         let star_button = cosmic::widget::tooltip(
             button::icon(icon::from_name(star_icon).size(ICON_S))
                 .on_press(Message::ToggleDevicePin(device_id.to_string()))
-                .padding(theme::active().cosmic().space_xxxs())
+                .padding(space_xxxs())
                 .class(cosmic::theme::Button::Icon),
             if is_pinned {
                 "Unpin device"
@@ -4627,21 +4679,21 @@ impl CConnectApplet {
                 container(icon::from_name(device_icon).size(ICON_L))
                     .width(Length::Fixed(48.0))
                     .align_x(Horizontal::Center)
-                    .padding(Padding::new(f32::from(theme::active().cosmic().space_xxs()))),
+                    .padding(Padding::new(space_xxs_f32())),
                 info_col,
                 star_button,
             ]
-            .spacing(theme::active().cosmic().space_xxs())
+            .spacing(space_xxs())
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill),
             // Actions row below
             container(actions_row)
                 .width(Length::Fill)
-                .padding(Padding::new(0.0).left(48.0 + f32::from(theme::active().cosmic().space_xxs()))) // Indent to align with text
+                .padding(Padding::new(0.0).left(48.0 + space_xxs_f32())) // Indent to align with text
                 .align_x(Horizontal::Left),
         ]
-        .spacing(theme::active().cosmic().space_xxs())
-        .padding(theme::active().cosmic().space_xs())
+        .spacing(space_xxs())
+        .padding(space_xs())
         .width(Length::Fill);
 
         // Add RemoteDesktop settings panel if active
@@ -4649,7 +4701,7 @@ impl CConnectApplet {
             if let Some(settings) = self.remotedesktop_settings.get(device_id) {
                 content = content.push(
                     container(self.remotedesktop_settings_view(device_id, settings))
-                        .padding(Padding::from([0.0, 0.0, 0.0, 48.0 + f32::from(theme::active().cosmic().space_xxs())])),
+                        .padding(Padding::from([0.0, 0.0, 0.0, 48.0 + space_xxs_f32()])),
                 );
             }
         }
@@ -4661,7 +4713,7 @@ impl CConnectApplet {
                     0.0,
                     0.0,
                     0.0,
-                    48.0 + f32::from(theme::active().cosmic().space_xxs()),
+                    48.0 + space_xxs_f32(),
                 ])),
             );
         }
@@ -4673,7 +4725,7 @@ impl CConnectApplet {
                     0.0,
                     0.0,
                     0.0,
-                    48.0 + f32::from(theme::active().cosmic().space_xxs()),
+                    48.0 + space_xxs_f32(),
                 ])),
             );
         }
@@ -4685,7 +4737,7 @@ impl CConnectApplet {
                     0.0,
                     0.0,
                     0.0,
-                    48.0 + f32::from(theme::active().cosmic().space_xxs()),
+                    48.0 + space_xxs_f32(),
                 ])),
             );
         }
@@ -4694,7 +4746,7 @@ impl CConnectApplet {
         if self.context_menu_device.as_ref() == Some(device_id) {
             content = content.push(
                 container(self.device_context_menu_view(device_id, device))
-                    .padding(Padding::from([0.0, 0.0, 0.0, 48.0 + f32::from(theme::active().cosmic().space_xxs())])),
+                    .padding(Padding::from([0.0, 0.0, 0.0, 48.0 + space_xxs_f32()])),
             );
         }
 
@@ -4715,10 +4767,10 @@ impl CConnectApplet {
                         cosmic::widget::text::body("Drop file here"),
                         cosmic::widget::text::caption("Release to send to this device"),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_x(Horizontal::Center),
                 )
-                .padding(theme::active().cosmic().space_xs())
+                .padding(space_xs())
                 .width(Length::Fill)
                 .align_x(Horizontal::Center)
                 .class(if is_drag_target {
@@ -4765,7 +4817,7 @@ impl CConnectApplet {
         device: &'a Device,
         device_id: &str,
     ) -> cosmic::iced::widget::Row<'a, Message, cosmic::Theme> {
-        let mut actions = row![].spacing(theme::active().cosmic().space_xxs());
+        let mut actions = row![].spacing(space_xxs());
 
         // Quick actions for connected & paired devices
         if device.is_connected() && device.is_paired() {
@@ -4912,7 +4964,7 @@ impl CConnectApplet {
                         cosmic::widget::icon::from_name("audio-volume-muted-symbolic").size(16)
                     })
                     .on_press(Message::ToggleAudioStream(device_id.to_string()))
-                    .padding(theme::active().cosmic().space_xxxs())
+                    .padding(space_xxxs())
                     .tooltip(if is_streaming {
                         "Stop audio streaming"
                     } else {
@@ -4931,7 +4983,7 @@ impl CConnectApplet {
                         cosmic::widget::icon::from_name("input-touchpad-symbolic").size(16)
                     })
                     .on_press(Message::TogglePresenterMode(device_id.to_string()))
-                    .padding(theme::active().cosmic().space_xxxs())
+                    .padding(space_xxxs())
                     .tooltip(if is_presenting {
                         "Stop presenter mode"
                     } else {
@@ -4995,7 +5047,7 @@ impl CConnectApplet {
         if is_loading {
             actions = actions.push(cosmic::widget::tooltip(
                 button::icon(icon::from_name("process-working-symbolic").size(ICON_S))
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 if label == "Pair" {
                     "Pairing..."
                 } else {
@@ -5004,7 +5056,7 @@ impl CConnectApplet {
                 cosmic::widget::tooltip::Position::Bottom,
             ));
         } else {
-            actions = actions.push(button::text(label).on_press(message).padding(theme::active().cosmic().space_xxs()));
+            actions = actions.push(button::text(label).on_press(message).padding(space_xxs()));
         }
 
         // Context menu button (more options)
@@ -5023,7 +5075,7 @@ impl CConnectApplet {
             } else {
                 Message::ShowContextMenu(device_id.to_string())
             })
-            .padding(theme::active().cosmic().space_xxs())
+            .padding(space_xxs())
             .class(if is_menu_open {
                 cosmic::theme::Button::Suggested
             } else {
@@ -5052,11 +5104,11 @@ impl CConnectApplet {
                     icon::from_name(icon_name).size(ICON_S),
                     cosmic::widget::text::body(label),
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center),
             )
             .width(Length::Fill)
-            .padding([theme::active().cosmic().space_xxxs(), theme::active().cosmic().space_xxs()])
+            .padding([space_xxxs(), space_xxs()])
             .class(cosmic::theme::Button::MenuItem)
             .on_press(message)
             .into()
@@ -5099,11 +5151,11 @@ impl CConnectApplet {
          -> Element<'a, Message> {
             button::custom(
                 row![icon::from_name(icon_name).size(ICON_S), text(label),]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_y(cosmic::iced::Alignment::Center),
             )
             .on_press(message)
-            .padding(theme::active().cosmic().space_xxs())
+            .padding(space_xxs())
             .width(Length::Fill)
             .class(style)
             .into()
@@ -5114,7 +5166,7 @@ impl CConnectApplet {
         // Header
         menu_items.push(
             container(cosmic::widget::text::caption("Quick Actions"))
-                .padding(Padding::from([theme::active().cosmic().space_xxs(), theme::active().cosmic().space_xxs()]))
+                .padding(Padding::from([space_xxs(), space_xxs()]))
                 .into(),
         );
         menu_items.push(divider::horizontal::default().into());
@@ -5206,8 +5258,8 @@ impl CConnectApplet {
             cosmic::theme::Button::MenuItem,
         ));
 
-        container(column(menu_items).spacing(theme::active().cosmic().space_xxxs()).width(Length::Fill))
-            .padding(theme::active().cosmic().space_xxs())
+        container(column(menu_items).spacing(space_xxxs()).width(Length::Fill))
+            .padding(space_xxs())
             .width(Length::Fill)
             .class(cosmic::theme::Container::Secondary)
             .into()
@@ -5224,7 +5276,7 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
                     .on_press(Message::CloseFileSyncSettings)
-                    .padding(theme::active().cosmic().space_xxxs()),
+                    .padding(space_xxxs()),
                 "Close settings",
                 cosmic::widget::tooltip::Position::Bottom,
             )
@@ -5232,12 +5284,12 @@ impl CConnectApplet {
         .width(Length::Fill)
         .align_y(cosmic::iced::Alignment::Center);
 
-        let mut content = column![header].spacing(theme::active().cosmic().space_xs());
+        let mut content = column![header].spacing(space_xs());
 
         // List existing sync folders
         if let Some(folders) = self.sync_folders.get(device_id) {
             if !folders.is_empty() {
-                let mut list = column![].spacing(theme::active().cosmic().space_xxs());
+                let mut list = column![].spacing(space_xxs());
                 for folder in folders {
                     let strategy_text = match folder.strategy.as_str() {
                         "LastModifiedWins" => "Last Modified",
@@ -5252,7 +5304,7 @@ impl CConnectApplet {
                             cosmic::widget::text::caption(&folder.path),
                             cosmic::widget::text::caption(format!("Conflict: {}", strategy_text)),
                         ]
-                        .spacing(theme::active().cosmic().space_xxxs()),
+                        .spacing(space_xxxs()),
                         horizontal_space(),
                         cosmic::widget::tooltip(
                             button::icon(icon::from_name("user-trash-symbolic").size(ICON_S))
@@ -5260,7 +5312,7 @@ impl CConnectApplet {
                                     device_id.to_string(),
                                     folder.folder_id.clone(),
                                 ))
-                                .padding(theme::active().cosmic().space_xxs()),
+                                .padding(space_xxs()),
                             "Remove sync folder",
                             cosmic::widget::tooltip::Position::Bottom,
                         )
@@ -5270,7 +5322,7 @@ impl CConnectApplet {
 
                     list = list.push(
                         container(row)
-                            .padding(theme::active().cosmic().space_xxs())
+                            .padding(space_xxs())
                             .class(cosmic::theme::Container::Card),
                     );
                 }
@@ -5278,7 +5330,7 @@ impl CConnectApplet {
             } else {
                 content = content.push(
                     container(cosmic::widget::text::caption("No sync folders configured"))
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .width(Length::Fill)
                         .align_x(Horizontal::Center),
                 );
@@ -5290,10 +5342,10 @@ impl CConnectApplet {
                         icon::from_name("process-working-symbolic").size(ICON_S),
                         cosmic::widget::text::caption("Loading..."),
                     ]
-                    .spacing(theme::active().cosmic().space_xxs())
+                    .spacing(space_xxs())
                     .align_y(cosmic::iced::Alignment::Center),
                 )
-                .padding(theme::active().cosmic().space_xxs())
+                .padding(space_xxs())
                 .width(Length::Fill)
                 .align_x(Horizontal::Center),
             );
@@ -5333,7 +5385,7 @@ impl CConnectApplet {
                         }
                     )
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
                 .align_y(cosmic::iced::Alignment::Center),
                 row![
                     button::text("Cancel").on_press(Message::CancelAddSyncFolder),
@@ -5348,14 +5400,14 @@ impl CConnectApplet {
                             .on_press(Message::AddSyncFolder(device_id.to_string()))
                     }
                 ]
-                .spacing(theme::active().cosmic().space_xs())
-                .spacing(theme::active().cosmic().space_xs())
+                .spacing(space_xs())
+                .spacing(space_xs())
             ]
-            .spacing(theme::active().cosmic().space_xxs()); // Distinct background for form
+            .spacing(space_xxs()); // Distinct background for form
 
             content = content.push(
                 container(form)
-                    .padding(theme::active().cosmic().space_xxs())
+                    .padding(space_xxs())
                     .class(cosmic::theme::Container::Card),
             );
         } else {
@@ -5368,7 +5420,7 @@ impl CConnectApplet {
 
         container(content)
             .class(cosmic::theme::Container::Card)
-            .padding(theme::active().cosmic().space_xs())
+            .padding(space_xs())
             .into()
     }
 
@@ -5381,18 +5433,18 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("window-close-symbolic").size(ICON_S))
                     .on_press(Message::CloseRunCommandSettings)
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "Close settings",
                 cosmic::widget::tooltip::Position::Bottom,
             )
         ]
         .align_y(Alignment::Center)]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         // List existing commands
         if let Some(commands) = self.run_commands.get(device_id) {
             if !commands.is_empty() {
-                let mut list = column![].spacing(theme::active().cosmic().space_xxs());
+                let mut list = column![].spacing(space_xxs());
                 // Sort by name
                 let mut sorted_cmds: Vec<_> = commands.iter().collect();
                 sorted_cmds.sort_by(|a, b| a.1.name.cmp(&b.1.name));
@@ -5411,7 +5463,7 @@ impl CConnectApplet {
                                     device_id.to_string(),
                                     cmd_id.clone(),
                                 ))
-                                .padding(theme::active().cosmic().space_xxs())
+                                .padding(space_xxs())
                                 .class(cosmic::theme::Button::Destructive),
                             "Remove command",
                             cosmic::widget::tooltip::Position::Bottom,
@@ -5422,7 +5474,7 @@ impl CConnectApplet {
 
                     list = list.push(
                         container(row)
-                            .padding(theme::active().cosmic().space_xxs())
+                            .padding(space_xxs())
                             .class(cosmic::theme::Container::Card),
                     );
                 }
@@ -5430,7 +5482,7 @@ impl CConnectApplet {
             } else {
                 content = content.push(
                     container(text::caption("No run commands configured"))
-                        .padding(theme::active().cosmic().space_xxs())
+                        .padding(space_xxs())
                         .width(Length::Fill)
                         .align_x(Horizontal::Center),
                 );
@@ -5438,7 +5490,7 @@ impl CConnectApplet {
         } else {
             content = content.push(
                 container(text::caption("Loading..."))
-                    .padding(theme::active().cosmic().space_xxs())
+                    .padding(space_xxs())
                     .width(Length::Fill)
                     .align_x(Horizontal::Center),
             );
@@ -5479,13 +5531,13 @@ impl CConnectApplet {
                             .width(Length::Fill)
                     }
                 ]
-                .spacing(theme::active().cosmic().space_xxs())
+                .spacing(space_xxs())
             ]
-            .spacing(theme::active().cosmic().space_xxs());
+            .spacing(space_xxs());
 
             content = content.push(
                 container(form)
-                    .padding(theme::active().cosmic().space_xxs())
+                    .padding(space_xxs())
                     .class(cosmic::theme::Container::Card),
             );
         } else {
@@ -5498,7 +5550,7 @@ impl CConnectApplet {
 
         container(content)
             .class(cosmic::theme::Container::Card)
-            .padding(theme::active().cosmic().space_xs())
+            .padding(space_xs())
             .into()
     }
 
@@ -5517,7 +5569,7 @@ impl CConnectApplet {
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("window-close-symbolic").size(ICON_S))
                         .on_press(Message::CancelOpenUrlDialog)
-                        .padding(theme::active().cosmic().space_xxs()),
+                        .padding(space_xxs()),
                     "Close",
                     cosmic::widget::tooltip::Position::Bottom,
                 )
@@ -5553,13 +5605,13 @@ impl CConnectApplet {
                         .width(Length::Fill)
                 },
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
         ]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         container(content)
             .class(cosmic::theme::Container::Card)
-            .padding(theme::active().cosmic().space_xs())
+            .padding(space_xs())
             .into()
     }
 
@@ -5578,7 +5630,7 @@ impl CConnectApplet {
                 cosmic::widget::tooltip(
                     button::icon(icon::from_name("window-close-symbolic").size(ICON_S))
                         .on_press(Message::CancelSmsDialog)
-                        .padding(theme::active().cosmic().space_xxs()),
+                        .padding(space_xxs()),
                     "Close",
                     cosmic::widget::tooltip::Position::Bottom,
                 )
@@ -5615,13 +5667,13 @@ impl CConnectApplet {
                         .width(Length::Fill)
                 },
             ]
-            .spacing(theme::active().cosmic().space_xxs()),
+            .spacing(space_xxs()),
         ]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         container(content)
             .class(cosmic::theme::Container::Card)
-            .padding(theme::active().cosmic().space_xs())
+            .padding(space_xs())
             .into()
     }
     fn remotedesktop_settings_view(
@@ -5638,7 +5690,7 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
                     .on_press(Message::CloseRemoteDesktopSettings)
-                    .padding(theme::active().cosmic().space_xxxs()),
+                    .padding(space_xxxs()),
                 "Close settings",
                 cosmic::widget::tooltip::Position::Bottom,
             )
@@ -5670,7 +5722,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // FPS dropdown
@@ -5696,7 +5748,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Resolution mode radio buttons
@@ -5731,13 +5783,13 @@ impl CConnectApplet {
                 }
             ),
         ]
-        .spacing(theme::active().cosmic().space_xxxs());
+        .spacing(space_xxxs());
 
         let resolution_row = row![
             text("Resolution:").width(Length::Fixed(120.0)),
             resolution_radios
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Start);
 
         // Build content
@@ -5748,7 +5800,7 @@ impl CConnectApplet {
             fps_row,
             resolution_row,
         ]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         // Add custom resolution inputs if mode is "custom"
         if settings.resolution_mode == "custom" {
@@ -5768,13 +5820,13 @@ impl CConnectApplet {
 
             let inputs_row = row![
                 column![cosmic::widget::text::caption("Width"), width_input]
-                    .spacing(theme::active().cosmic().space_xxxs())
+                    .spacing(space_xxxs())
                     .width(Length::FillPortion(1)),
                 column![cosmic::widget::text::caption("Height"), height_input]
-                    .spacing(theme::active().cosmic().space_xxxs())
+                    .spacing(space_xxxs())
                     .width(Length::FillPortion(1)),
             ]
-            .spacing(theme::active().cosmic().space_xs());
+            .spacing(space_xs());
 
             content = content.push(inputs_row);
         }
@@ -5790,7 +5842,7 @@ impl CConnectApplet {
         }
 
         // Apply button (disabled if error)
-        let mut apply_btn = button::text("Apply Settings").padding(theme::active().cosmic().space_xxs());
+        let mut apply_btn = button::text("Apply Settings").padding(space_xxs());
 
         if self.remotedesktop_error.is_none() {
             apply_btn =
@@ -5799,7 +5851,7 @@ impl CConnectApplet {
 
         content = content.push(apply_btn);
 
-        container(content).padding(theme::active().cosmic().space_xs()).into()
+        container(content).padding(space_xs()).into()
     }
 
     /// Camera settings view with camera selection, resolution, and streaming controls
@@ -5813,7 +5865,7 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("window-close-symbolic").size(ICON_14))
                     .on_press(Message::CloseCameraSettings)
-                    .padding(theme::active().cosmic().space_xxxs()),
+                    .padding(space_xxxs()),
                 "Close settings",
                 cosmic::widget::tooltip::Position::Bottom,
             )
@@ -5837,7 +5889,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Resolution dropdown
@@ -5864,7 +5916,7 @@ impl CConnectApplet {
                 }
             })
         ]
-        .spacing(theme::active().cosmic().space_xxs())
+        .spacing(space_xxs())
         .align_y(cosmic::iced::Alignment::Center);
 
         // Build content
@@ -5874,7 +5926,7 @@ impl CConnectApplet {
             camera_row,
             resolution_row
         ]
-        .spacing(theme::active().cosmic().space_xs());
+        .spacing(space_xs());
 
         // Statistics section (only show when streaming)
         if is_streaming {
@@ -5888,24 +5940,24 @@ impl CConnectApplet {
                             cosmic::widget::text::caption("FPS:"),
                             text(format!("{}", stats.fps)),
                         ]
-                        .spacing(theme::active().cosmic().space_xxxs())
+                        .spacing(space_xxxs())
                         .width(Length::FillPortion(1)),
                         column![
                             cosmic::widget::text::caption("Bitrate:"),
                             text(format!("{} kbps", stats.bitrate)),
                         ]
-                        .spacing(theme::active().cosmic().space_xxxs())
+                        .spacing(space_xxxs())
                         .width(Length::FillPortion(1)),
                         column![
                             cosmic::widget::text::caption("Current:"),
                             text(&stats.resolution),
                         ]
-                        .spacing(theme::active().cosmic().space_xxxs())
+                        .spacing(space_xxxs())
                         .width(Length::FillPortion(1)),
                     ]
-                    .spacing(theme::active().cosmic().space_xs()),
+                    .spacing(space_xs()),
                 ]
-                .spacing(theme::active().cosmic().space_xxs());
+                .spacing(space_xxs());
 
                 content = content.push(stats_section);
             }
@@ -5917,12 +5969,12 @@ impl CConnectApplet {
         let streaming_button = if is_streaming {
             button::text("Stop Streaming")
                 .on_press(Message::ToggleCameraStreaming(device_id.to_string()))
-                .padding(theme::active().cosmic().space_xxs())
+                .padding(space_xxs())
                 .class(cosmic::theme::Button::Destructive)
         } else {
             button::text("Start Streaming")
                 .on_press(Message::ToggleCameraStreaming(device_id.to_string()))
-                .padding(theme::active().cosmic().space_xxs())
+                .padding(space_xxs())
                 .class(cosmic::theme::Button::Suggested)
         };
 
@@ -5936,7 +5988,7 @@ impl CConnectApplet {
         };
         content = content.push(helper_text);
 
-        container(content).padding(theme::active().cosmic().space_xs()).into()
+        container(content).padding(space_xs()).into()
     }
 
     fn transfers_view(&self) -> Element<'_, Message> {
@@ -5951,14 +6003,14 @@ impl CConnectApplet {
             cosmic::widget::tooltip(
                 button::icon(icon::from_name("go-next-symbolic").size(ICON_S))
                     .on_press(Message::ShowTransferQueue)
-                    .padding(theme::active().cosmic().space_xxs()),
+                    .padding(space_xxs()),
                 "View Transfer Queue",
                 cosmic::widget::tooltip::Position::Bottom,
             )
         ]
         .align_y(cosmic::iced::Alignment::Center);
 
-        let mut transfers_col = column![header].spacing(theme::active().cosmic().space_xxs());
+        let mut transfers_col = column![header].spacing(space_xxs());
 
         for state in self.active_transfers.values() {
             let progress = if state.total > 0 {
@@ -5983,12 +6035,12 @@ impl CConnectApplet {
                     cosmic::widget::text::caption(label),
                     progress_bar(0.0..=100.0, progress).height(Length::Fixed(6.0))
                 ]
-                .spacing(theme::active().cosmic().space_xxxs()),
+                .spacing(space_xxxs()),
             );
         }
 
         container(transfers_col)
-            .padding(theme::active().cosmic().space_xs())
+            .padding(space_xs())
             .width(Length::Fill)
             .into()
     }
@@ -6637,7 +6689,7 @@ fn action_button_with_tooltip(
     cosmic::widget::tooltip(
         button::icon(icon::from_name(icon_name).size(ICON_S))
             .on_press(message)
-            .padding(theme::active().cosmic().space_xxs()),
+            .padding(space_xxs()),
         tooltip_text,
         cosmic::widget::tooltip::Position::Bottom,
     )
@@ -6654,7 +6706,7 @@ fn action_button_with_tooltip_loading(
     if is_loading {
         cosmic::widget::tooltip(
             button::icon(icon::from_name("process-working-symbolic").size(ICON_S))
-                .padding(theme::active().cosmic().space_xxs()),
+                .padding(space_xxs()),
             "Working...",
             cosmic::widget::tooltip::Position::Bottom,
         )

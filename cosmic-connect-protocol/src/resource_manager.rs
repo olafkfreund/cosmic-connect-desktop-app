@@ -517,7 +517,7 @@ impl ResourceManager {
 
         connections.retain(|id, info| {
             let idle_time = now.saturating_sub(info.last_activity);
-            if idle_time > max_idle_seconds {
+            if idle_time >= max_idle_seconds {
                 debug!(
                     "Removing stale connection {} (idle for {} seconds)",
                     id, idle_time

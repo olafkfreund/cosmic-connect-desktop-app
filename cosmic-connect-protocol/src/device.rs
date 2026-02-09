@@ -396,22 +396,23 @@ impl DeviceManager {
                     "Dedup: merging device '{}' (old_id={}, new_id={})",
                     info.device_name, old_id, device_id
                 );
-                let mut old_device = self
-                    .devices
-                    .remove(&old_id)
-                    .expect("dedup: old_id was found by iterating self.devices");
-                old_device.info = info;
-                old_device.host = host;
-                old_device.port = port;
-                old_device.update_last_seen();
-                self.devices.insert(device_id, old_device);
-            } else {
-                // Genuinely new device
-                let mut device = Device::from_discovery(info);
-                device.host = host;
-                device.port = port;
-                self.add_device(device);
+                if let Some(mut old_device) = self.devices.remove(&old_id) {
+                    old_device.info = info;
+                    old_device.host = host;
+                    old_device.port = port;
+                    old_device.update_last_seen();
+                    self.devices.insert(device_id, old_device);
+                    return;
+                }
+                // old_id vanished unexpectedly, fall through to add as new device
+                warn!("Dedup: expected device '{}' was already removed", old_id);
             }
+
+            // Genuinely new device
+            let mut device = Device::from_discovery(info);
+            device.host = host;
+            device.port = port;
+            self.add_device(device);
         }
     }
 

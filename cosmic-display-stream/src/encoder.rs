@@ -30,7 +30,7 @@
 //! # }
 //! ```
 
-use crate::capture::VideoFrame;
+use crate::capture::{VideoFrame, VideoTransform};
 use crate::error::{DisplayStreamError, Result};
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -97,6 +97,8 @@ pub struct EncoderConfig {
     pub low_latency: bool,
     /// Keyframe interval (GOP size) in frames
     pub keyframe_interval: u32,
+    /// Display orientation transform to apply before encoding
+    pub transform: VideoTransform,
 }
 
 impl Default for EncoderConfig {
@@ -109,6 +111,7 @@ impl Default for EncoderConfig {
             encoder_type: None, // Auto-detect
             low_latency: true,
             keyframe_interval: 30, // Keyframe every 30 frames (~0.5s at 60fps)
+            transform: VideoTransform::None,
         }
     }
 }
@@ -157,9 +160,16 @@ impl EncoderConfig {
     }
 
     /// Set the keyframe interval
-    #[must_use] 
+    #[must_use]
     pub fn with_keyframe_interval(mut self, interval: u32) -> Self {
         self.keyframe_interval = interval;
+        self
+    }
+
+    /// Set the display orientation transform
+    #[must_use]
+    pub fn with_transform(mut self, transform: VideoTransform) -> Self {
+        self.transform = transform;
         self
     }
 }
@@ -269,6 +279,15 @@ impl VideoEncoder {
             .do_timestamp(true)
             .build();
 
+        // Video flip for display orientation transforms (passthrough when identity)
+        let videoflip = gst::ElementFactory::make("videoflip")
+            .name("flip")
+            .property("video-direction", config.transform.to_gst_flip_method())
+            .build()
+            .map_err(|e| {
+                DisplayStreamError::Encoder(format!("Failed to create videoflip: {e}"))
+            })?;
+
         let videoconvert = gst::ElementFactory::make("videoconvert")
             .name("convert")
             .build()
@@ -301,6 +320,7 @@ impl VideoEncoder {
         pipeline
             .add_many([
                 appsrc.upcast_ref(),
+                &videoflip,
                 &videoconvert,
                 &encoder,
                 &h264parse,
@@ -310,9 +330,10 @@ impl VideoEncoder {
                 DisplayStreamError::Encoder(format!("Failed to add elements to pipeline: {e}"))
             })?;
 
-        // Link elements
+        // Link elements: appsrc → videoflip → videoconvert → encoder → h264parse → appsink
         gst::Element::link_many([
             appsrc.upcast_ref(),
+            &videoflip,
             &videoconvert,
             &encoder,
             &h264parse,

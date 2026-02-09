@@ -447,6 +447,87 @@ impl DamageRect {
     }
 }
 
+/// Display orientation transform from `PipeWire` `SPA_META_VideoTransform`
+///
+/// Values match Wayland `wl_output::Transform` and SPA `SPA_META_TRANSFORMATION_*`
+/// constants. Used to correctly orient frames from rotated or flipped displays.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum VideoTransform {
+    /// No transformation (normal orientation)
+    #[default]
+    None,
+    /// 90° counter-clockwise rotation
+    Rotate90,
+    /// 180° rotation
+    Rotate180,
+    /// 270° counter-clockwise rotation (90° clockwise)
+    Rotate270,
+    /// Horizontal flip
+    Flipped,
+    /// Horizontal flip then 90° CCW rotation
+    Flipped90,
+    /// Horizontal flip then 180° rotation
+    Flipped180,
+    /// Horizontal flip then 270° CCW rotation
+    Flipped270,
+}
+
+impl VideoTransform {
+    /// Create from a SPA `SPA_META_TRANSFORMATION_*` constant value
+    ///
+    /// Unknown values map to `None` (no transform).
+    #[must_use]
+    pub fn from_spa_value(value: u32) -> Self {
+        match value {
+            0 => Self::None,
+            1 => Self::Rotate90,
+            2 => Self::Rotate180,
+            3 => Self::Rotate270,
+            4 => Self::Flipped,
+            5 => Self::Flipped90,
+            6 => Self::Flipped180,
+            7 => Self::Flipped270,
+            _ => Self::None,
+        }
+    }
+
+    /// Whether this transform swaps width and height
+    ///
+    /// True for 90° and 270° rotations (with or without flip).
+    #[must_use]
+    pub fn needs_dimension_swap(&self) -> bool {
+        matches!(
+            self,
+            Self::Rotate90 | Self::Rotate270 | Self::Flipped90 | Self::Flipped270
+        )
+    }
+
+    /// Map to GStreamer `videoflip` method enum value
+    ///
+    /// Values correspond to `GstVideoOrientationMethod`:
+    /// - 0: identity (none)
+    /// - 1: 90° clockwise (CW)
+    /// - 2: 180°
+    /// - 3: 270° clockwise (90° CCW)
+    /// - 4: horizontal flip
+    /// - 5: vertical flip then 90° CW (= horiz-flip + 90° CCW)
+    /// - 6: vertical flip (= horiz-flip + 180°)
+    /// - 7: vertical flip then 270° CW (= horiz-flip + 270° CCW)
+    #[must_use]
+    pub fn to_gst_flip_method(&self) -> i32 {
+        match self {
+            Self::None => 0,       // GST_VIDEO_ORIENTATION_IDENTITY
+            Self::Rotate90 => 1,   // GST_VIDEO_ORIENTATION_90R
+            Self::Rotate180 => 2,  // GST_VIDEO_ORIENTATION_180
+            Self::Rotate270 => 3,  // GST_VIDEO_ORIENTATION_90L
+            Self::Flipped => 4,    // GST_VIDEO_ORIENTATION_HORIZ
+            Self::Flipped90 => 5,  // GST_VIDEO_ORIENTATION_UR_LL
+            Self::Flipped180 => 6, // GST_VIDEO_ORIENTATION_VERT
+            Self::Flipped270 => 7, // GST_VIDEO_ORIENTATION_UL_LR
+        }
+    }
+}
+
 /// Type of video frame buffer
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum BufferType {
@@ -497,6 +578,12 @@ pub struct VideoFrame {
     /// `None` means damage info is unavailable (treat as full-frame damage).
     /// An empty `Vec` means no damage (frame is identical to previous).
     pub damage_rects: Option<Vec<DamageRect>>,
+
+    /// Display orientation transform from `PipeWire` `SPA_META_VideoTransform`
+    ///
+    /// Indicates how the frame should be rotated/flipped to match the display's
+    /// physical orientation. `None` means no transformation needed.
+    pub transform: VideoTransform,
 }
 
 impl VideoFrame {
@@ -519,6 +606,7 @@ impl VideoFrame {
             sequence,
             buffer_type: BufferType::Shm,
             damage_rects: None,
+            transform: VideoTransform::None,
         }
     }
 
@@ -567,6 +655,7 @@ impl VideoFrame {
                 drm_format,
             },
             damage_rects: None,
+            transform: VideoTransform::None,
         }
     }
 
@@ -816,5 +905,70 @@ mod tests {
         assert!(frame.has_damage_info());
         assert!(!frame.is_full_damage()); // Empty vec = no damage
         assert_eq!(frame.damage_area(), 0);
+    }
+
+    #[test]
+    fn test_video_transform_from_spa_value() {
+        assert_eq!(VideoTransform::from_spa_value(0), VideoTransform::None);
+        assert_eq!(VideoTransform::from_spa_value(1), VideoTransform::Rotate90);
+        assert_eq!(VideoTransform::from_spa_value(2), VideoTransform::Rotate180);
+        assert_eq!(VideoTransform::from_spa_value(3), VideoTransform::Rotate270);
+        assert_eq!(VideoTransform::from_spa_value(4), VideoTransform::Flipped);
+        assert_eq!(VideoTransform::from_spa_value(5), VideoTransform::Flipped90);
+        assert_eq!(VideoTransform::from_spa_value(6), VideoTransform::Flipped180);
+        assert_eq!(VideoTransform::from_spa_value(7), VideoTransform::Flipped270);
+        // Invalid values map to None
+        assert_eq!(VideoTransform::from_spa_value(8), VideoTransform::None);
+        assert_eq!(VideoTransform::from_spa_value(255), VideoTransform::None);
+    }
+
+    #[test]
+    fn test_video_transform_needs_dimension_swap() {
+        // 90°/270° rotations need dimension swap
+        assert!(VideoTransform::Rotate90.needs_dimension_swap());
+        assert!(VideoTransform::Rotate270.needs_dimension_swap());
+        assert!(VideoTransform::Flipped90.needs_dimension_swap());
+        assert!(VideoTransform::Flipped270.needs_dimension_swap());
+        // Others do not
+        assert!(!VideoTransform::None.needs_dimension_swap());
+        assert!(!VideoTransform::Rotate180.needs_dimension_swap());
+        assert!(!VideoTransform::Flipped.needs_dimension_swap());
+        assert!(!VideoTransform::Flipped180.needs_dimension_swap());
+    }
+
+    #[test]
+    fn test_video_transform_to_gst_flip_method() {
+        assert_eq!(VideoTransform::None.to_gst_flip_method(), 0);
+        assert_eq!(VideoTransform::Rotate90.to_gst_flip_method(), 1);
+        assert_eq!(VideoTransform::Rotate180.to_gst_flip_method(), 2);
+        assert_eq!(VideoTransform::Rotate270.to_gst_flip_method(), 3);
+        assert_eq!(VideoTransform::Flipped.to_gst_flip_method(), 4);
+        assert_eq!(VideoTransform::Flipped90.to_gst_flip_method(), 5);
+        assert_eq!(VideoTransform::Flipped180.to_gst_flip_method(), 6);
+        assert_eq!(VideoTransform::Flipped270.to_gst_flip_method(), 7);
+    }
+
+    #[test]
+    fn test_video_transform_default() {
+        assert_eq!(VideoTransform::default(), VideoTransform::None);
+    }
+
+    #[test]
+    fn test_video_frame_carries_transform() {
+        let mut frame = VideoFrame::new(
+            vec![0u8; 100],
+            10,
+            10,
+            "BGRx".to_string(),
+            0,
+            0,
+        );
+        // Default is None
+        assert_eq!(frame.transform, VideoTransform::None);
+
+        // Set a transform
+        frame.transform = VideoTransform::Rotate90;
+        assert_eq!(frame.transform, VideoTransform::Rotate90);
+        assert!(frame.transform.needs_dimension_swap());
     }
 }

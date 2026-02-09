@@ -3,7 +3,7 @@
 //! This module provides integration with `PipeWire` to receive raw video frames
 //! from the screen capture session.
 
-use crate::capture::{BufferType, DamageRect, VideoFrame};
+use crate::capture::{BufferType, DamageRect, VideoFrame, VideoTransform};
 use crate::error::Result;
 use pipewire as pw;
 use pipewire::context::Context;
@@ -259,6 +259,7 @@ fn run_pipewire_loop(
             }
 
             let damage_rects = unsafe { extract_damage_rects(spa_buf) };
+            let transform = unsafe { extract_video_transform(spa_buf) };
 
             let (n_datas, datas_ptr) = unsafe {
                 ((*spa_buf).n_datas, (*spa_buf).datas)
@@ -313,6 +314,7 @@ fn run_pipewire_loop(
                             drm_format: 0, // Will be set from format negotiation
                         },
                         damage_rects: damage_rects.clone(),
+                        transform,
                     };
 
                     if let Err(e) = frame_tx.try_send(frame) {
@@ -363,6 +365,7 @@ fn run_pipewire_loop(
                         seq,
                     );
                     frame.damage_rects = damage_rects;
+                    frame.transform = transform;
 
                     // Try to send frame (non-blocking)
                     if let Err(e) = frame_tx.try_send(frame) {
@@ -477,6 +480,47 @@ unsafe fn extract_damage_rects(spa_buffer: *const spa_sys::spa_buffer) -> Option
     }
 
     None
+}
+
+/// Extract video transform from a `PipeWire` buffer's `SPA_META_VideoTransform` metadata
+///
+/// # Safety
+///
+/// The raw `spa_buffer` pointer must be valid for the duration of this call.
+/// This is guaranteed when called from within the process callback while the
+/// buffer is dequeued.
+unsafe fn extract_video_transform(spa_buffer: *const spa_sys::spa_buffer) -> VideoTransform {
+    if spa_buffer.is_null() {
+        return VideoTransform::None;
+    }
+
+    let buffer = &*spa_buffer;
+    if buffer.n_metas == 0 || buffer.metas.is_null() {
+        return VideoTransform::None;
+    }
+
+    let metas = std::slice::from_raw_parts(buffer.metas, buffer.n_metas as usize);
+
+    for meta in metas {
+        if meta.type_ != spa_sys::SPA_META_VideoTransform {
+            continue;
+        }
+
+        if meta.data.is_null() || meta.size < std::mem::size_of::<spa_sys::spa_meta_videotransform>() as u32 {
+            return VideoTransform::None;
+        }
+
+        let transform_meta = &*(meta.data as *const spa_sys::spa_meta_videotransform);
+        let transform = VideoTransform::from_spa_value(transform_meta.transform);
+
+        debug!(
+            "Extracted video transform from PipeWire metadata: {:?} (raw={})",
+            transform, transform_meta.transform
+        );
+        return transform;
+    }
+
+    VideoTransform::None
 }
 
 #[cfg(test)]
@@ -616,5 +660,92 @@ mod tests {
 
         let result = unsafe { extract_damage_rects(&buffer) };
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_video_transform_null_buffer() {
+        let result = unsafe { extract_video_transform(std::ptr::null()) };
+        assert_eq!(result, VideoTransform::None);
+    }
+
+    #[test]
+    fn test_extract_video_transform_no_meta() {
+        let buffer = spa_sys::spa_buffer {
+            n_metas: 0,
+            n_datas: 0,
+            metas: std::ptr::null_mut(),
+            datas: std::ptr::null_mut(),
+        };
+        let result = unsafe { extract_video_transform(&buffer) };
+        assert_eq!(result, VideoTransform::None);
+    }
+
+    #[test]
+    fn test_extract_video_transform_90() {
+        let transform_meta = spa_sys::spa_meta_videotransform {
+            transform: 1, // SPA_META_TRANSFORMATION_90
+        };
+
+        let mut meta = spa_sys::spa_meta {
+            type_: spa_sys::SPA_META_VideoTransform,
+            size: std::mem::size_of::<spa_sys::spa_meta_videotransform>() as u32,
+            data: &transform_meta as *const _ as *mut std::os::raw::c_void,
+        };
+
+        let buffer = spa_sys::spa_buffer {
+            n_metas: 1,
+            n_datas: 0,
+            metas: &mut meta,
+            datas: std::ptr::null_mut(),
+        };
+
+        let result = unsafe { extract_video_transform(&buffer) };
+        assert_eq!(result, VideoTransform::Rotate90);
+    }
+
+    #[test]
+    fn test_extract_video_transform_none_value() {
+        let transform_meta = spa_sys::spa_meta_videotransform {
+            transform: 0, // SPA_META_TRANSFORMATION_None
+        };
+
+        let mut meta = spa_sys::spa_meta {
+            type_: spa_sys::SPA_META_VideoTransform,
+            size: std::mem::size_of::<spa_sys::spa_meta_videotransform>() as u32,
+            data: &transform_meta as *const _ as *mut std::os::raw::c_void,
+        };
+
+        let buffer = spa_sys::spa_buffer {
+            n_metas: 1,
+            n_datas: 0,
+            metas: &mut meta,
+            datas: std::ptr::null_mut(),
+        };
+
+        let result = unsafe { extract_video_transform(&buffer) };
+        assert_eq!(result, VideoTransform::None);
+    }
+
+    #[test]
+    fn test_extract_video_transform_flipped270() {
+        let transform_meta = spa_sys::spa_meta_videotransform {
+            transform: 7, // SPA_META_TRANSFORMATION_Flipped270
+        };
+
+        let mut meta = spa_sys::spa_meta {
+            type_: spa_sys::SPA_META_VideoTransform,
+            size: std::mem::size_of::<spa_sys::spa_meta_videotransform>() as u32,
+            data: &transform_meta as *const _ as *mut std::os::raw::c_void,
+        };
+
+        let buffer = spa_sys::spa_buffer {
+            n_metas: 1,
+            n_datas: 0,
+            metas: &mut meta,
+            datas: std::ptr::null_mut(),
+        };
+
+        let result = unsafe { extract_video_transform(&buffer) };
+        assert_eq!(result, VideoTransform::Flipped270);
     }
 }

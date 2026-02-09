@@ -98,7 +98,9 @@ pub mod output;
 pub mod pipewire;
 pub mod streaming;
 
-pub use capture::{BufferType, DamageRect, FrameStream, ScreenCapture, SessionState, VideoFrame};
+pub use capture::{
+    BufferType, DamageRect, FrameStream, ScreenCapture, SessionState, VideoFrame, VideoTransform,
+};
 pub use encoder::{EncodedFrame, EncoderConfig, EncoderType, VideoEncoder};
 pub use error::{DisplayStreamError, Result};
 pub use gbm_devices::{

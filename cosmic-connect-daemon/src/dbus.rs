@@ -516,6 +516,66 @@ impl CConnectInterface {
         Ok(())
     }
 
+    /// Forget (dismiss) a device, removing it from the registry
+    ///
+    /// If the device is paired, it will be unpaired first. The device is then
+    /// removed from the device manager and the registry is saved to disk.
+    /// A DeviceRemoved signal is emitted so all clients update their UI.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to forget
+    ///
+    /// # Returns
+    /// Success or error message
+    async fn forget_device(&self, device_id: String) -> Result<(), zbus::fdo::Error> {
+        info!("DBus: ForgetDevice called for {}", device_id);
+
+        let mut device_manager = self.device_manager.write().await;
+
+        // Check if device exists
+        let device = device_manager
+            .get_device(&device_id)
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("Device not found: {}", device_id)))?;
+
+        // If device is paired, unpair first
+        if device.is_paired() {
+            drop(device_manager);
+
+            if let Some(pairing_service) = &self.pairing_service {
+                let pairing_service = pairing_service.read().await;
+                pairing_service.unpair(&device_id).await.map_err(|e| {
+                    zbus::fdo::Error::Failed(format!("Failed to unpair device: {}", e))
+                })?;
+            }
+
+            device_manager = self.device_manager.write().await;
+        }
+
+        // Remove the device
+        device_manager.remove_device(&device_id);
+        device_manager.save_registry().map_err(|e| {
+            zbus::fdo::Error::Failed(format!("Failed to save registry: {}", e))
+        })?;
+
+        drop(device_manager);
+
+        // Emit DeviceRemoved signal
+        let object_server = self.dbus_connection.object_server();
+        if let Ok(iface_ref) = object_server
+            .interface::<_, CConnectInterface>(OBJECT_PATH)
+            .await
+        {
+            if let Err(e) =
+                Self::device_removed(iface_ref.signal_emitter(), &device_id).await
+            {
+                warn!("Failed to emit DeviceRemoved signal: {}", e);
+            }
+        }
+
+        info!("Device {} forgotten successfully", device_id);
+        Ok(())
+    }
+
     /// Accept a pairing request from a device
     ///
     /// # Arguments

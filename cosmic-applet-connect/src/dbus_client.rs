@@ -617,6 +617,9 @@ trait CConnect {
     /// Forget saved screenshare capture source
     async fn forget_screen_share_source(&self) -> zbus::fdo::Result<()>;
 
+    /// Forget (dismiss) a device from the registry
+    async fn forget_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
     /// Pause screen share session
     async fn pause_screen_share(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
@@ -1555,6 +1558,14 @@ impl DbusClient {
             .forget_screen_share_source()
             .await
             .context("Failed to call forget_screen_share_source")
+    }
+
+    /// Forget (dismiss) a device from the registry
+    pub async fn forget_device(&self, device_id: &str) -> Result<()> {
+        self.proxy
+            .forget_device(device_id)
+            .await
+            .context("Failed to call forget_device")
     }
 
     /// Pause screen share session

@@ -840,6 +840,17 @@ impl CConnectApplet {
             ));
         }
 
+        // Dismiss button for offline, unpaired devices
+        if !device.is_connected() && !device.is_paired() {
+            menu_items.push(divider::horizontal::default().into());
+            menu_items.push(menu_item(
+                "user-trash-symbolic",
+                "Dismiss device",
+                Message::DismissDevice(device_id.to_string()),
+                cosmic::theme::Button::Destructive,
+            ));
+        }
+
         // Close menu button
         menu_items.push(divider::horizontal::default().into());
         menu_items.push(menu_item(

@@ -448,6 +448,8 @@ pub enum Message {
     // Unpair device messages
     UnpairDevice(String),
     ConfirmUnpairDevice(String),
+    // Dismiss (forget) device
+    DismissDevice(String),
     // Remote input dialog messages
     OpenRemoteInputDialog(String),
     CloseRemoteInputDialog,
@@ -1284,6 +1286,14 @@ impl CosmicConnectManager {
             }
 
             card_content = card_content.push(all_actions);
+        } else if !device.is_paired {
+            // Dismiss button for offline unpaired devices
+            card_content = card_content.push(
+                button::text("Dismiss")
+                    .on_press(Message::DismissDevice(device_id.to_string()))
+                    .class(theme::Button::Destructive)
+                    .padding(theme::active().cosmic().space_xxs()),
+            );
         }
 
         let card_container = container(card_content)
@@ -2753,6 +2763,29 @@ impl Application for CosmicConnectManager {
                         if let Err(e) = client.unpair_device(&device_id).await {
                             tracing::error!("Failed to unpair device: {}", e);
                             return Message::ActionError(format!("Failed to unpair device: {}", e));
+                        }
+                        Message::RefreshDevices
+                    })
+                } else {
+                    Task::none()
+                }
+            }
+            Message::DismissDevice(device_id) => {
+                if let Some(client) = &self.dbus_client {
+                    let client = client.clone();
+                    self.devices.remove(&device_id);
+                    self.device_configs.remove(&device_id);
+                    self.battery_status.remove(&device_id);
+                    if self.selected_device.as_deref() == Some(device_id.as_str()) {
+                        self.selected_device = None;
+                    }
+                    cosmic::task::future(async move {
+                        if let Err(e) = client.forget_device(&device_id).await {
+                            tracing::error!("Failed to dismiss device: {}", e);
+                            return Message::ActionError(format!(
+                                "Failed to dismiss device: {}",
+                                e
+                            ));
                         }
                         Message::RefreshDevices
                     })

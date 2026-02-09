@@ -158,6 +158,8 @@ pub enum Message {
     FileDragLeave,
     FileDropped(PathBuf),
     SetDragHoverDevice(Option<String>),
+    // Dismiss (forget) device
+    DismissDevice(String), // device_id
     // Context menu (device)
     ShowContextMenu(String), // device_id
     CloseContextMenu,

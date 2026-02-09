@@ -398,6 +398,9 @@ trait CConnect {
     /// Unpair a device
     async fn unpair_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
 
+    /// Forget (dismiss) a device from the registry
+    async fn forget_device(&self, device_id: &str) -> zbus::fdo::Result<()>;
+
     /// Trigger device discovery
     async fn refresh_discovery(&self) -> zbus::fdo::Result<()>;
 
@@ -1027,6 +1030,15 @@ impl DbusClient {
             .unpair_device(device_id)
             .await
             .context("Failed to unpair device")
+    }
+
+    /// Forget (dismiss) a device from the registry
+    pub async fn forget_device(&self, device_id: &str) -> Result<()> {
+        info!("Forgetting device {}", device_id);
+        self.proxy
+            .forget_device(device_id)
+            .await
+            .context("Failed to forget device")
     }
 
     /// Trigger device discovery

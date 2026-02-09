@@ -901,6 +901,29 @@ impl cosmic::Application for CConnectApplet {
                     ),
                 ])
             }
+            Message::DismissDevice(device_id) => {
+                tracing::info!("User requested dismiss device: {}", device_id);
+                Task::perform(
+                    async move {
+                        let (client, _) = DbusClient::connect()
+                            .await
+                            .map_err(|e| anyhow::anyhow!("DBus connection failed: {}", e))?;
+                        client.forget_device(&device_id).await
+                    },
+                    |result| {
+                        if let Err(e) = result {
+                            tracing::error!("Failed to dismiss device: {}", e);
+                            cosmic::Action::App(Message::ShowNotification(
+                                "Failed to dismiss device".to_string(),
+                                NotificationType::Error,
+                                None,
+                            ))
+                        } else {
+                            cosmic::Action::App(Message::RefreshDevices)
+                        }
+                    },
+                )
+            }
             Message::RefreshDevices => fetch_devices_task(),
             Message::SendPing(device_id) => {
                 let id = device_id.clone();
@@ -2921,6 +2944,10 @@ impl CConnectApplet {
                     .find(|d| d.device.info.device_id == *device_id)
                     .map(|d| d.device.info.device_name.clone())
                     .unwrap_or_else(|| "Unknown".to_string());
+
+                // Remove from local device list (matches manager behavior)
+                self.devices
+                    .retain(|d| d.device.info.device_id != *device_id);
 
                 self.history.push(HistoryEvent {
                     timestamp,

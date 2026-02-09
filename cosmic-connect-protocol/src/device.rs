@@ -390,6 +390,21 @@ impl DeviceManager {
                     .map(|(id, _)| id.clone())
             });
 
+            // Secondary dedup: match by name alone when existing device has no host
+            // and is not paired. This handles Android devices that regenerate their
+            // UUID on app reinstall — the old offline entry has host=None.
+            let existing_id = existing_id.or_else(|| {
+                self.devices
+                    .iter()
+                    .find(|(id, d)| {
+                        *id != &device_id
+                            && d.info.device_name == info.device_name
+                            && d.host.is_none()
+                            && !d.is_paired()
+                    })
+                    .map(|(id, _)| id.clone())
+            });
+
             if let Some(old_id) = existing_id {
                 // Merge: remove stale entry, add under new ID
                 info!(
@@ -720,5 +735,82 @@ mod tests {
         manager.add_device(device2);
 
         assert_eq!(manager.device_count(), 2);
+    }
+
+    #[test]
+    fn test_dedup_by_name_when_host_null() {
+        let temp_dir = TempDir::new().unwrap();
+        let registry_path = temp_dir.path().join("registry.json");
+        let mut manager = DeviceManager::new(&registry_path).unwrap();
+
+        // Add an offline device (host=None, unpaired) — simulates stale entry
+        let mut info_old = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_old.device_id = "old_uuid".to_string();
+        let device_old = Device::from_discovery(info_old);
+        manager.add_device(device_old);
+        assert_eq!(manager.device_count(), 1);
+
+        // Same device reconnects with a new UUID (Android reinstall)
+        let mut info_new = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_new.device_id = "new_uuid".to_string();
+        let addr = TransportAddress::Tcp("192.168.1.50:1716".parse().unwrap());
+        manager.update_from_discovery(info_new, addr);
+
+        // Should have merged — still 1 device, under new_uuid
+        assert_eq!(manager.device_count(), 1);
+        assert!(manager.has_device("new_uuid"));
+        assert!(!manager.has_device("old_uuid"));
+    }
+
+    #[test]
+    fn test_dedup_preserves_paired_devices() {
+        let temp_dir = TempDir::new().unwrap();
+        let registry_path = temp_dir.path().join("registry.json");
+        let mut manager = DeviceManager::new(&registry_path).unwrap();
+
+        // Add an offline *paired* device (host=None)
+        let mut info_paired = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_paired.device_id = "paired_uuid".to_string();
+        let mut device_paired = Device::from_discovery(info_paired);
+        device_paired.update_pairing_status(PairingStatus::Paired);
+        manager.add_device(device_paired);
+        assert_eq!(manager.device_count(), 1);
+
+        // A different device with the same name appears
+        let mut info_new = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_new.device_id = "new_uuid".to_string();
+        let addr = TransportAddress::Tcp("192.168.1.50:1716".parse().unwrap());
+        manager.update_from_discovery(info_new, addr);
+
+        // Should NOT merge — both devices exist
+        assert_eq!(manager.device_count(), 2);
+        assert!(manager.has_device("paired_uuid"));
+        assert!(manager.has_device("new_uuid"));
+    }
+
+    #[test]
+    fn test_dedup_by_name_and_host_still_works() {
+        let temp_dir = TempDir::new().unwrap();
+        let registry_path = temp_dir.path().join("registry.json");
+        let mut manager = DeviceManager::new(&registry_path).unwrap();
+
+        // Add a device with a known host
+        let mut info_old = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_old.device_id = "old_uuid".to_string();
+        let mut device_old = Device::from_discovery(info_old);
+        device_old.host = Some("192.168.1.50".to_string());
+        manager.add_device(device_old);
+        assert_eq!(manager.device_count(), 1);
+
+        // Same device reconnects from same host with new UUID
+        let mut info_new = DeviceInfo::new("My Phone", DeviceType::Phone, 1716);
+        info_new.device_id = "new_uuid".to_string();
+        let addr = TransportAddress::Tcp("192.168.1.50:1716".parse().unwrap());
+        manager.update_from_discovery(info_new, addr);
+
+        // Original name+host dedup should merge
+        assert_eq!(manager.device_count(), 1);
+        assert!(manager.has_device("new_uuid"));
+        assert!(!manager.has_device("old_uuid"));
     }
 }

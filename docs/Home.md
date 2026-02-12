@@ -100,7 +100,7 @@ COSMIC Connect is part of a larger ecosystem:
 
 - **[cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core)** - Shared Rust library (TLS, protocol, plugins)
 - **[cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android)** - Android app with Kotlin FFI
-- **[cosmic-connect-desktop-app](https://github.com/olafkfreund/cosmic-connect-desktop-app)** - This repository
+- **[cosmic-ext-connect-desktop-app](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app)** - This repository
 
 ### Integration Architecture
 
@@ -202,8 +202,8 @@ chore: Build/tooling
 
 ##  Support
 
-- **Issues**: [GitHub Issues](https://github.com/olafkfreund/cosmic-connect-desktop-app/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/olafkfreund/cosmic-connect-desktop-app/discussions)
+- **Issues**: [GitHub Issues](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/discussions)
 - **COSMIC Community**: [Pop!_OS Mattermost](https://chat.pop-os.org/)
 
 ##  License

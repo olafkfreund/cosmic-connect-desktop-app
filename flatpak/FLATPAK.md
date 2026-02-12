@@ -54,7 +54,7 @@ The manifest requires a `generated-sources.json` file containing all Cargo depen
 git clone https://github.com/flatpak/flatpak-builder-tools.git
 
 # Generate sources (run from project root)
-cd /path/to/cosmic-connect-desktop-app
+cd /path/to/cosmic-ext-connect-desktop-app
 python3 ../flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
   Cargo.lock \
   -o flatpak/generated-sources.json
@@ -136,7 +136,7 @@ For full functionality, users should install the native package:
 
 ```bash
 # NixOS (recommended)
-nix profile install github:olafkfreund/cosmic-connect-desktop-app
+nix profile install github:olafkfreund/cosmic-ext-connect-desktop-app
 
 # Manual installation (see README.md)
 cargo build --release
@@ -262,7 +262,7 @@ When releasing a new version:
    # In io.github.olafkfreund.CosmicExtConnect.yml
    sources:
      - type: git
-       url: https://github.com/olafkfreund/cosmic-connect-desktop-app.git
+       url: https://github.com/olafkfreund/cosmic-ext-connect-desktop-app.git
        tag: v0.2.0  # Update version
        commit: abc123def456  # Update commit hash
    ```
@@ -360,7 +360,7 @@ sdk-extensions:
 - **Flathub Matrix:** #flathub:matrix.org
 - **Flatpak IRC:** #flatpak on OFTC
 - **Documentation:** https://docs.flatpak.org/
-- **COSMIC Connect Issues:** https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
+- **COSMIC Connect Issues:** https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues
 
 ## Architecture Notes
 
@@ -407,7 +407,7 @@ Cross-compilation handled by Flatpak Builder automatically when building for Fla
 - [Flathub Submission Guidelines](https://github.com/flathub/flathub/wiki/App-Submission)
 - [AppStream Specification](https://www.freedesktop.org/software/appstream/docs/)
 - [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry-spec/latest/)
-- [COSMIC Connect Repository](https://github.com/olafkfreund/cosmic-connect-desktop-app)
+- [COSMIC Connect Repository](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app)
 
 ## License
 

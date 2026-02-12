@@ -1,6 +1,6 @@
 [Unit]
 Description=COSMIC Connect Daemon
-Documentation=https://github.com/olafkfreund/cosmic-connect-desktop-app
+Documentation=https://github.com/olafkfreund/cosmic-ext-connect-desktop-app
 After=network.target
 
 [Service]

@@ -19,7 +19,7 @@ Add to your `flake.nix`:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
+    cosmic-connect.url = "github:olafkfreund/cosmic-ext-connect-desktop-app";
   };
 
   outputs = { self, nixpkgs, cosmic-connect }: {
@@ -49,7 +49,7 @@ sudo nixos-rebuild switch --flake .#your-hostname
 
 ```nix
 {
-  inputs.cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
+  inputs.cosmic-connect.url = "github:olafkfreund/cosmic-ext-connect-desktop-app";
 
   outputs = { nixpkgs, cosmic-connect, ... }: {
     nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
@@ -71,7 +71,7 @@ If not using flakes, copy the files to your configuration:
 { config, pkgs, ... }:
 
 {
-  imports = [ /path/to/cosmic-connect-desktop-app/nix/module.nix ];
+  imports = [ /path/to/cosmic-ext-connect-desktop-app/nix/module.nix ];
 
   services.cosmic-connect = {
     enable = true;
@@ -383,7 +383,7 @@ nixos-rebuild dry-build --flake .#your-hostname
 
 ## Resources
 
-- [COSMIC Connect Repository](https://github.com/olafkfreund/cosmic-connect-desktop-app)
+- [COSMIC Connect Repository](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app)
 - [NixOS Manual - Packaging](https://nixos.org/manual/nixpkgs/stable/#chap-stdenv)
 - [NixOS Manual - Modules](https://nixos.org/manual/nixos/stable/#sec-writing-modules)
 - [Rust in Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/rust.section.md)

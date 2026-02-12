@@ -7,7 +7,7 @@ This directory contains the AUR (Arch User Repository) package files for COSMIC 
 - **Package Name**: `cosmic-connect`
 - **Description**: Device connectivity for COSMIC Desktop
 - **License**: GPL-3.0-or-later
-- **URL**: https://github.com/olafkfreund/cosmic-connect-desktop-app
+- **URL**: https://github.com/olafkfreund/cosmic-ext-connect-desktop-app
 - **AUR URL**: https://aur.archlinux.org/packages/cosmic-connect (pending)
 
 ## Files
@@ -46,7 +46,7 @@ sudo pacman -S base-devel rust
 To test the package locally before publishing:
 
 ```bash
-cd /path/to/cosmic-connect-desktop-app/aur
+cd /path/to/cosmic-ext-connect-desktop-app/aur
 makepkg -si
 ```
 
@@ -174,7 +174,7 @@ To contribute to the AUR package:
 - [Arch Package Guidelines](https://wiki.archlinux.org/title/Arch_package_guidelines)
 - [Rust Package Guidelines](https://wiki.archlinux.org/title/Rust_package_guidelines)
 - [AUR Submission Guidelines](https://wiki.archlinux.org/title/AUR_submission_guidelines)
-- [COSMIC Connect Documentation](https://github.com/olafkfreund/cosmic-connect-desktop-app)
+- [COSMIC Connect Documentation](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app)
 
 ## Maintainer Notes
 

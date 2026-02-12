@@ -67,8 +67,8 @@ sudo apt install cargo cmake just libexpat1-dev libfontconfig-dev \
 ### Clone and Build
 
 ```bash
-git clone https://github.com/olafkfreund/cosmic-connect-desktop-app
-cd cosmic-connect-desktop-app
+git clone https://github.com/olafkfreund/cosmic-ext-connect-desktop-app
+cd cosmic-ext-connect-desktop-app
 nix develop  # Or ensure dependencies are installed
 just build
 ```
@@ -375,7 +375,7 @@ The nixpkgs version requires proper source and dependency hashes. Update `nix/pk
 **Get the source hash:**
 ```bash
 # After tagging a release (e.g., v0.1.0)
-nix-prefetch-url --unpack https://github.com/olafkfreund/cosmic-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
+nix-prefetch-url --unpack https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
 ```
 
 **Get the cosmic-ext-connect-core git dependency hash:**
@@ -527,7 +527,7 @@ Device connectivity for COSMIC Desktop. Provides seamless integration
 between Android devices and COSMIC Desktop with features like file
 sharing, clipboard sync, notification mirroring, and remote desktop.
 
-https://github.com/olafkfreund/cosmic-connect-desktop-app
+https://github.com/olafkfreund/cosmic-ext-connect-desktop-app
 ```
 
 #### 11. Push and Create Pull Request

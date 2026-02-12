@@ -12,9 +12,9 @@ In your NixOS configuration flake, add COSMIC Connect as an input:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app";
+    cosmic-connect.url = "github:olafkfreund/cosmic-ext-connect-desktop-app";
     # Or use a local path during development:
-    # cosmic-connect.url = "path:/home/user/cosmic-connect-desktop-app";
+    # cosmic-connect.url = "path:/home/user/cosmic-ext-connect-desktop-app";
   };
 
   outputs = { self, nixpkgs, cosmic-connect, ... }: {
@@ -529,13 +529,13 @@ sudo nixos-rebuild switch --flake .#
 
 ```nix
 {
-  inputs.cosmic-connect.url = "github:olafkfreund/cosmic-connect-desktop-app?ref=v0.1.0";
+  inputs.cosmic-connect.url = "github:olafkfreund/cosmic-ext-connect-desktop-app?ref=v0.1.0";
 }
 ```
 
 ## Support
 
-- **Issues**: https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
+- **Issues**: https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues
 - **Protocol Docs**: See `cosmic-ext-connect-protocol/src/plugins/remotedesktop/README.md`
 - **Implementation Status**: See `IMPLEMENTATION_STATUS.md`
 

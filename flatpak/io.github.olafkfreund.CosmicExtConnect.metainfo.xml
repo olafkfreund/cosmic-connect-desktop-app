@@ -55,10 +55,10 @@
     <keyword>file transfer</keyword>
   </keywords>
 
-  <url type="homepage">https://github.com/olafkfreund/cosmic-connect-desktop-app</url>
-  <url type="bugtracker">https://github.com/olafkfreund/cosmic-connect-desktop-app/issues</url>
-  <url type="help">https://github.com/olafkfreund/cosmic-connect-desktop-app/blob/main/docs/USER_GUIDE.md</url>
-  <url type="vcs-browser">https://github.com/olafkfreund/cosmic-connect-desktop-app</url>
+  <url type="homepage">https://github.com/olafkfreund/cosmic-ext-connect-desktop-app</url>
+  <url type="bugtracker">https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues</url>
+  <url type="help">https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/blob/main/docs/USER_GUIDE.md</url>
+  <url type="vcs-browser">https://github.com/olafkfreund/cosmic-ext-connect-desktop-app</url>
 
   <launchable type="desktop-id">io.github.olafkfreund.CosmicExtConnect.desktop</launchable>
 
@@ -75,15 +75,15 @@
   <screenshots>
     <screenshot type="default">
       <caption>COSMIC Connect Manager - Device management interface</caption>
-      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-connect-desktop-app/main/docs/screenshots/manager.png</image>
+      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-ext-connect-desktop-app/main/docs/screenshots/manager.png</image>
     </screenshot>
     <screenshot>
       <caption>Panel applet showing connected devices</caption>
-      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-connect-desktop-app/main/docs/screenshots/applet.png</image>
+      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-ext-connect-desktop-app/main/docs/screenshots/applet.png</image>
     </screenshot>
     <screenshot>
       <caption>File transfer in progress</caption>
-      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-connect-desktop-app/main/docs/screenshots/transfer.png</image>
+      <image>https://raw.githubusercontent.com/olafkfreund/cosmic-ext-connect-desktop-app/main/docs/screenshots/transfer.png</image>
     </screenshot>
   </screenshots>
 

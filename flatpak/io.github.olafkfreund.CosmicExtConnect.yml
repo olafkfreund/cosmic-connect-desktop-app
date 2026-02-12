@@ -180,7 +180,7 @@ modules:
 
     sources:
       - type: git
-        url: https://github.com/olafkfreund/cosmic-connect-desktop-app.git
+        url: https://github.com/olafkfreund/cosmic-ext-connect-desktop-app.git
         branch: main
         # For releases, use:
         # tag: v0.1.0

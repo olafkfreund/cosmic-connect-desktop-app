@@ -195,4 +195,4 @@ If you're locked out due to phone authentication issues:
 
 ### Contributing
 
-See the main [COSMIC Connect repository](https://github.com/olafkfreund/cosmic-connect-desktop-app) for contribution guidelines.
+See the main [COSMIC Connect repository](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app) for contribution guidelines.

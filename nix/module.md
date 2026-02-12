@@ -531,9 +531,9 @@ Always review plugin permissions before enabling them.
 
 ## Additional Resources {#additional-resources}
 
-- **GitHub:** https://github.com/olafkfreund/cosmic-connect-desktop-app
+- **GitHub:** https://github.com/olafkfreund/cosmic-ext-connect-desktop-app
 - **Documentation:** See `README.md` in the repository
-- **Bug Reports:** https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
+- **Bug Reports:** https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues
 - **KDE Connect Protocol:** https://community.kde.org/KDEConnect
 
 ---

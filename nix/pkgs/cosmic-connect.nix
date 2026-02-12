@@ -49,7 +49,7 @@ rustPlatform.buildRustPackage rec {
     repo = "cosmic-ext-connect-desktop-app";
     rev = "v${version}";
     hash = ""; # IMPORTANT: Update this hash for nixpkgs submission
-    # To get the hash, run: nix-prefetch-url --unpack https://github.com/olafkfreund/cosmic-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
+    # To get the hash, run: nix-prefetch-url --unpack https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
   };
 
   cargoLock = {

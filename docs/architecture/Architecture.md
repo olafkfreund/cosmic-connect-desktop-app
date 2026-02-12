@@ -14,7 +14,7 @@ cosmic-ext-connect-core/          # Shared Rust library (github.com/olafkfreund/
 ├── plugins/                  # Plugin system and implementations
 └── ffi/                      # FFI bindings for Kotlin/Swift (uniffi-rs)
 
-cosmic-connect-desktop-app/   # This repository (COSMIC Desktop)
+cosmic-ext-connect-desktop-app/   # This repository (COSMIC Desktop)
 ├── cosmic-ext-connect-protocol/  # Desktop-specific protocol extensions
 ├── cosmic-ext-connect-daemon/    # Background daemon service
 ├── cosmic-ext-applet-connect/    # COSMIC panel applet (UI)
@@ -186,7 +186,7 @@ cd ~/Source/GitHub/
 git clone https://github.com/olafkfreund/cosmic-ext-connect-core
 
 # 2. Work on desktop app
-cd cosmic-connect-desktop-app
+cd cosmic-ext-connect-desktop-app
 nix develop
 cargo build
 ```
@@ -211,7 +211,7 @@ cd cosmic-ext-connect-core
 cargo build
 
 # 2. Test in desktop app
-cd ../cosmic-connect-desktop-app
+cd ../cosmic-ext-connect-desktop-app
 cargo build
 
 # 3. Test in Android app
@@ -337,7 +337,7 @@ cosmic-ext-connect-core = { git = "https://github.com/olafkfreund/cosmic-ext-con
 
 - [cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core) - Shared Rust library
 - [cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android) - Android app
-- [cosmic-connect-desktop-app](https://github.com/olafkfreund/cosmic-connect-desktop-app) - This repository
+- [cosmic-ext-connect-desktop-app](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app) - This repository
 - [KDE Connect Protocol](https://community.kde.org/KDEConnect) - Protocol specification
 - [uniffi-rs](https://github.com/mozilla/uniffi-rs) - FFI binding generator
 - [rustls](https://github.com/rustls/rustls) - TLS implementation

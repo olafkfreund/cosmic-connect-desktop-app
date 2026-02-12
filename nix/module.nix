@@ -470,7 +470,7 @@ in
     # User systemd service for the daemon
     systemd.user.services.cosmic-ext-connect-daemon = mkIf cfg.daemon.enable {
       description = "COSMIC Connect Daemon - Device connectivity service";
-      documentation = [ "https://github.com/olafkfreund/cosmic-connect-desktop-app" ];
+      documentation = [ "https://github.com/olafkfreund/cosmic-ext-connect-desktop-app" ];
 
       after = [ "network.target" ];
       wantedBy = mkIf cfg.daemon.autoStart [ "default.target" ];
@@ -559,10 +559,10 @@ in
     # Create necessary directories
     system.activationScripts.cosmic-ext-connect = ''
       # Ensure config directory exists
-      mkdir -p /etc/xdg/cosmic-connect
+      mkdir -p /etc/xdg/cosmic-ext-connect
 
       # Set proper permissions
-      chmod 755 /etc/xdg/cosmic-connect
+      chmod 755 /etc/xdg/cosmic-ext-connect
     '';
 
     # Warnings for common misconfigurations

@@ -27,7 +27,7 @@ src = lib.cleanSourceWith {
 ```nix
 src = fetchFromGitHub {
   owner = "olafkfreund";
-  repo = "cosmic-connect-desktop-app";
+  repo = "cosmic-ext-connect-desktop-app";
   rev = "v${version}";
   hash = "sha256-...";  # Fixed hash required
 };
@@ -87,7 +87,7 @@ cargoLock = {
 2. **Get Source Hash**
    ```bash
    nix-prefetch-url --unpack \
-     https://github.com/olafkfreund/cosmic-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
+     https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
    ```
 
 3. **Get Dependency Hash**
@@ -218,7 +218,7 @@ Solution: Re-run `nix-prefetch-url` with correct tag
 
 ## Resources
 
-- [Issue #43: Submit Package to nixpkgs](https://github.com/olafkfreund/cosmic-connect-desktop-app/issues/43)
+- [Issue #43: Submit Package to nixpkgs](https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues/43)
 - [CONTRIBUTING.md](../../CONTRIBUTING.md) - See "Submitting to nixpkgs" section
 - [nixpkgs Contributing Guide](https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md)
 - [Rust Packages in nixpkgs](https://nixos.org/manual/nixpkgs/stable/#rust)

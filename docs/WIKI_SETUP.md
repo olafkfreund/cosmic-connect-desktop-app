@@ -23,7 +23,7 @@ Documentation is currently maintained in the `docs/` directory of the main repos
 
 **Access:**
 - Main index: [docs/Home.md](Home.md)
-- Direct GitHub view: `https://github.com/olafkfreund/cosmic-connect-desktop-app/tree/main/docs`
+- Direct GitHub view: `https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/tree/main/docs`
 
 ## Option 2: Mirror to GitHub Wiki
 
@@ -40,15 +40,15 @@ If you prefer to also maintain a GitHub Wiki, here's how to set it up:
 ```bash
 # Clone the wiki repo (it's a separate git repository)
 cd ~/Source/GitHub/
-git clone git@github.com:olafkfreund/cosmic-connect-desktop-app.wiki.git
-cd cosmic-connect-desktop-app.wiki
+git clone git@github.com:olafkfreund/cosmic-ext-connect-desktop-app.wiki.git
+cd cosmic-ext-connect-desktop-app.wiki
 ```
 
 ### Step 3: Copy Documentation
 
 ```bash
 # Copy docs from main repo to wiki
-cp -r ../cosmic-connect-desktop-app/docs/* .
+cp -r ../cosmic-ext-connect-desktop-app/docs/* .
 
 # The Home.md file becomes the wiki homepage
 # All other files can be accessed via wiki navigation
@@ -84,8 +84,8 @@ You'll need to manually sync changes from `docs/` to wiki, or set up automation.
 #!/bin/bash
 # Sync docs/ to wiki
 
-REPO_DIR="../cosmic-connect-desktop-app"
-WIKI_DIR="../cosmic-connect-desktop-app.wiki"
+REPO_DIR="../cosmic-ext-connect-desktop-app"
+WIKI_DIR="../cosmic-ext-connect-desktop-app.wiki"
 
 cd "$WIKI_DIR"
 git pull
@@ -128,7 +128,7 @@ markdown: kramdown
 ### Step 3: Access Documentation
 
 After deployment, documentation will be available at:
-`https://olafkfreund.github.io/cosmic-connect-desktop-app/`
+`https://olafkfreund.github.io/cosmic-ext-connect-desktop-app/`
 
 ## Recommendation
 
@@ -162,9 +162,9 @@ docs/
 
 ## Access URLs
 
-- **Repository docs**: `https://github.com/olafkfreund/cosmic-connect-desktop-app/tree/main/docs`
-- **Main index**: `https://github.com/olafkfreund/cosmic-connect-desktop-app/blob/main/docs/Home.md`
-- **Architecture**: `https://github.com/olafkfreund/cosmic-connect-desktop-app/blob/main/docs/architecture/Architecture.md`
+- **Repository docs**: `https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/tree/main/docs`
+- **Main index**: `https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/blob/main/docs/Home.md`
+- **Architecture**: `https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/blob/main/docs/architecture/Architecture.md`
 
 ---
 

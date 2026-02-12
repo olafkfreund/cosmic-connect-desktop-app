@@ -73,13 +73,13 @@ The Flatpak package includes:
 
 The background daemon has limited functionality in the Flatpak sandbox. For full features (system-wide device integration, unrestricted file access), install the native package:
 
-- **NixOS:** `nix profile install github:olafkfreund/cosmic-connect-desktop-app`
+- **NixOS:** `nix profile install github:olafkfreund/cosmic-ext-connect-desktop-app`
 - **Manual:** See main README.md
 
 ## Support
 
-- **Issues:** https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
-- **Documentation:** https://github.com/olafkfreund/cosmic-connect-desktop-app/blob/main/docs/
+- **Issues:** https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/issues
+- **Documentation:** https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/blob/main/docs/
 - **Flathub Help:** https://docs.flatpak.org/
 
 ## License

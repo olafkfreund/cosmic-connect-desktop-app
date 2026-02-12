@@ -9,25 +9,28 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
-/// Desktop Chrome user-agent for web messenger compatibility
-pub const DESKTOP_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+/// Desktop user agent for web messaging services
+pub const DESKTOP_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-/// Get the recommended user agent for a messenger
-pub fn user_agent_for_messenger(messenger_id: &str) -> &'static str {
-    match messenger_id {
-        // WhatsApp Web requires a specific desktop user agent
-        "whatsapp" => DESKTOP_USER_AGENT,
-        // Google Messages works with any modern browser
-        "google-messages" => DESKTOP_USER_AGENT,
-        // Telegram works with any modern browser
-        "telegram" => DESKTOP_USER_AGENT,
-        // Default for all others
-        _ => DESKTOP_USER_AGENT,
-    }
+/// Get user agent string for a specific messenger
+pub fn user_agent_for_messenger(_messenger_id: &str) -> String {
+    // Most messengers work best with a desktop Chrome user agent
+    // Some may need specific handling in the future
+    DESKTOP_USER_AGENT.to_string()
+}
+
+/// Get the WebView data directory for a messenger
+pub fn webview_data_dir(messenger_id: &str) -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("cosmic-messages-popup")
+        .join("webview-data")
+        .join(messenger_id)
 }
 
 /// WebView context for persisting sessions
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct WebViewContext {
     /// Messenger identifier
     pub messenger_id: String,
@@ -46,7 +49,6 @@ impl WebViewContext {
     pub fn new(messenger_id: &str, url: &str) -> Self {
         let data_dir = Config::data_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp/cosmic-messages-popup"))
-            .join("webview-data")
             .join(messenger_id);
 
         Self {
@@ -66,14 +68,6 @@ impl WebViewContext {
     }
 }
 
-/// Get the canonical WebView data directory for a messenger
-pub fn webview_data_dir(messenger_id: &str) -> PathBuf {
-    Config::data_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp/cosmic-messages-popup"))
-        .join("webview-data")
-        .join(messenger_id)
-}
-
 /// Manager for multiple WebView instances
 pub struct WebViewManager {
     /// Contexts for each messenger
@@ -84,6 +78,7 @@ pub struct WebViewManager {
     config: Config,
 }
 
+#[allow(dead_code)]
 impl WebViewManager {
     /// Create a new WebView manager
     pub fn new(config: Config) -> Self {
@@ -227,6 +222,7 @@ impl WebViewManager {
 
 /// Information about a WebView for display purposes
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct WebViewInfo {
     pub messenger_id: String,
     pub display_name: String,
@@ -254,6 +250,7 @@ impl WebViewManager {
 }
 
 /// JavaScript injection for common operations
+#[allow(dead_code)]
 pub mod js {
     /// Clear all local storage
     pub const CLEAR_STORAGE: &str = "localStorage.clear(); sessionStorage.clear();";

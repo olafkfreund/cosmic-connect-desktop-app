@@ -32,7 +32,9 @@
 //! ```
 
 use clap::Parser;
+use futures::channel::mpsc;
 use std::sync::{atomic::AtomicBool, Arc};
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -93,15 +95,15 @@ fn main() -> cosmic::iced::Result {
     let _gtk_handle = gtk_webview::start_gtk_event_loop();
     info!("GTK event loop thread spawned");
 
-    // Create D-Bus channel
-    let (dbus_sender, dbus_receiver) = app::create_dbus_channel();
+    // Create D-Bus channel using futures (no tokio runtime needed)
+    let (dbus_sender, dbus_receiver) = mpsc::unbounded::<DbusCommand>();
 
     // Create shared visibility state
     let visible = Arc::new(AtomicBool::new(false));
 
-    // Start D-Bus service in background
+    // Start D-Bus service in background thread with its own tokio runtime
     let dbus_sender_clone = dbus_sender.clone();
-    let visible_clone = Arc::clone(&visible);
+    let visible_clone = visible.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         rt.block_on(async {
@@ -118,36 +120,33 @@ fn main() -> cosmic::iced::Result {
         });
     });
 
-    // Handle daemon mode - run headlessly without COSMIC window
+    // Handle daemon mode
     if args.daemon {
         info!("Running in daemon mode - waiting for D-Bus commands");
-        // Block main thread to keep GTK and D-Bus threads alive
+        // In daemon mode, we park the main thread and return
         std::thread::park();
         return Ok(());
     }
 
-    // Handle initial messenger selection or --show flag
+    // Handle initial messenger selection or show command
+    if args.show {
+        let _ = dbus_sender.unbounded_send(DbusCommand::TogglePopup);
+    }
+
     if let Some(messenger) = args.messenger.clone() {
         info!("Opening messenger: {}", messenger);
         let _ = dbus_sender.unbounded_send(DbusCommand::ShowMessenger(messenger));
-    } else if args.show {
-        info!("Showing popup on startup");
-        let _ = dbus_sender.unbounded_send(DbusCommand::TogglePopup);
     }
 
     // Configure COSMIC application settings
     let settings = cosmic::app::Settings::default()
-        .size_limits(
-            cosmic::iced::Limits::NONE
-                .min_width(300.0)
-                .min_height(400.0),
-        )
+        .size_limits(cosmic::iced::Limits::NONE.min_width(300.0).min_height(400.0))
         .exit_on_close(false);
 
-    // Create application flags
+    // Create app flags
     let flags = AppFlags {
         dbus_sender,
-        dbus_receiver,
+        dbus_receiver: Arc::new(Mutex::new(dbus_receiver)),
         visible,
     };
 

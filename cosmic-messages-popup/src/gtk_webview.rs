@@ -41,12 +41,11 @@ pub enum GtkCommand {
     HideAll,
     /// Navigate to a URL
     Navigate { messenger_id: String, url: String },
+    /// Reload a WebView window
+    Reload { messenger_id: String },
     /// Close a window
     Close { messenger_id: String },
-    /// Reload a WebView
-    Reload { messenger_id: String },
     /// Shutdown the GTK thread
-    #[allow(dead_code)]
     Shutdown,
 }
 
@@ -74,9 +73,85 @@ pub fn ensure_gtk_init() -> Result<()> {
     }
 }
 
+/// Handle a GTK command
+fn handle_gtk_command(
+    cmd: GtkCommand,
+    windows: &mut HashMap<String, (gtk::Window, WebView, wry::WebContext)>,
+) {
+    match cmd {
+        GtkCommand::Show {
+            messenger_id,
+            url,
+            title,
+            width,
+            height,
+            position,
+        } => {
+            if let Some((window, _, _)) = windows.get(&messenger_id) {
+                // Window exists, just show it
+                window.present();
+                window.grab_focus();
+                debug!("Presenting existing window for {}", messenger_id);
+            } else {
+                // Create new window
+                match create_webview_window(&messenger_id, &url, &title, width, height, &position) {
+                    Ok((window, webview, context)) => {
+                        windows.insert(messenger_id.clone(), (window, webview, context));
+                        info!("Created WebView window for {}", messenger_id);
+                    }
+                    Err(e) => {
+                        error!("Failed to create WebView window: {}", e);
+                    }
+                }
+            }
+        }
+        GtkCommand::Hide { messenger_id } => {
+            if let Some((window, _, _)) = windows.get(&messenger_id) {
+                window.hide();
+                debug!("Hidden window for {}", messenger_id);
+            }
+        }
+        GtkCommand::HideAll => {
+            for (window, _, _) in windows.values() {
+                window.hide();
+            }
+            debug!("Hidden all windows");
+        }
+        GtkCommand::Navigate { messenger_id, url } => {
+            if let Some((_, webview, _)) = windows.get(&messenger_id) {
+                if let Err(e) = webview.load_url(&url) {
+                    error!("Failed to navigate: {}", e);
+                }
+                debug!("Navigated {} to {}", messenger_id, url);
+            }
+        }
+        GtkCommand::Reload { messenger_id } => {
+            if let Some((_, webview, _)) = windows.get(&messenger_id) {
+                if let Err(e) = webview.evaluate_script("window.location.reload()") {
+                    error!("Failed to reload: {}", e);
+                }
+                debug!("Reloaded {}", messenger_id);
+            }
+        }
+        GtkCommand::Close { messenger_id } => {
+            if let Some((window, _, _)) = windows.remove(&messenger_id) {
+                window.close();
+                info!("Closed window for {}", messenger_id);
+            }
+        }
+        GtkCommand::Shutdown => {
+            info!("GTK thread shutting down");
+            for (_, (window, _, _)) in windows.drain() {
+                window.close();
+            }
+            gtk::main_quit();
+        }
+    }
+}
+
 /// Start the GTK event loop in a background thread
 ///
-/// Returns the thread handle and a sender for commands
+/// Returns the thread handle
 ///
 /// NOTE: GTK must be initialized ON the thread where it will be used.
 /// This function initializes GTK inside the spawned thread.
@@ -95,114 +170,33 @@ pub fn start_gtk_event_loop() -> JoinHandle<()> {
         info!("GTK initialized on event loop thread");
         info!("GTK event loop thread started");
 
-        // Track windows by messenger ID - store WebContext alongside window/webview
-        let windows: Rc<RefCell<HashMap<String, (gtk::Window, WebView, wry::WebContext)>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        // Track windows by messenger ID (with WebContext to keep it alive)
+        type WindowMap = HashMap<String, (gtk::Window, WebView, wry::WebContext)>;
+        let windows: Rc<RefCell<WindowMap>> = Rc::new(RefCell::new(HashMap::new()));
 
-        // Set up command processing with GTK's native event loop integration
+        // Poll commands via glib timeout (GTK native event loop integration)
         let windows_clone = windows.clone();
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
-            // Process all pending commands without blocking
-            while let Ok(cmd) = rx.try_recv() {
-                handle_gtk_command(&windows_clone, cmd);
+            match rx.try_recv() {
+                Ok(cmd) => {
+                    handle_gtk_command(cmd, &mut windows_clone.borrow_mut());
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // No commands, continue
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    info!("GTK command channel disconnected, shutting down");
+                    gtk::main_quit();
+                    return glib::ControlFlow::Break;
+                }
             }
             glib::ControlFlow::Continue
         });
 
-        // Run the proper GTK main loop (no busy-waiting)
+        // Run GTK main loop (proper event dispatch)
         gtk::main();
-
-        info!("GTK event loop ended");
+        info!("GTK main loop exited");
     })
-}
-
-/// Handle a GTK command
-fn handle_gtk_command(
-    windows: &Rc<RefCell<HashMap<String, (gtk::Window, WebView, wry::WebContext)>>>,
-    cmd: GtkCommand,
-) {
-    match cmd {
-        GtkCommand::Show {
-            messenger_id,
-            url,
-            title,
-            width,
-            height,
-            position,
-        } => {
-            let mut windows_map = windows.borrow_mut();
-            if let Some((window, _, _)) = windows_map.get(&messenger_id) {
-                // Window exists, show and focus it
-                window.present();
-                window.grab_focus();
-                // Try to activate on Wayland
-                if let Some(gdk_window) = window.window() {
-                    gdk_window.focus(0); // timestamp 0 = current time
-                }
-                debug!("Presenting existing window for {}", messenger_id);
-            } else {
-                // Create new window
-                match create_webview_window(&messenger_id, &url, &title, width, height, &position)
-                {
-                    Ok((window, webview, web_context)) => {
-                        windows_map.insert(messenger_id.clone(), (window, webview, web_context));
-                        info!("Created WebView window for {}", messenger_id);
-                    }
-                    Err(e) => {
-                        error!("Failed to create WebView window: {}", e);
-                    }
-                }
-            }
-        }
-        GtkCommand::Hide { messenger_id } => {
-            let windows_map = windows.borrow();
-            if let Some((window, _, _)) = windows_map.get(&messenger_id) {
-                window.hide();
-                debug!("Hidden window for {}", messenger_id);
-            }
-        }
-        GtkCommand::HideAll => {
-            let windows_map = windows.borrow();
-            for (window, _, _) in windows_map.values() {
-                window.hide();
-            }
-            debug!("Hidden all windows");
-        }
-        GtkCommand::Navigate { messenger_id, url } => {
-            let windows_map = windows.borrow();
-            if let Some((_, webview, _)) = windows_map.get(&messenger_id) {
-                if let Err(e) = webview.load_url(&url) {
-                    error!("Failed to navigate: {}", e);
-                }
-                debug!("Navigated {} to {}", messenger_id, url);
-            }
-        }
-        GtkCommand::Reload { messenger_id } => {
-            let windows_map = windows.borrow();
-            if let Some((_, webview, _)) = windows_map.get(&messenger_id) {
-                // Reload using JavaScript
-                if let Err(e) = webview.evaluate_script("location.reload()") {
-                    error!("Failed to reload: {}", e);
-                }
-                debug!("Reloaded window for {}", messenger_id);
-            }
-        }
-        GtkCommand::Close { messenger_id } => {
-            let mut windows_map = windows.borrow_mut();
-            if let Some((window, _, _)) = windows_map.remove(&messenger_id) {
-                window.close();
-                info!("Closed window for {}", messenger_id);
-            }
-        }
-        GtkCommand::Shutdown => {
-            info!("GTK thread shutting down");
-            let mut windows_map = windows.borrow_mut();
-            for (_, (window, _, _)) in windows_map.drain() {
-                window.close();
-            }
-            gtk::main_quit();
-        }
-    }
 }
 
 /// Create a GTK window with embedded WebView
@@ -236,20 +230,18 @@ fn create_webview_window(
     window.set_title(title);
     window.set_default_size(width, height);
 
-    // Apply positioning based on config
+    // Apply positioning
     match position {
         "center" => window.set_position(gtk::WindowPosition::Center),
-        "cursor" | "mouse" => window.set_position(gtk::WindowPosition::Mouse),
+        "cursor" => window.set_position(gtk::WindowPosition::Mouse),
         "bottom-right" => {
-            // Set gravity to SouthEast for bottom-right positioning
+            window.set_position(gtk::WindowPosition::None);
             window.set_gravity(gdk::Gravity::SouthEast);
-            // GTK will handle positioning based on gravity
-            window.set_position(gtk::WindowPosition::Center);
         }
         _ => window.set_position(gtk::WindowPosition::Center),
     }
 
-    // Set window hints - use Utility for better Wayland compatibility
+    // Set window hints for popup-like behavior
     window.set_type_hint(gdk::WindowTypeHint::Utility);
     window.set_decorated(true);
     window.set_resizable(true);
@@ -261,22 +253,24 @@ fn create_webview_window(
     window.add(&container);
 
     // Create a WebContext with persistent data directory
-    // Store it to keep it alive for the lifetime of the WebView
+    // This stores cookies, local storage, IndexedDB - users login once!
     let mut web_context = wry::WebContext::new(Some(data_dir.clone()));
+
+    // Get user agent for this messenger
+    let user_agent = user_agent_for_messenger(messenger_id);
 
     // Build WebView using GTK extension for Wayland support
     // Note: Don't use with_bounds() - let GTK handle sizing through widget properties
-    let user_agent = user_agent_for_messenger(messenger_id);
     let webview = WebViewBuilder::with_web_context(&mut web_context)
         .with_url(url)
-        .with_user_agent(user_agent)
+        .with_user_agent(&user_agent)
         .with_devtools(cfg!(debug_assertions))
         .with_autoplay(true)
-        // Handle new window requests (OAuth popups, etc.) with expanded patterns
+        // Handle new window requests (OAuth popups, etc.)
         .with_new_window_req_handler(|uri: String| {
             debug!("WebView requested new window: {}", uri);
-            // Detect OAuth and external login flows
-            let is_external = uri.contains("accounts.google.com")
+            // Open OAuth/external links in default browser
+            if uri.contains("accounts.google.com")
                 || uri.contains("login.microsoftonline.com")
                 || uri.contains("facebook.com/login")
                 || uri.contains("facebook.com/v")
@@ -286,10 +280,8 @@ fn create_webview_window(
                 || uri.contains("/signin")
                 || uri.contains("/auth/")
                 || uri.contains("/sso")
-                || uri.starts_with("https://accounts.");
-
-            if is_external {
-                debug!("Opening external URL in browser: {}", uri);
+                || uri.starts_with("https://accounts.")
+            {
                 let _ = open::that(&uri);
                 return false; // Don't open in webview
             }
@@ -322,15 +314,10 @@ fn create_webview_window(
         glib::Propagation::Stop
     });
 
-    // Show the window with focus
+    // Show the window and grab focus
     window.show_all();
     window.present();
     window.grab_focus();
-
-    // Try to activate on Wayland
-    if let Some(gdk_window) = window.window() {
-        gdk_window.focus(0);
-    }
 
     info!("Created GTK WebView window for {} at {}", messenger_id, url);
 
@@ -390,6 +377,7 @@ pub fn navigate_messenger(messenger_id: &str, url: &str) -> Result<()> {
 }
 
 /// Reload a messenger's WebView
+#[allow(dead_code)]
 pub fn reload_messenger(messenger_id: &str) -> Result<()> {
     send_gtk_command(GtkCommand::Reload {
         messenger_id: messenger_id.to_string(),
@@ -405,6 +393,7 @@ pub fn close_messenger_window(messenger_id: &str) -> Result<()> {
 }
 
 /// Shutdown the GTK event loop
+#[allow(dead_code)]
 pub fn shutdown_gtk() -> Result<()> {
     send_gtk_command(GtkCommand::Shutdown)
 }
@@ -430,11 +419,9 @@ mod tests {
         };
 
         let _cmd = GtkCommand::HideAll;
-
         let _cmd = GtkCommand::Reload {
             messenger_id: "test".to_string(),
         };
-
         let _cmd = GtkCommand::Shutdown;
     }
 }

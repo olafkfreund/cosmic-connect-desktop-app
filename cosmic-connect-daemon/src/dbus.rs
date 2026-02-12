@@ -2767,7 +2767,7 @@ impl CConnectInterface {
                 plugin.as_any_mut().downcast_mut::<ExtendedDisplayPlugin>()
             {
                 ed_plugin
-                    .start_session(&device_id, "h264,touch")
+                    .start_session(&device_id, "h264,touch", None)
                     .await
                     .map_err(|e| {
                         zbus::fdo::Error::Failed(format!(

@@ -14,14 +14,16 @@ use cosmic::widget::{self, button, column, container, divider, icon, row, text, 
 use cosmic::{Action, Application, Element};
 use futures::channel::mpsc;
 use futures::StreamExt;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-/// Flags passed from main to app initialization
+/// Application flags passed at initialization
+#[derive(Clone)]
 pub struct AppFlags {
     pub dbus_sender: mpsc::UnboundedSender<DbusCommand>,
-    pub dbus_receiver: mpsc::UnboundedReceiver<DbusCommand>,
+    pub dbus_receiver: Arc<Mutex<mpsc::UnboundedReceiver<DbusCommand>>>,
     pub visible: Arc<AtomicBool>,
 }
 
@@ -78,13 +80,16 @@ pub struct MessagesPopup {
     webview_manager: WebViewManager,
     /// Notification handler
     notification_handler: NotificationHandler,
-    /// Shared visibility state with D-Bus service
+    /// Whether the popup is visible (shared with D-Bus service)
     visible: Arc<AtomicBool>,
     /// Settings panel open
     settings_open: bool,
-    /// D-Bus receiver wrapped for subscription access
+    /// D-Bus command sender
+    #[allow(dead_code)]
+    dbus_sender: mpsc::UnboundedSender<DbusCommand>,
+    /// D-Bus command receiver (wrapped for async stream)
     dbus_receiver: Arc<Mutex<mpsc::UnboundedReceiver<DbusCommand>>>,
-    /// Config needs to be saved
+    /// Whether config needs to be saved
     config_dirty: bool,
 }
 
@@ -124,7 +129,8 @@ impl Application for MessagesPopup {
             notification_handler,
             visible: flags.visible,
             settings_open: false,
-            dbus_receiver: Arc::new(Mutex::new(flags.dbus_receiver)),
+            dbus_sender: flags.dbus_sender,
+            dbus_receiver: flags.dbus_receiver,
             config_dirty: false,
         };
 
@@ -158,8 +164,7 @@ impl Application for MessagesPopup {
             }
 
             Message::ShowPopup => {
-                self.visible
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.visible.store(true, Ordering::Relaxed);
                 // Show current messenger's GTK window
                 if let Some(messenger_id) = self.webview_manager.current() {
                     if let Some(url) = self.webview_manager.current_url() {
@@ -170,11 +175,10 @@ impl Application for MessagesPopup {
             }
 
             Message::HidePopup => {
-                self.visible
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                self.visible.store(false, Ordering::Relaxed);
                 // Hide all GTK windows
                 let _ = gtk_webview::hide_all_windows();
-                // Save config if dirty
+                // Save config if dirty on hide
                 if self.config_dirty {
                     let _ = self.config.save();
                     self.config_dirty = false;
@@ -183,11 +187,9 @@ impl Application for MessagesPopup {
             }
 
             Message::TogglePopup => {
-                let current = self.visible.load(std::sync::atomic::Ordering::Relaxed);
-                let new_state = !current;
-                self.visible
-                    .store(new_state, std::sync::atomic::Ordering::Relaxed);
-                if new_state {
+                let was_visible = self.visible.load(Ordering::Relaxed);
+                self.visible.store(!was_visible, Ordering::Relaxed);
+                if !was_visible {
                     if let Some(messenger_id) = self.webview_manager.current() {
                         if let Some(url) = self.webview_manager.current_url() {
                             let _ =
@@ -196,8 +198,13 @@ impl Application for MessagesPopup {
                     }
                 } else {
                     let _ = gtk_webview::hide_all_windows();
+                    // Save config if dirty on hide
+                    if self.config_dirty {
+                        let _ = self.config.save();
+                        self.config_dirty = false;
+                    }
                 }
-                debug!("Toggling popup: {}", new_state);
+                debug!("Toggling popup: {}", !was_visible);
             }
 
             Message::NotificationReceived(data) => {
@@ -209,8 +216,7 @@ impl Application for MessagesPopup {
 
                     // Auto-open if enabled
                     if self.notification_handler.should_auto_open() {
-                        self.visible
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        self.visible.store(true, Ordering::Relaxed);
                         // Show GTK WebView window
                         if let Some(url) = self.webview_manager.current_url() {
                             let _ = gtk_webview::show_messenger_window(
@@ -299,8 +305,7 @@ impl Application for MessagesPopup {
                     DbusCommand::ShowMessenger(id) => {
                         debug!("D-Bus: ShowMessenger {}", id);
                         let _ = self.webview_manager.set_current(&id);
-                        self.visible
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        self.visible.store(true, Ordering::Relaxed);
                         // Show the GTK WebView window
                         if let Some(url) = self.webview_manager.current_url() {
                             if let Err(e) =
@@ -312,17 +317,14 @@ impl Application for MessagesPopup {
                     }
                     DbusCommand::HidePopup => {
                         debug!("D-Bus: HidePopup");
-                        self.visible
-                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                        self.visible.store(false, Ordering::Relaxed);
                         let _ = gtk_webview::hide_all_windows();
                     }
                     DbusCommand::TogglePopup => {
                         debug!("D-Bus: TogglePopup");
-                        let current = self.visible.load(std::sync::atomic::Ordering::Relaxed);
-                        let new_state = !current;
-                        self.visible
-                            .store(new_state, std::sync::atomic::Ordering::Relaxed);
-                        if new_state {
+                        let was_visible = self.visible.load(Ordering::Relaxed);
+                        self.visible.store(!was_visible, Ordering::Relaxed);
+                        if !was_visible {
                             if let Some(messenger_id) = self.webview_manager.current() {
                                 if let Some(url) = self.webview_manager.current_url() {
                                     let _ = gtk_webview::show_messenger_window(
@@ -359,7 +361,7 @@ impl Application for MessagesPopup {
             return self.build_settings();
         }
 
-        if !self.visible.load(std::sync::atomic::Ordering::Relaxed) {
+        if !self.visible.load(Ordering::Relaxed) {
             // Return minimal view when hidden
             return container(text::body("Messages Popup - Hidden"))
                 .width(Length::Shrink)
@@ -389,23 +391,18 @@ impl Application for MessagesPopup {
     fn subscription(&self) -> Subscription<Self::Message> {
         struct DbusSubscription;
 
-        // Clone the receiver Arc for the subscription
-        let receiver = Arc::clone(&self.dbus_receiver);
+        let receiver = self.dbus_receiver.clone();
 
-        // D-Bus command subscription using proper async stream
+        // D-Bus command subscription using async stream
         let dbus_sub = Subscription::run_with_id(
             std::any::TypeId::of::<DbusSubscription>(),
-            futures::stream::unfold(receiver, |rx| async move {
-                // Lock, get next message, and unlock
-                let cmd = {
-                    let mut receiver = rx.lock().await;
-                    receiver.next().await
-                };
-
-                match cmd {
+            cosmic::iced::futures::stream::unfold(receiver, |receiver| async move {
+                // Lock the receiver and wait for a message (non-blocking async)
+                let mut rx = receiver.lock().await;
+                match rx.next().await {
                     Some(cmd) => {
                         info!("Subscription received D-Bus command: {:?}", cmd);
-                        Some((Message::DbusCommand(cmd), rx))
+                        Some((Message::DbusCommand(cmd), receiver.clone()))
                     }
                     None => {
                         error!("D-Bus channel closed");
@@ -478,49 +475,42 @@ impl MessagesPopup {
     /// Build the main content area
     fn build_content(&self) -> Element<'_, Message> {
         if let Some(ctx) = self.webview_manager.current_context() {
-            let messenger_name = self.webview_manager.get_display_name(&ctx.messenger_id);
+            // Show status view with messenger info and action buttons
+            let messenger_id = ctx.messenger_id.clone();
+            let messenger_name = self.webview_manager.get_display_name(&messenger_id);
+            let loaded_status = if ctx.is_loaded { "Loaded" } else { "Not Loaded" };
+            let url = ctx.url.clone();
 
-            let status = if ctx.is_loaded {
-                format!("{} is open in a separate window", messenger_name)
-            } else {
-                format!("Loading {}...", messenger_name)
-            };
-
-            let mut content = column::with_capacity(6)
-                .push(text::title3(messenger_name))
-                .push(text::body(status))
+            let info = column::with_capacity(6)
+                .push(text::title2(messenger_name))
+                .push(text::body(loaded_status))
                 .push(widget::vertical_space())
-                .spacing(12)
+                .push(text::caption(url))
+                .push(widget::vertical_space())
+                .push(
+                    row::with_capacity(2)
+                        .push(
+                            button::text("Open External")
+                                .on_press(Message::OpenExternal(messenger_id.clone())),
+                        )
+                        .push(
+                            button::text("Clear Data")
+                                .on_press(Message::ClearWebViewData(messenger_id)),
+                        )
+                        .spacing(8),
+                )
+                .spacing(8)
                 .align_x(cosmic::iced::Alignment::Center);
 
-            // Add action buttons
-            let actions = row::with_capacity(3)
-                .push(
-                    button::suggested("Focus Window")
-                        .on_press(Message::ShowPopup)
-                )
-                .push(
-                    button::text("Open in Browser")
-                        .on_press(Message::OpenExternal(ctx.messenger_id.clone()))
-                )
-                .spacing(8);
-
-            content = content.push(actions);
-
-            // Keyboard shortcuts help
-            content = content.push(widget::vertical_space());
-            content = content.push(text::caption("Keyboard shortcuts: Cmd+1-6 to switch messengers"));
-
-            container(content)
+            container(info)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center(Length::Fill)
                 .into()
         } else {
-            let no_messenger = column::with_capacity(3)
+            let no_messenger = column::with_capacity(2)
                 .push(text::title1("No Messenger Selected"))
                 .push(text::body("Select a messenger tab above to start."))
-                .push(text::caption("Enable messengers in Settings"))
                 .spacing(8)
                 .align_x(cosmic::iced::Alignment::Center);
 
@@ -626,14 +616,6 @@ impl MessagesPopup {
             .height(Length::Fill)
             .into()
     }
-}
-
-/// Create the D-Bus command channel
-pub fn create_dbus_channel() -> (
-    mpsc::UnboundedSender<DbusCommand>,
-    mpsc::UnboundedReceiver<DbusCommand>,
-) {
-    mpsc::unbounded()
 }
 
 #[cfg(test)]

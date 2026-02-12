@@ -107,10 +107,7 @@ impl MessagesPopupService {
             icon_data: None,
         };
 
-        if let Err(e) = self
-            .sender
-            .unbounded_send(DbusCommand::NotificationReceived(data))
-        {
+        if let Err(e) = self.sender.unbounded_send(DbusCommand::NotificationReceived(data)) {
             error!("Failed to send notification to app: {}", e);
         }
     }
@@ -119,10 +116,7 @@ impl MessagesPopupService {
     async fn open_messenger(&self, messenger_id: String) {
         debug!("D-Bus: open_messenger - {}", messenger_id);
 
-        if let Err(e) = self
-            .sender
-            .unbounded_send(DbusCommand::ShowMessenger(messenger_id))
-        {
+        if let Err(e) = self.sender.unbounded_send(DbusCommand::ShowMessenger(messenger_id)) {
             error!("Failed to send show command: {}", e);
         }
     }
@@ -152,8 +146,7 @@ impl MessagesPopupService {
 
     /// Set visibility state (called internally)
     fn set_visible(&self, visible: bool) {
-        self.visible
-            .store(visible, std::sync::atomic::Ordering::Relaxed);
+        self.visible.store(visible, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get list of supported messenger IDs

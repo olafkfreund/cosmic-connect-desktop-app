@@ -51,6 +51,7 @@ use crate::error::{DisplayStreamError, Result};
 use enigo::Settings;
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse};
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tracing::{debug, error, trace, warn};
 
 /// Touch action types
@@ -229,12 +230,12 @@ pub struct InputHandler {
     active_touches: std::collections::HashMap<u32, DesktopCoordinates>,
 
     /// Enigo instance for input injection (lazily initialized on first use).
-    /// All methods take `&mut self`, so no Arc/Mutex needed — Rust's borrow
-    /// checker prevents concurrent access. Availability is derived from
-    /// `enigo.is_some()` after initialization, eliminating the previous
-    /// split-state race between a separate `input_available` bool and the
-    /// Option wrapper.
-    enigo: Option<Enigo>,
+    /// Wrapped in Mutex because Enigo contains xkb raw pointers that are not
+    /// Sync, but the Plugin trait requires Sync. Mutex<T> is Sync when T: Send.
+    /// No Arc needed since InputHandler is not shared across threads.
+    /// Availability is derived from the Option state after init, eliminating
+    /// the previous split-state race with a separate `input_available` bool.
+    enigo: Mutex<Option<Enigo>>,
 
     /// Whether initialization has been attempted (prevents repeated retries)
     init_attempted: bool,
@@ -276,7 +277,7 @@ impl InputHandler {
         Self {
             geometry,
             active_touches: std::collections::HashMap::new(),
-            enigo: None,
+            enigo: Mutex::new(None),
             init_attempted: false,
             events_processed: 0,
             events_injected: 0,
@@ -293,9 +294,14 @@ impl InputHandler {
     /// Returns `true` if enigo is available, `false` if not (test env or
     /// missing compositor support).
     fn ensure_enigo_initialized(&mut self) -> Result<bool> {
-        // Already initialized successfully
-        if self.enigo.is_some() {
-            return Ok(true);
+        // Check current state via mutex
+        {
+            let guard = self.enigo.lock().map_err(|e| {
+                DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+            })?;
+            if guard.is_some() {
+                return Ok(true);
+            }
         }
 
         // Already tried and failed — don't retry
@@ -317,7 +323,10 @@ impl InputHandler {
             debug!("Initializing enigo for input injection");
             match Enigo::new(&Settings::default()) {
                 Ok(enigo) => {
-                    self.enigo = Some(enigo);
+                    let mut guard = self.enigo.lock().map_err(|e| {
+                        DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+                    })?;
+                    *guard = Some(enigo);
                     debug!("Enigo initialized successfully");
                     Ok(true)
                 }
@@ -340,7 +349,7 @@ impl InputHandler {
     #[must_use]
     pub fn is_input_available(&self) -> bool {
         if self.init_attempted {
-            self.enigo.is_some()
+            self.enigo.lock().map(|g| g.is_some()).unwrap_or(false)
         } else {
             true // Optimistic until first init attempt
         }
@@ -571,7 +580,10 @@ impl InputHandler {
             return Ok(());
         }
 
-        let enigo = self.enigo.as_mut().expect("enigo initialized above");
+        let mut guard = self.enigo.lock().map_err(|e| {
+            DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+        })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
         if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
             error!(
@@ -610,7 +622,10 @@ impl InputHandler {
             return Ok(());
         }
 
-        let enigo = self.enigo.as_mut().expect("enigo initialized above");
+        let mut guard = self.enigo.lock().map_err(|e| {
+            DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+        })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
         if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
             error!(
@@ -641,7 +656,10 @@ impl InputHandler {
             return Ok(());
         }
 
-        let enigo = self.enigo.as_mut().expect("enigo initialized above");
+        let mut guard = self.enigo.lock().map_err(|e| {
+            DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+        })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
         if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
             error!(

@@ -45,7 +45,7 @@ rustPlatform.buildRustPackage rec {
   version = "0.18.0";
 
   # Use cleanSourceWith to exclude cosmic-ext-connect-core (git submodule)
-  # Cargo will fetch cosmic-ext-connect-core as a git dependency via allowBuiltinFetchGit
+  # Cargo will fetch cosmic-ext-connect-core as a git dependency via outputHashes
   src = lib.cleanSourceWith {
     src = ../.;
     filter =
@@ -64,9 +64,22 @@ rustPlatform.buildRustPackage rec {
 
   cargoLock = {
     lockFile = ../Cargo.lock;
-    # Allow Nix to fetch git dependencies automatically without manual hashes
-    # This is acceptable for external flakes (not for nixpkgs submission)
-    allowBuiltinFetchGit = true;
+    outputHashes = {
+      "accesskit-0.16.0" = "sha256-uoLcd116WXQTu1ZTfJDEl9+3UPpGBN/QuJpkkGyRADQ=";
+      "atomicwrites-0.4.2" = "sha256-QZSuGPrJXh+svMeFWqAXoqZQxLq/WfIiamqvjJNVhxA=";
+      "clipboard_macos-0.1.0" = "sha256-+8CGmBf1Gl9gnBDtuKtkzUE5rySebhH7Bsq/kNlJofY=";
+      "cosmic-client-toolkit-0.1.0" = "sha256-KvXQJ/EIRyrlmi80WKl2T9Bn+j7GCfQlcjgcEVUxPkc=";
+      "cosmic-config-1.0.0" = "sha256-pfT6/cYjA3CGrXr2d7aAwfW+7FUNdfQvAeOWkknu/Y8=";
+      "cosmic-ext-connect-core-0.9.0" = "sha256-KRwM9DA8yoUJiJlLLrcrjhTa9D3X6wZYEhyA7/1X6zk=";
+      "cosmic-freedesktop-icons-0.4.0" = "sha256-D4bWHQ4Dp8UGiZjc6geh2c2SGYhB7mX13THpCUie1c4=";
+      "cosmic-panel-config-0.1.0" = "sha256-1Xwe1uONJbl4wq6QBbTI1suLiSlTzU4e/5WBccvghHE=";
+      "cosmic-settings-daemon-0.1.0" = "sha256-1yVIL3SQnOEtTHoLiZgBH21holNxcOuToyQ+QdvqoBg=";
+      "cosmic-text-0.17.1" = "sha256-NHjJBE/WSMhN29CKTuB7PyJv4y2JByi5pyTUDtVoF7g=";
+      "dpi-0.1.1" = "sha256-Saw9LIWIbOaxD5/yCSqaN71Tzn2NXFzJMorH8o58ktw=";
+      "iced_glyphon-0.6.0" = "sha256-u1vnsOjP8npQ57NNSikotuHxpi4Mp/rV9038vAgCsfQ=";
+      "smithay-clipboard-0.8.0" = "sha256-4InFXm0ahrqFrtNLeqIuE3yeOpxKZJZx+Bc0yQDtv34=";
+      "softbuffer-0.4.1" = "sha256-/ocK79Lr5ywP/bb5mrcm7eTzeBbwpOazojvFUsAjMKM=";
+    };
   };
 
   nativeBuildInputs = [
@@ -326,8 +339,8 @@ rustPlatform.buildRustPackage rec {
 
       Built with RemoteDesktop plugin support (requires PipeWire).
     '';
-    homepage = "https://github.com/olafkfreund/cosmic-connect-desktop-app";
-    changelog = "https://github.com/olafkfreund/cosmic-connect-desktop-app/releases";
+    homepage = "https://github.com/olafkfreund/cosmic-ext-connect-desktop-app";
+    changelog = "https://github.com/olafkfreund/cosmic-ext-connect-desktop-app/releases";
     license = licenses.gpl3Plus;
     maintainers = with maintainers; [ ]; # Add your maintainer info
     mainProgram = "cosmic-ext-applet-connect";

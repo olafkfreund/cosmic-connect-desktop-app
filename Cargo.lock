@@ -1787,9 +1787,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-connect-core"
+name = "cosmic-ext-applet-connect"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "ashpd 0.12.1",
+ "chrono",
+ "cosmic-ext-connect-protocol",
+ "dirs 5.0.1",
+ "futures",
+ "libcosmic",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "zbus 5.13.2",
+]
+
+[[package]]
+name = "cosmic-ext-connect-core"
 version = "0.9.0"
-source = "git+https://github.com/olafkfreund/cosmic-connect-core.git?branch=main#9b68479abc9bb88e5e04ecc24203fac6724ce9e5"
+source = "git+https://github.com/olafkfreund/cosmic-ext-connect-core.git?branch=main#af82e54e7bfc7a5d740d8714af574b07d5010ab0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1821,27 +1842,6 @@ dependencies = [
  "v4l",
  "webpki-roots 0.26.11",
  "x509-parser",
-]
-
-[[package]]
-name = "cosmic-ext-applet-connect"
-version = "0.18.0"
-dependencies = [
- "anyhow",
- "arboard",
- "ashpd 0.12.1",
- "chrono",
- "cosmic-ext-connect-protocol",
- "dirs 5.0.1",
- "futures",
- "libcosmic",
- "serde",
- "serde_json",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "zbus 5.13.2",
 ]
 
 [[package]]
@@ -1905,7 +1905,7 @@ dependencies = [
  "blake3",
  "bluer",
  "chrono",
- "cosmic-connect-core",
+ "cosmic-ext-connect-core",
  "cosmic-ext-display-stream",
  "dirs 6.0.0",
  "futures",
@@ -4503,7 +4503,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -10531,7 +10531,7 @@ dependencies = [
  "js-sys",
  "log",
  "naga",
- "parking_lot 0.12.5",
+ "parking_lot 0.11.2",
  "profiling",
  "raw-window-handle",
  "smallvec",
@@ -10559,7 +10559,7 @@ dependencies = [
  "log",
  "naga",
  "once_cell",
- "parking_lot 0.12.5",
+ "parking_lot 0.11.2",
  "profiling",
  "raw-window-handle",
  "rustc-hash 1.1.0",
@@ -10600,7 +10600,7 @@ dependencies = [
  "ndk-sys 0.5.0+25.2.9519653",
  "objc",
  "once_cell",
- "parking_lot 0.12.5",
+ "parking_lot 0.11.2",
  "profiling",
  "range-alloc",
  "raw-window-handle",
@@ -10675,7 +10675,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -3,8 +3,9 @@
 //! Provides a D-Bus interface for cosmic-connect integration.
 //! Receives message notifications from the daemon and controls popup visibility.
 
+use futures::channel::mpsc;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use std::sync::{atomic::AtomicBool, Arc};
 use tracing::{debug, error, info};
 use zbus::{connection, interface, Connection};
 
@@ -66,16 +67,13 @@ pub enum DbusCommand {
 
 /// D-Bus service for the messages popup
 pub struct MessagesPopupService {
-    sender: mpsc::Sender<DbusCommand>,
-    visible: std::sync::atomic::AtomicBool,
+    sender: mpsc::UnboundedSender<DbusCommand>,
+    visible: Arc<AtomicBool>,
 }
 
 impl MessagesPopupService {
-    pub fn new(sender: mpsc::Sender<DbusCommand>) -> Self {
-        Self {
-            sender,
-            visible: std::sync::atomic::AtomicBool::new(false),
-        }
+    pub fn new(sender: mpsc::UnboundedSender<DbusCommand>, visible: Arc<AtomicBool>) -> Self {
+        Self { sender, visible }
     }
 }
 
@@ -111,8 +109,7 @@ impl MessagesPopupService {
 
         if let Err(e) = self
             .sender
-            .send(DbusCommand::NotificationReceived(data))
-            .await
+            .unbounded_send(DbusCommand::NotificationReceived(data))
         {
             error!("Failed to send notification to app: {}", e);
         }
@@ -124,8 +121,7 @@ impl MessagesPopupService {
 
         if let Err(e) = self
             .sender
-            .send(DbusCommand::ShowMessenger(messenger_id))
-            .await
+            .unbounded_send(DbusCommand::ShowMessenger(messenger_id))
         {
             error!("Failed to send show command: {}", e);
         }
@@ -135,7 +131,7 @@ impl MessagesPopupService {
     async fn hide(&self) {
         debug!("D-Bus: hide popup");
 
-        if let Err(e) = self.sender.send(DbusCommand::HidePopup).await {
+        if let Err(e) = self.sender.unbounded_send(DbusCommand::HidePopup) {
             error!("Failed to send hide command: {}", e);
         }
     }
@@ -144,7 +140,7 @@ impl MessagesPopupService {
     async fn toggle(&self) {
         debug!("D-Bus: toggle popup");
 
-        if let Err(e) = self.sender.send(DbusCommand::TogglePopup).await {
+        if let Err(e) = self.sender.unbounded_send(DbusCommand::TogglePopup) {
             error!("Failed to send toggle command: {}", e);
         }
     }
@@ -179,8 +175,11 @@ impl MessagesPopupService {
 }
 
 /// Start the D-Bus service
-pub async fn start_dbus_service(sender: mpsc::Sender<DbusCommand>) -> zbus::Result<Connection> {
-    let service = MessagesPopupService::new(sender);
+pub async fn start_dbus_service(
+    sender: mpsc::UnboundedSender<DbusCommand>,
+    visible: Arc<AtomicBool>,
+) -> zbus::Result<Connection> {
+    let service = MessagesPopupService::new(sender, visible);
 
     let connection = connection::Builder::session()?
         .name("org.cosmicde.MessagesPopup")?

@@ -18,6 +18,10 @@ pub struct Config {
 
     /// Notification settings
     pub notifications: NotificationConfig,
+
+    /// Whether configuration has unsaved changes (not serialized)
+    #[serde(skip)]
+    pub dirty: bool,
 }
 
 /// Configuration for individual messenger services
@@ -140,7 +144,8 @@ impl Default for Config {
                     id: "signal".to_string(),
                     name: "Signal".to_string(),
                     package_name: "org.thoughtcrime.securesms".to_string(),
-                    web_url: "https://signal.link".to_string(),
+                    // Signal has no web client - link to desktop app download
+                    web_url: "https://signal.org/download/".to_string(),
                     icon: Some("signal".to_string()),
                     enabled: false,
                 },
@@ -174,6 +179,7 @@ impl Default for Config {
                 play_sound: true,
                 auto_open: false,
             },
+            dirty: false,
         }
     }
 }
@@ -240,6 +246,7 @@ impl Config {
     pub fn toggle_messenger(&mut self, id: &str, enabled: bool) {
         if let Some(messenger) = self.enabled_messengers.iter_mut().find(|m| m.id == id) {
             messenger.enabled = enabled;
+            self.mark_dirty();
         }
     }
 
@@ -268,6 +275,21 @@ impl Config {
             icon: None,
             enabled: true,
         });
+        self.mark_dirty();
+    }
+
+    /// Mark the configuration as having unsaved changes
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Save configuration if it has unsaved changes
+    pub fn save_if_dirty(&mut self) -> anyhow::Result<()> {
+        if self.dirty {
+            self.save()?;
+            self.dirty = false;
+        }
+        Ok(())
     }
 }
 
@@ -330,5 +352,43 @@ mod tests {
 
         let deserialized: Result<Config, _> = ron::from_str(&serialized.unwrap());
         assert!(deserialized.is_ok());
+    }
+
+    #[test]
+    fn test_dirty_flag() {
+        let mut config = Config::default();
+        assert!(!config.dirty);
+
+        config.mark_dirty();
+        assert!(config.dirty);
+
+        config.toggle_messenger("google-messages", false);
+        assert!(config.dirty);
+    }
+
+    #[test]
+    fn test_dirty_flag_not_serialized() {
+        let mut config = Config::default();
+        config.mark_dirty();
+        assert!(config.dirty);
+
+        let serialized = ron::ser::to_string_pretty(&config, ron::ser::PrettyConfig::default())
+            .expect("Failed to serialize");
+        let deserialized: Config =
+            ron::from_str(&serialized).expect("Failed to deserialize");
+
+        // dirty flag should be false after deserialization (not saved)
+        assert!(!deserialized.dirty);
+    }
+
+    #[test]
+    fn test_signal_web_url_updated() {
+        let config = Config::default();
+        let signal = config
+            .enabled_messengers
+            .iter()
+            .find(|m| m.id == "signal")
+            .expect("Signal config not found");
+        assert_eq!(signal.web_url, "https://signal.org/download/");
     }
 }

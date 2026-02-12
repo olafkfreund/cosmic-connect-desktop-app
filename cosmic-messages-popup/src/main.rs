@@ -32,6 +32,7 @@
 //! ```
 
 use clap::Parser;
+use std::sync::{atomic::AtomicBool, Arc};
 use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -42,7 +43,7 @@ mod gtk_webview;
 mod notification;
 mod webview;
 
-pub use app::{Message, MessagesPopup};
+pub use app::{AppFlags, Message, MessagesPopup};
 pub use config::Config;
 pub use dbus::{DbusCommand, NotificationData};
 
@@ -92,16 +93,19 @@ fn main() -> cosmic::iced::Result {
     let _gtk_handle = gtk_webview::start_gtk_event_loop();
     info!("GTK event loop thread spawned");
 
-    // Create D-Bus channel and store receiver for polling
+    // Create D-Bus channel
     let (dbus_sender, dbus_receiver) = app::create_dbus_channel();
-    app::set_dbus_receiver(dbus_receiver);
+
+    // Create shared visibility state
+    let visible = Arc::new(AtomicBool::new(false));
 
     // Start D-Bus service in background
     let dbus_sender_clone = dbus_sender.clone();
+    let visible_clone = Arc::clone(&visible);
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         rt.block_on(async {
-            match dbus::start_dbus_service(dbus_sender_clone).await {
+            match dbus::start_dbus_service(dbus_sender_clone, visible_clone).await {
                 Ok(_conn) => {
                     info!("D-Bus service started successfully");
                     // Keep connection alive
@@ -114,24 +118,21 @@ fn main() -> cosmic::iced::Result {
         });
     });
 
-    // Handle daemon mode
+    // Handle daemon mode - run headlessly without COSMIC window
     if args.daemon {
         info!("Running in daemon mode - waiting for D-Bus commands");
-        // In daemon mode, we just keep the D-Bus service running
-        // The application will be shown via D-Bus commands
+        // Block main thread to keep GTK and D-Bus threads alive
+        std::thread::park();
+        return Ok(());
     }
 
-    // Handle initial messenger selection
+    // Handle initial messenger selection or --show flag
     if let Some(messenger) = args.messenger.clone() {
         info!("Opening messenger: {}", messenger);
-        let sender = dbus_sender.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            rt.block_on(async {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                let _ = sender.send(DbusCommand::ShowMessenger(messenger)).await;
-            });
-        });
+        let _ = dbus_sender.unbounded_send(DbusCommand::ShowMessenger(messenger));
+    } else if args.show {
+        info!("Showing popup on startup");
+        let _ = dbus_sender.unbounded_send(DbusCommand::TogglePopup);
     }
 
     // Configure COSMIC application settings
@@ -143,8 +144,15 @@ fn main() -> cosmic::iced::Result {
         )
         .exit_on_close(false);
 
+    // Create application flags
+    let flags = AppFlags {
+        dbus_sender,
+        dbus_receiver,
+        visible,
+    };
+
     // Run the application
-    cosmic::app::run::<MessagesPopup>(settings, dbus_sender)
+    cosmic::app::run::<MessagesPopup>(settings, flags)
 }
 
 #[cfg(test)]

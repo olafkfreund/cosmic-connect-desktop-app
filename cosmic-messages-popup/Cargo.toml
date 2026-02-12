@@ -22,6 +22,9 @@ gdk = "0.18"
 # D-Bus
 zbus = { workspace = true }
 
+# Desktop notifications
+notify-rust = "4"
+
 # Async Runtime
 tokio = { workspace = true }
 async-trait = { workspace = true }

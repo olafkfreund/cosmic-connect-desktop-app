@@ -5,7 +5,8 @@
 
 use crate::config::Config;
 use crate::dbus::NotificationData;
-use tracing::{debug, info};
+use notify_rust::Notification;
+use tracing::{debug, error, info};
 
 /// Messenger type derived from package name
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,10 +77,23 @@ impl MessengerType {
             Self::GoogleMessages => "https://messages.google.com/web",
             Self::WhatsApp => "https://web.whatsapp.com",
             Self::Telegram => "https://web.telegram.org",
-            Self::Signal => "https://signal.link",
+            Self::Signal => "https://signal.org/download/",
             Self::Discord => "https://discord.com/app",
             Self::Slack => "https://app.slack.com",
             Self::Unknown => "",
+        }
+    }
+
+    /// Get the keyboard shortcut index (1-based) for this messenger
+    pub fn shortcut_index(&self) -> Option<u32> {
+        match self {
+            Self::GoogleMessages => Some(1),
+            Self::WhatsApp => Some(2),
+            Self::Telegram => Some(3),
+            Self::Signal => Some(4),
+            Self::Discord => Some(5),
+            Self::Slack => Some(6),
+            Self::Unknown => None,
         }
     }
 }
@@ -134,6 +148,23 @@ impl NotificationHandler {
             data.title, data.app_name, messenger_id
         );
 
+        // Display desktop notification
+        let icon = messenger_type.icon();
+        let summary = self.format_summary(data);
+        let body = self.format_body(data);
+
+        if let Err(e) = Notification::new()
+            .summary(&summary)
+            .body(&body)
+            .icon(icon)
+            .timeout(5000)
+            .action("open", "Open")
+            .action("dismiss", "Dismiss")
+            .show()
+        {
+            error!("Failed to show notification: {}", e);
+        }
+
         Some(messenger_id.to_string())
     }
 
@@ -167,20 +198,21 @@ impl NotificationHandler {
     }
 
     /// Format notification summary for display
-    pub fn format_summary(&self, data: &NotificationData) -> String {
+    pub fn format_summary<'a>(&self, data: &'a NotificationData) -> &'a str {
         if data.title.is_empty() {
             &data.app_name
         } else {
             &data.title
         }
-        .clone()
     }
 
-    /// Format notification body for display
+    /// Format notification body for display (safely handles multi-byte UTF-8)
     pub fn format_body(&self, data: &NotificationData) -> String {
         const MAX_LEN: usize = 200;
-        if data.text.len() > MAX_LEN {
-            format!("{}...", &data.text[..MAX_LEN])
+        let char_count = data.text.chars().count();
+        if char_count > MAX_LEN {
+            let truncated: String = data.text.chars().take(MAX_LEN).collect();
+            format!("{}...", truncated)
         } else {
             data.text.clone()
         }
@@ -215,23 +247,7 @@ pub struct NotificationAction {
 /// Check if a package is a known messaging app
 #[allow(dead_code)]
 pub fn is_messaging_app(package: &str) -> bool {
-    let known_packages = [
-        "com.google.android.apps.messaging",
-        "com.whatsapp",
-        "com.whatsapp.w4b",
-        "org.telegram.messenger",
-        "org.thoughtcrime.securesms",
-        "com.discord",
-        "com.Slack",
-        "com.facebook.orca",
-        "com.instagram.android",
-        "com.viber.voip",
-        "jp.naver.line.android",
-        "com.tencent.mm",
-        "com.kakao.talk",
-    ];
-
-    known_packages.contains(&package)
+    MessengerType::from_package(package) != MessengerType::Unknown
 }
 
 #[cfg(test)]
@@ -322,5 +338,48 @@ mod tests {
         let formatted = handler.format_body(&data);
         assert!(formatted.len() < 210); // 200 + "..."
         assert!(formatted.ends_with("..."));
+    }
+
+    #[test]
+    fn test_format_body_utf8_safe() {
+        let config = Config::default();
+        let handler = NotificationHandler::new(config);
+
+        // Multi-byte UTF-8 characters (emoji + Japanese)
+        let multibyte_text = "🎉".repeat(100) + &"こんにちは".repeat(50);
+        let data = NotificationData {
+            app_package: "test".to_string(),
+            app_name: "Test".to_string(),
+            title: "Title".to_string(),
+            text: multibyte_text,
+            conversation_id: None,
+            timestamp: 0,
+            device_id: "device".to_string(),
+            icon_data: None,
+        };
+
+        // Should not panic on multi-byte UTF-8 boundaries
+        let formatted = handler.format_body(&data);
+        assert!(formatted.ends_with("..."));
+        assert_eq!(formatted.chars().count(), 203); // 200 chars + "..."
+    }
+
+    #[test]
+    fn test_messenger_shortcut_indices() {
+        assert_eq!(MessengerType::GoogleMessages.shortcut_index(), Some(1));
+        assert_eq!(MessengerType::WhatsApp.shortcut_index(), Some(2));
+        assert_eq!(MessengerType::Telegram.shortcut_index(), Some(3));
+        assert_eq!(MessengerType::Signal.shortcut_index(), Some(4));
+        assert_eq!(MessengerType::Discord.shortcut_index(), Some(5));
+        assert_eq!(MessengerType::Slack.shortcut_index(), Some(6));
+        assert_eq!(MessengerType::Unknown.shortcut_index(), None);
+    }
+
+    #[test]
+    fn test_signal_url_updated() {
+        assert_eq!(
+            MessengerType::Signal.web_url(),
+            "https://signal.org/download/"
+        );
     }
 }

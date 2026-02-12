@@ -186,10 +186,10 @@ impl StreamConfig {
         self
     }
 
-    /// Set the target framerate
+    /// Set the target framerate (clamped to 1..=240)
     #[must_use]
     pub fn with_framerate(mut self, framerate: u32) -> Self {
-        self.framerate = framerate;
+        self.framerate = framerate.clamp(1, 240);
         self
     }
 

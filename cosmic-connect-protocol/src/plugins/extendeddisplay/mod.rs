@@ -476,8 +476,8 @@ impl ExtendedDisplayPlugin {
                     return;
                 }
             }
+            self.last_touch_time = Some(std::time::Instant::now());
         }
-        self.last_touch_time = Some(std::time::Instant::now());
 
         let action = match action_str {
             "down" => TouchAction::Down,

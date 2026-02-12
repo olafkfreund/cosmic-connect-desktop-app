@@ -770,16 +770,16 @@ pub fn verify_certificate(
 
 ### D-Bus Interface
 
-**Service**: `com.system76.CosmicKdeConnect`
-**Object Path**: `/com/system76/CosmicKdeConnect`
-**Interface**: `com.system76.CosmicKdeConnect`
+**Service**: `io.github.olafkfreund.CosmicExtConnect`
+**Object Path**: `/io/github/olafkfreund/CosmicExtConnect`
+**Interface**: `io.github.olafkfreund.CosmicExtConnect`
 
 #### Interface Definition
 
 **File**: `kdeconnect-daemon/src/dbus_interface.rs`
 
 ```rust
-#[dbus_interface(name = "com.system76.CosmicKdeConnect")]
+#[dbus_interface(name = "io.github.olafkfreund.CosmicExtConnect")]
 impl DbusInterface {
     /// Get all known devices
     async fn get_devices(&self) -> Vec<DeviceInfo>;
@@ -834,7 +834,7 @@ cosmic-applet-kdeconnect
     Session D-Bus
          │
          │ 2. Call method
-         │    com.system76.CosmicKdeConnect.GetDevices
+         │    io.github.olafkfreund.CosmicExtConnect.GetDevices
          ▼
  kdeconnect-daemon
          │

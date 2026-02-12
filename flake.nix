@@ -11,7 +11,7 @@
     let
       # Overlay for this package
       overlay = final: prev: {
-        cosmic-connect = final.callPackage ./nix/package.nix { };
+        cosmic-ext-connect = final.callPackage ./nix/package.nix { };
       };
 
       # NixOS module
@@ -133,7 +133,7 @@
           # Library paths for runtime
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeInputs}:$LD_LIBRARY_PATH"
 
-          # Linker library path for mesa-libgbm (cosmic-display-stream dependency)
+          # Linker library path for mesa-libgbm (cosmic-ext-display-stream dependency)
           export LIBRARY_PATH="${pkgs.libgbm}/lib:$LIBRARY_PATH"
 
           # PKG_CONFIG paths - critical for finding dbus-1.pc and openssl.pc
@@ -192,7 +192,7 @@
 
           # nixpkgs-compatible package for submission
           # Note: Disabled until all git dependency hashes are configured
-          # nixpkgs = pkgs.callPackage ./nix/pkgs/cosmic-connect.nix { };
+          # nixpkgs = pkgs.callPackage ./nix/pkgs/cosmic-ext-connect.nix { };
         };
 
         # Apps for running
@@ -209,7 +209,7 @@
       nixosModules.default = nixosModule;
 
       # Convenience aliases
-      nixosModules.cosmic-connect = nixosModule;
-      overlays.cosmic-connect = overlay;
+      nixosModules.cosmic-ext-connect = nixosModule;
+      overlays.cosmic-ext-connect = overlay;
     };
 }

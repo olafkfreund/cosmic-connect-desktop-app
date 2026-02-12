@@ -52,13 +52,13 @@ The daemon should start automatically on login. If not:
 
 ```bash
 # Enable auto-start
-systemctl --user enable cosmic-connect-daemon
+systemctl --user enable cosmic-ext-connect-daemon
 
 # Start now
-systemctl --user start cosmic-connect-daemon
+systemctl --user start cosmic-ext-connect-daemon
 
 # Verify it's running
-systemctl --user status cosmic-connect-daemon
+systemctl --user status cosmic-ext-connect-daemon
 ```
 
 ### Step 3: Install Mobile App
@@ -132,7 +132,7 @@ If devices don't appear:
 
 1. **Check Network**: Ensure both are on the same WiFi (no Guest networks).
 2. **Check Firewall**: Verify ports 1714-1764 (TCP/UDP) are open.
-3. **Restart**: Restart the daemon (`systemctl --user restart cosmic-connect-daemon`) and the mobile app.
+3. **Restart**: Restart the daemon (`systemctl --user restart cosmic-ext-connect-daemon`) and the mobile app.
 4. **Manual Connection**: In the mobile app settings, add device by IP address.
 
 ## Using Features
@@ -291,7 +291,7 @@ In **Device Details**, click **"Plugin Settings"** to:
 - Ensure both are on **same WiFi**.
 - Check if **Firewall** ports 1714-1764 are open.
 - Try **Refresh** button in applet.
-- Restart daemon: `systemctl --user restart cosmic-connect-daemon`.
+- Restart daemon: `systemctl --user restart cosmic-ext-connect-daemon`.
 
 ### File Transfer Fails
 - Check write permissions for `~/Downloads`.

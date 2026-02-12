@@ -25,8 +25,8 @@ makepkg -si
 Verify the installed package works:
 
 ```bash
-systemctl --user start cosmic-connect-daemon.service
-cosmic-connect-manager
+systemctl --user start cosmic-ext-connect-daemon.service
+cosmic-ext-connect-manager
 ```
 
 ### 2. Update Checksums
@@ -81,7 +81,7 @@ Copy your package files:
 cp ../PKGBUILD .
 cp ../.SRCINFO .
 cp ../cosmic-connect.install .
-cp ../cosmic-connect-daemon.service .
+cp ../cosmic-ext-connect-daemon.service .
 ```
 
 ### 7. Initial Commit
@@ -89,7 +89,7 @@ cp ../cosmic-connect-daemon.service .
 Commit and push to AUR:
 
 ```bash
-git add PKGBUILD .SRCINFO cosmic-connect.install cosmic-connect-daemon.service
+git add PKGBUILD .SRCINFO cosmic-connect.install cosmic-ext-connect-daemon.service
 git commit -m "Initial import of cosmic-connect version 0.1.0"
 git push origin master
 ```

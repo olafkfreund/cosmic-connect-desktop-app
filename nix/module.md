@@ -54,7 +54,7 @@ services.cosmic-connect.openFirewall = false;  # Manage firewall manually
 
 ### Daemon Configuration {#daemon-configuration}
 
-#### `services.cosmic-connect.daemon.enable` {#services-cosmic-connect-daemon-enable}
+#### `services.cosmic-connect.daemon.enable` {#services-cosmic-ext-connect-daemon-enable}
 
 **Type:** `boolean`
 **Default:** `true`
@@ -64,14 +64,14 @@ Enable the COSMIC Connect daemon as a user service. The daemon handles:
 - Plugin communication
 - Background tasks
 
-#### `services.cosmic-connect.daemon.autoStart` {#services-cosmic-connect-daemon-autostart}
+#### `services.cosmic-connect.daemon.autoStart` {#services-cosmic-ext-connect-daemon-autostart}
 
 **Type:** `boolean`
 **Default:** `true`
 
 Automatically start the daemon on user login.
 
-#### `services.cosmic-connect.daemon.logLevel` {#services-cosmic-connect-daemon-loglevel}
+#### `services.cosmic-connect.daemon.logLevel` {#services-cosmic-ext-connect-daemon-loglevel}
 
 **Type:** `enum [ "error" "warn" "info" "debug" "trace" ]`
 **Default:** `"info"`
@@ -83,7 +83,7 @@ Set the logging verbosity level.
 services.cosmic-connect.daemon.logLevel = "debug";  # For troubleshooting
 ```
 
-#### `services.cosmic-connect.daemon.settings` {#services-cosmic-connect-daemon-settings}
+#### `services.cosmic-connect.daemon.settings` {#services-cosmic-ext-connect-daemon-settings}
 
 **Type:** `attrsOf anything`
 **Default:** `{}`
@@ -404,7 +404,7 @@ networking.firewall = {
 
 The daemon runs as a user systemd service with security hardening:
 
-- **Service name:** `cosmic-connect-daemon.service`
+- **Service name:** `cosmic-ext-connect-daemon.service`
 - **Type:** User service (per-user instance)
 - **Restart policy:** On failure, with 5s delay
 - **Security:** NoNewPrivileges, ProtectSystem, PrivateTmp, and more
@@ -413,16 +413,16 @@ The daemon runs as a user systemd service with security hardening:
 
 ```bash
 # Start daemon {#start-daemon}
-systemctl --user start cosmic-connect-daemon
+systemctl --user start cosmic-ext-connect-daemon
 
 # Stop daemon {#stop-daemon}
-systemctl --user stop cosmic-connect-daemon
+systemctl --user stop cosmic-ext-connect-daemon
 
 # Check status {#check-status}
-systemctl --user status cosmic-connect-daemon
+systemctl --user status cosmic-ext-connect-daemon
 
 # View logs {#view-logs}
-journalctl --user -u cosmic-connect-daemon -f
+journalctl --user -u cosmic-ext-connect-daemon -f
 ```
 
 ---
@@ -438,7 +438,7 @@ journalctl --user -u cosmic-connect-daemon -f
 
 2. **Verify daemon is running:**
    ```bash
-   systemctl --user status cosmic-connect-daemon
+   systemctl --user status cosmic-ext-connect-daemon
    ```
 
 3. **Enable debug logging:**

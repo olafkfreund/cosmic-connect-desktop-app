@@ -59,9 +59,9 @@ You should see packets like:
 **Desktop → Phone:**
 ```bash
 # Send ping via DBus
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SendPing s "1b7bbb613c0c42bb9a0b80b24d28631d"
 ```
 
@@ -115,9 +115,9 @@ tail -100 /tmp/daemon-debug-verbose.log | grep "kdeconnect.battery"
 **Desktop → Phone:**
 ```bash
 # Send test notification to phone
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SendNotification ssss \
   "1b7bbb613c0c42bb9a0b80b24d28631d" \
   "Test Notification" \
@@ -147,9 +147,9 @@ busctl --user call com.system76.CosmicKdeConnect \
 **Desktop → Phone:**
 ```bash
 # Send a test file
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   ShareFile ss \
   "1b7bbb613c0c42bb9a0b80b24d28631d" \
   "/path/to/test/file.txt"
@@ -215,9 +215,9 @@ busctl --user call com.system76.CosmicKdeConnect \
 **Via CLI:**
 ```bash
 # Get current media info
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   GetMediaInfo s "1b7bbb613c0c42bb9a0b80b24d28631d"
 ```
 
@@ -276,9 +276,9 @@ busctl --user call com.system76.CosmicKdeConnect \
 **Test:**
 ```bash
 # Trigger find my phone
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   FindMyPhone s "1b7bbb613c0c42bb9a0b80b24d28631d"
 ```
 
@@ -308,9 +308,9 @@ busctl --user call com.system76.CosmicKdeConnect \
 **Test SMS Send:**
 ```bash
 # Send SMS via desktop (if implemented)
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SendSMS sss \
   "1b7bbb613c0c42bb9a0b80b24d28631d" \
   "+1234567890" \
@@ -360,18 +360,18 @@ busctl --user call com.system76.CosmicKdeConnect \
 
 **List Available Commands:**
 ```bash
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   ListCommands s "1b7bbb613c0c42bb9a0b80b24d28631d"
 ```
 
 **Execute Command:**
 ```bash
 # Run a configured command
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   RunCommand ss \
   "1b7bbb613c0c42bb9a0b80b24d28631d" \
   "command_key"
@@ -394,9 +394,9 @@ busctl --user call com.system76.CosmicKdeConnect \
 **Test:**
 ```bash
 # Request contact sync
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SyncContacts s "1b7bbb613c0c42bb9a0b80b24d28631d"
 ```
 
@@ -535,17 +535,17 @@ For rapid testing, use this script:
 DEVICE_ID="1b7bbb613c0c42bb9a0b80b24d28631d"
 
 echo "🏓 Testing Ping..."
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SendPing s "$DEVICE_ID"
 
 sleep 2
 
 echo " Testing Find My Phone..."
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   FindMyPhone s "$DEVICE_ID"
 
 echo " Quick tests complete. Check phone for results."

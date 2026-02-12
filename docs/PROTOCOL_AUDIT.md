@@ -170,7 +170,7 @@ cconnect.macro                      - Macro execution
 **Critical Implementation Detail:** COSMIC Connect includes automatic packet type translation:
 
 ```rust
-// From cosmic-connect-protocol/src/packet.rs:118-136
+// From cosmic-ext-connect-protocol/src/packet.rs:118-136
 pub fn is_type(&self, packet_type: &str) -> bool {
     if self.packet_type == packet_type {
         return true;
@@ -275,7 +275,7 @@ pub fn is_type(&self, packet_type: &str) -> bool {
 
 **Implementation:**
 ```rust
-// From cosmic-connect-protocol/src/discovery/mod.rs:220-236
+// From cosmic-ext-connect-protocol/src/discovery/mod.rs:220-236
 pub fn to_identity_packet(&self) -> Packet {
     Packet::new(
         "cconnect.identity",  //  Uses custom prefix
@@ -372,7 +372,7 @@ pub struct Packet {
 
 ### 4.2 Payload Transfer Implementation
 
-**From cosmic-connect-protocol/src/payload.rs:**
+**From cosmic-ext-connect-protocol/src/payload.rs:**
 
 COSMIC Connect implements payload transfer with:
 -  Separate payload socket after packet exchange
@@ -398,7 +398,7 @@ COSMIC Connect implements payload transfer with:
 
 **COSMIC Connect Implementation:**
 ```rust
-// From cosmic-connect-protocol/src/discovery/service.rs
+// From cosmic-ext-connect-protocol/src/discovery/service.rs
 pub const DISCOVERY_PORT: u16 = 1716;
 pub const PORT_MIN: u16 = 1716;
 pub const PORT_MAX: u16 = 1764;
@@ -733,7 +733,7 @@ pub fn from_identity_packet(packet: &Packet) -> Result<Self> {
 
 3. **Long-term (3-6 months):**
    - Consider submitting custom extensions to KDE Connect project
-   - Build Android app using cosmic-connect-core
+   - Build Android app using cosmic-ext-connect-core
    - Establish as reference Rust implementation
 
 ### 10.3 Final Assessment

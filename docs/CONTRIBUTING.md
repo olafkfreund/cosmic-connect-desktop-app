@@ -340,10 +340,10 @@ See `docs/DEBUGGING.md` for:
 
 When adding new plugins:
 
-1. Create plugin in `cosmic-connect-protocol/src/plugins/`
+1. Create plugin in `cosmic-ext-connect-protocol/src/plugins/`
 2. Implement `Plugin` and `PluginFactory` traits
-3. Add config flag in `cosmic-connect-daemon/src/config.rs`
-4. Register factory in `cosmic-connect-daemon/src/main.rs`
+3. Add config flag in `cosmic-ext-connect-daemon/src/config.rs`
+4. Register factory in `cosmic-ext-connect-daemon/src/main.rs`
 5. Follow existing plugin patterns (ping, battery, etc.)
 6. Add comprehensive tests
 7. Document plugin capabilities
@@ -378,13 +378,13 @@ The nixpkgs version requires proper source and dependency hashes. Update `nix/pk
 nix-prefetch-url --unpack https://github.com/olafkfreund/cosmic-connect-desktop-app/archive/refs/tags/v0.1.0.tar.gz
 ```
 
-**Get the cosmic-connect-core git dependency hash:**
+**Get the cosmic-ext-connect-core git dependency hash:**
 ```bash
 # Find the commit hash from Cargo.lock
-grep -A 2 "cosmic-connect-core" Cargo.lock
+grep -A 2 "cosmic-ext-connect-core" Cargo.lock
 
 # Get the hash
-nix-prefetch-git https://github.com/olafkfreund/cosmic-connect-core.git --rev <COMMIT_HASH>
+nix-prefetch-git https://github.com/olafkfreund/cosmic-ext-connect-core.git --rev <COMMIT_HASH>
 ```
 
 Update both hashes in `nix/pkgs/cosmic-connect.nix`.
@@ -458,7 +458,7 @@ nix-build -A cosmic-connect
 Test installation:
 
 ```bash
-nix-shell -p cosmic-connect --command "cosmic-applet-connect --version"
+nix-shell -p cosmic-connect --command "cosmic-ext-applet-connect --version"
 ```
 
 #### 8. Add NixOS Module (Optional)

@@ -353,13 +353,13 @@ nix develop --command bash -c "cargo check 2>&1 | head -50"
 
 ```bash
 # Check daemon status
-systemctl --user status cosmic-connect-daemon
+systemctl --user status cosmic-ext-connect-daemon
 
 # View daemon logs
-journalctl --user -u cosmic-connect-daemon -f
+journalctl --user -u cosmic-ext-connect-daemon -f
 
 # Restart daemon
-systemctl --user restart cosmic-connect-daemon
+systemctl --user restart cosmic-ext-connect-daemon
 ```
 
 ### Module Errors

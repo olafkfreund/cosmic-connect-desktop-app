@@ -1,0 +1,23 @@
+[Desktop Entry]
+Name=COSMIC Messages
+Comment=Web-based messaging interface for COSMIC Connect
+Keywords=messages;sms;rcs;whatsapp;telegram;chat;
+Exec=cosmic-ext-messages-popup
+Icon=io.github.olafkfreund.CosmicExtMessagesPopup
+Terminal=false
+Type=Application
+Categories=Network;Chat;InstantMessaging;
+StartupNotify=true
+DBusActivatable=true
+
+[Desktop Action GoogleMessages]
+Name=Open Google Messages
+Exec=cosmic-ext-messages-popup --messenger google-messages --show
+
+[Desktop Action WhatsApp]
+Name=Open WhatsApp
+Exec=cosmic-ext-messages-popup --messenger whatsapp --show
+
+[Desktop Action Telegram]
+Name=Open Telegram
+Exec=cosmic-ext-messages-popup --messenger telegram --show

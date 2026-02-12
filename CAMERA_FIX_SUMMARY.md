@@ -17,25 +17,25 @@ Added a `reconnect` flag to distinguish socket replacement from genuine disconne
 
 **Changes Made:**
 
-1. **`cosmic-connect-protocol/src/connection/events.rs`**
+1. **`cosmic-ext-connect-protocol/src/connection/events.rs`**
    - Added `reconnect: bool` field to `ConnectionEvent::Disconnected`
    - When `true`, indicates socket replacement (plugins should be preserved)
 
-2. **`cosmic-connect-protocol/src/connection/manager.rs`**
+2. **`cosmic-ext-connect-protocol/src/connection/manager.rs`**
    - Added `ConnectionCommand::CloseForReconnect` variant
    - Socket replacement now sends `CloseForReconnect` instead of `Close`
    - Connection handler tracks `is_reconnect` flag
    - Emits `Disconnected` event with `reconnect: true` on socket replacement
    - Emits `Disconnected` event with `reconnect: false` on genuine disconnection
 
-3. **`cosmic-connect-daemon/src/main.rs`**
+3. **`cosmic-ext-connect-daemon/src/main.rs`**
    - Check `reconnect` field in `Disconnected` event handler
    - Skip `cleanup_device_plugins()` when `reconnect == true`
    - Log "Socket replacement - preserving plugin state" message
 
 4. **Other files updated for compilation:**
-   - `cosmic-connect-protocol/src/recovery_coordinator.rs`
-   - `cosmic-connect-protocol/src/transport_manager.rs`
+   - `cosmic-ext-connect-protocol/src/recovery_coordinator.rs`
+   - `cosmic-ext-connect-protocol/src/transport_manager.rs`
 
 ### Expected Behavior After Fix
 ```
@@ -58,7 +58,7 @@ Fixed payload reception to use `read_exact()` for reliable byte reading:
 
 **Changes Made:**
 
-1. **`cosmic-connect-daemon/src/main.rs` (lines 1958-2002)**
+1. **`cosmic-ext-connect-daemon/src/main.rs` (lines 1958-2002)**
    - Changed from `Vec::with_capacity()` + `read_buf()` to `vec![0u8; size]` + `read_exact()`
    - `read_exact()` guarantees all `payload_size` bytes are received
    - Improved error messages and logging
@@ -75,20 +75,20 @@ Fixed payload reception to use `read_exact()` for reliable byte reading:
 ## Files Modified
 
 ### Protocol Library
-- `cosmic-connect-protocol/src/connection/events.rs` - Added `reconnect` field
-- `cosmic-connect-protocol/src/connection/manager.rs` - Socket replacement logic
-- `cosmic-connect-protocol/src/recovery_coordinator.rs` - Handle new field
-- `cosmic-connect-protocol/src/transport_manager.rs` - Handle new field
+- `cosmic-ext-connect-protocol/src/connection/events.rs` - Added `reconnect` field
+- `cosmic-ext-connect-protocol/src/connection/manager.rs` - Socket replacement logic
+- `cosmic-ext-connect-protocol/src/recovery_coordinator.rs` - Handle new field
+- `cosmic-ext-connect-protocol/src/transport_manager.rs` - Handle new field
 
 ### Daemon
-- `cosmic-connect-daemon/src/main.rs` - Skip plugin cleanup on reconnect, fix payload reception
+- `cosmic-ext-connect-daemon/src/main.rs` - Skip plugin cleanup on reconnect, fix payload reception
 
 ## Testing
 
 ### Compilation
 ```bash
-nix develop --command cargo check --package cosmic-connect-protocol
-nix develop --command cargo check --package cosmic-connect-daemon
+nix develop --command cargo check --package cosmic-ext-connect-protocol
+nix develop --command cargo check --package cosmic-ext-connect-daemon
 ```
 Both compile successfully.
 

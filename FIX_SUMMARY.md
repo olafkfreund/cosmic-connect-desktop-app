@@ -6,7 +6,7 @@ Android notification action buttons and links were not being passed to the COSMI
 ## Root Cause Analysis
 
 ### Issue 1: Action Buttons Not Extracted
-- **Location:** `cosmic-connect-daemon/src/main.rs` line ~2086
+- **Location:** `cosmic-ext-connect-daemon/src/main.rs` line ~2086
 - **Problem:** The `actionButtons` array from incoming packets was never extracted
 - **Format:** Android sends `[{"id": "reply", "label": "Reply"}, ...]`
 - **Result:** Action buttons were completely missing from desktop notifications
@@ -20,7 +20,7 @@ Android notification action buttons and links were not being passed to the COSMI
 ## Solution Implemented
 
 ### Files Modified
-1. `cosmic-connect-daemon/src/main.rs` - Packet processing logic
+1. `cosmic-ext-connect-daemon/src/main.rs` - Packet processing logic
 
 ### Changes Made
 
@@ -102,7 +102,7 @@ The notification system already supports actions and links:
    - Already converts actions to D-Bus format (alternating id/label pairs)
    - `notify_rich_from_device()` accepts links parameter
 
-2. **Protocol Layer** (`cosmic-connect-protocol`):
+2. **Protocol Layer** (`cosmic-ext-connect-protocol`):
    - `NotificationAction` struct: Defines action button structure
    - `NotificationLink` struct: Defines link structure
    - `Notification` struct: Contains `action_buttons` and `links` fields
@@ -113,7 +113,7 @@ The notification system already supports actions and links:
 ```
 Android App
    ↓ (KDE Connect Protocol)
-cosmic-connect-daemon (main.rs)
+cosmic-ext-connect-daemon (main.rs)
    ↓ (Extract actionButtons & links)
 cosmic_notifications.rs (NotificationBuilder)
    ↓ (D-Bus org.freedesktop.Notifications)
@@ -161,7 +161,7 @@ Not required - changes are in packet processing logic only.
 ### Verification Commands
 ```bash
 # Watch daemon logs
-journalctl -u cosmic-connect-daemon -f
+journalctl -u cosmic-ext-connect-daemon -f
 
 # Look for debug messages
 grep "Extracted.*action buttons" /var/log/...
@@ -199,16 +199,16 @@ grep "Extracted.*links" /var/log/...
 3. **FIX_SUMMARY.md** - This file
 
 ### Key Source Files
-1. **cosmic-connect-daemon/src/main.rs**
+1. **cosmic-ext-connect-daemon/src/main.rs**
    - Lines ~2000-2170: Notification packet handling
    - Lines ~2086-2165: Modified section
 
-2. **cosmic-connect-daemon/src/cosmic_notifications.rs**
+2. **cosmic-ext-connect-daemon/src/cosmic_notifications.rs**
    - Lines 180-184: `action()` method for adding buttons
    - Lines 411-419: Link handling in `notify_rich_from_device`
    - Lines 779-830: `subscribe_actions()` for callbacks
 
-3. **cosmic-connect-protocol/src/plugins/notification.rs**
+3. **cosmic-ext-connect-protocol/src/plugins/notification.rs**
    - Lines 283-310: `NotificationAction` struct
    - Lines 312-377: `NotificationLink` struct
    - Lines 406-516: `Notification` struct with all fields
@@ -260,9 +260,9 @@ cargo build --release
 ### Installation
 ```bash
 # If using systemd
-systemctl --user stop cosmic-connect-daemon
-cp target/release/cosmic-connect-daemon ~/.local/bin/
-systemctl --user start cosmic-connect-daemon
+systemctl --user stop cosmic-ext-connect-daemon
+cp target/release/cosmic-ext-connect-daemon ~/.local/bin/
+systemctl --user start cosmic-ext-connect-daemon
 
 # Or use nix flake
 nix build
@@ -271,10 +271,10 @@ nix build
 ### Verification
 ```bash
 # Check daemon is running
-systemctl --user status cosmic-connect-daemon
+systemctl --user status cosmic-ext-connect-daemon
 
 # Watch logs for action/link extraction
-journalctl -u cosmic-connect-daemon -f | grep "Extracted"
+journalctl -u cosmic-ext-connect-daemon -f | grep "Extracted"
 ```
 
 ## Performance Impact

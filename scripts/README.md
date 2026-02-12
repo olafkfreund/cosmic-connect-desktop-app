@@ -71,9 +71,9 @@ This launches an interactive menu where you can:
 ./scripts/test-plugins.sh --all 1b7bbb613c0c42bb9a0b80b24d28631d
 
 # Get device ID first, then test
-busctl --user call com.system76.CosmicConnect \
-  /com/system76/CosmicConnect \
-  com.system76.CosmicConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   GetDevices
 ```
 
@@ -128,7 +128,7 @@ esac
 
 1. **Start daemon:**
    ```bash
-   cosmic-connect-daemon
+   cosmic-ext-connect-daemon
    ```
 
 2. **Pair device:**
@@ -168,14 +168,14 @@ If tests fail:
 
 1. Check daemon is running:
    ```bash
-   busctl --user status com.system76.CosmicConnect
+   busctl --user status io.github.olafkfreund.CosmicExtConnect
    ```
 
 2. Check device is connected:
    ```bash
-   busctl --user call com.system76.CosmicConnect \
-     /com/system76/CosmicConnect \
-     com.system76.CosmicConnect \
+   busctl --user call io.github.olafkfreund.CosmicExtConnect \
+     /io/github/olafkfreund/CosmicExtConnect \
+     io.github.olafkfreund.CosmicExtConnect \
      GetDevices
    ```
 

@@ -15,7 +15,7 @@ This directory contains the AUR (Arch User Repository) package files for COSMIC 
 - `PKGBUILD` - Main package build script
 - `.SRCINFO` - AUR metadata (generated from PKGBUILD)
 - `cosmic-connect.install` - Post-install hooks
-- `cosmic-connect-daemon.service` - Systemd user service
+- `cosmic-ext-connect-daemon.service` - Systemd user service
 - `README.md` - This file
 
 ## Building the Package
@@ -117,12 +117,12 @@ makepkg -si
 
 The package installs the following binaries:
 
-- `cosmic-applet-connect` - COSMIC panel applet for device status
-- `cosmic-connect-daemon` - Background service with D-Bus activation
-- `cosmic-connect-manager` - Standalone device manager window
+- `cosmic-ext-applet-connect` - COSMIC panel applet for device status
+- `cosmic-ext-connect-daemon` - Background service with D-Bus activation
+- `cosmic-ext-connect-manager` - Standalone device manager window
 - `cosmic-messages` - TUI messaging interface
-- `cosmic-messages-popup` - Web-based messaging popup
-- `cosmic-display-stream` - Display streaming utility
+- `cosmic-ext-messages-popup` - Web-based messaging popup
+- `cosmic-ext-display-stream` - Display streaming utility
 
 ## Features
 
@@ -147,8 +147,8 @@ namcap PKGBUILD
 Check the service status:
 
 ```bash
-systemctl --user status cosmic-connect-daemon.service
-journalctl --user -u cosmic-connect-daemon.service
+systemctl --user status cosmic-ext-connect-daemon.service
+journalctl --user -u cosmic-ext-connect-daemon.service
 ```
 
 ### Dependency Issues

@@ -1744,27 +1744,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-applet-connect"
-version = "0.18.0"
-dependencies = [
- "anyhow",
- "arboard",
- "ashpd 0.12.1",
- "chrono",
- "cosmic-connect-protocol",
- "dirs 5.0.1",
- "futures",
- "libcosmic",
- "serde",
- "serde_json",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "zbus 5.13.2",
-]
-
-[[package]]
 name = "cosmic-client-toolkit"
 version = "0.1.0"
 source = "git+https://github.com/pop-os/cosmic-protocols?rev=d0e95be#d0e95be25e423cfe523b11111a3666ed7aaf0dc4"
@@ -1845,7 +1824,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-connect-daemon"
+name = "cosmic-ext-applet-connect"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "ashpd 0.12.1",
+ "chrono",
+ "cosmic-ext-connect-protocol",
+ "dirs 5.0.1",
+ "futures",
+ "libcosmic",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "zbus 5.13.2",
+]
+
+[[package]]
+name = "cosmic-ext-connect-daemon"
 version = "0.18.0"
 dependencies = [
  "anyhow",
@@ -1854,7 +1854,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
- "cosmic-connect-protocol",
+ "cosmic-ext-connect-protocol",
  "dirs 6.0.0",
  "futures",
  "hostname",
@@ -1874,7 +1874,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-connect-manager"
+name = "cosmic-ext-connect-manager"
 version = "0.18.0"
 dependencies = [
  "anyhow",
@@ -1882,7 +1882,7 @@ dependencies = [
  "ashpd 0.12.1",
  "chrono",
  "clap",
- "cosmic-connect-protocol",
+ "cosmic-ext-connect-protocol",
  "dirs 5.0.1",
  "futures",
  "libcosmic",
@@ -1896,7 +1896,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-connect-protocol"
+name = "cosmic-ext-connect-protocol"
 version = "0.18.0"
 dependencies = [
  "ashpd 0.12.1",
@@ -1906,7 +1906,7 @@ dependencies = [
  "bluer",
  "chrono",
  "cosmic-connect-core",
- "cosmic-display-stream",
+ "cosmic-ext-display-stream",
  "dirs 6.0.0",
  "futures",
  "globset",
@@ -1950,7 +1950,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-display-stream"
+name = "cosmic-ext-display-stream"
 version = "0.18.0"
 dependencies = [
  "anyhow",
@@ -1977,21 +1977,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-freedesktop-icons"
-version = "0.4.0"
-source = "git+https://github.com/pop-os/freedesktop-icons#7a61a704f6d1ec41f71cbe766e3cc484858523fa"
-dependencies = [
- "bstr",
- "btoi",
- "memchr",
- "memmap2 0.9.9",
- "thiserror 2.0.18",
- "tracing",
- "xdg",
-]
-
-[[package]]
-name = "cosmic-messages"
+name = "cosmic-ext-messages"
 version = "0.18.0"
 dependencies = [
  "anyhow",
@@ -2008,7 +1994,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-messages-popup"
+name = "cosmic-ext-messages-popup"
 version = "0.18.0"
 dependencies = [
  "anyhow",
@@ -2033,6 +2019,20 @@ dependencies = [
  "tracing-subscriber",
  "wry",
  "zbus 5.13.2",
+]
+
+[[package]]
+name = "cosmic-freedesktop-icons"
+version = "0.4.0"
+source = "git+https://github.com/pop-os/freedesktop-icons#7a61a704f6d1ec41f71cbe766e3cc484858523fa"
+dependencies = [
+ "bstr",
+ "btoi",
+ "memchr",
+ "memmap2 0.9.9",
+ "thiserror 2.0.18",
+ "tracing",
+ "xdg",
 ]
 
 [[package]]

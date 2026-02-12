@@ -1,0 +1,50 @@
+[package]
+name = "cosmic-ext-connect-daemon"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cosmic Connect background daemon"
+
+[dependencies]
+cosmic-ext-connect-protocol = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+dirs = { workspace = true }
+toml = { workspace = true }
+zbus = { workspace = true }
+futures = { workspace = true }
+async-stream = "0.3"
+chrono = { workspace = true }
+clap = { workspace = true }
+hostname = "0.4"
+arboard = "3.4"
+regex = { workspace = true }
+open = { workspace = true }
+serde_bytes = "0.11"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = { workspace = true }
+# TLS for camera frame payload reception (Issue #139)
+tokio-rustls = "0.25"
+
+[build-dependencies]
+chrono = { workspace = true }
+rustc_version = "0.4"
+
+[[bin]]
+name = "cosmic-ext-connect-daemon"
+path = "src/main.rs"
+
+[features]
+default = ["video", "screenshare", "remotedesktop", "audiostream", "extendeddisplay"]
+remotedesktop = ["cosmic-ext-connect-protocol/remotedesktop"]
+screenshare = ["cosmic-ext-connect-protocol/screenshare"]
+video = ["cosmic-ext-connect-protocol/video"]
+audiostream = ["cosmic-ext-connect-protocol/audiostream"]
+audiostream-opus = ["cosmic-ext-connect-protocol/audiostream-opus"]
+extendeddisplay = ["cosmic-ext-connect-protocol/extendeddisplay"]

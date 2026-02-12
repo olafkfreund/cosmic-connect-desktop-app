@@ -1,7 +1,7 @@
 # Final Changes Needed to Fix Notification Actions and Links
 
 ## Current Status
-The file `cosmic-connect-daemon/src/main.rs` already has a partial implementation that extracts and processes images from Android notifications. However, **action buttons and links are still missing**.
+The file `cosmic-ext-connect-daemon/src/main.rs` already has a partial implementation that extracts and processes images from Android notifications. However, **action buttons and links are still missing**.
 
 ## Changes Required
 
@@ -212,7 +212,7 @@ Based on the current git diff:
 ## How to Apply These Changes
 
 ### Option 1: Manual Editing
-1. Open `cosmic-connect-daemon/src/main.rs` in your editor
+1. Open `cosmic-ext-connect-daemon/src/main.rs` in your editor
 2. Find line 2129 (search for the last line of image processing)
 3. Insert the action buttons and links extraction code
 4. Make the three changes described above
@@ -226,7 +226,7 @@ Based on the current git diff:
 ### Option 3: Create a Git Patch
 ```bash
 # After making the changes manually, create a patch
-git add cosmic-connect-daemon/src/main.rs
+git add cosmic-ext-connect-daemon/src/main.rs
 git diff --cached > notification_fix.patch
 
 # To apply on another machine
@@ -246,10 +246,10 @@ cargo clippy
 cargo test
 
 # Install and test with Android device
-systemctl --user restart cosmic-connect-daemon
+systemctl --user restart cosmic-ext-connect-daemon
 
 # Watch logs
-journalctl -u cosmic-connect-daemon -f | grep "Extracted"
+journalctl -u cosmic-ext-connect-daemon -f | grep "Extracted"
 ```
 
 ## Expected Log Output

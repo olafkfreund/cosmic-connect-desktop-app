@@ -20,20 +20,20 @@ echo -e "${BLUE}═════════════════════�
 echo ""
 
 # Check if binaries are built
-if [ ! -f "target/debug/cosmic-connect-daemon" ]; then
+if [ ! -f "target/debug/cosmic-ext-connect-daemon" ]; then
     echo -e "${RED}Error: Daemon not built. Run 'just build' or 'nix develop --command just build' first.${NC}"
     exit 1
 fi
 
-if [ ! -f "target/debug/cosmic-applet-connect" ]; then
+if [ ! -f "target/debug/cosmic-ext-applet-connect" ]; then
     echo -e "${RED}Error: Applet not built. Run 'just build' or 'nix develop --command just build' first.${NC}"
     exit 1
 fi
 
 # Copy test config to expected location
 echo -e "${BLUE}Setting up configuration...${NC}"
-mkdir -p ~/.config/cosmic/cosmic-connect
-cp -f test-config.toml ~/.config/cosmic/cosmic-connect/daemon.toml
+mkdir -p ~/.config/cosmic/cosmic-ext-connect
+cp -f test-config.toml ~/.config/cosmic/cosmic-ext-connect/daemon.toml
 
 # Check if config exists
 if [ ! -f "test-config.toml" ]; then
@@ -43,10 +43,10 @@ fi
 
 # Show configuration
 echo -e "${GREEN}Configuration:${NC}"
-echo -e "  Config file: ${YELLOW}~/.config/cosmic/cosmic-connect/daemon.toml${NC}"
-echo -e "  Data dir:    ${YELLOW}/tmp/cosmic-connect-test${NC}"
-echo -e "  Daemon:      ${YELLOW}target/debug/cosmic-connect-daemon${NC}"
-echo -e "  Applet:      ${YELLOW}target/debug/cosmic-applet-connect${NC}"
+echo -e "  Config file: ${YELLOW}~/.config/cosmic/cosmic-ext-connect/daemon.toml${NC}"
+echo -e "  Data dir:    ${YELLOW}/tmp/cosmic-ext-connect-test${NC}"
+echo -e "  Daemon:      ${YELLOW}target/debug/cosmic-ext-connect-daemon${NC}"
+echo -e "  Applet:      ${YELLOW}target/debug/cosmic-ext-applet-connect${NC}"
 echo ""
 
 # Show enabled plugins
@@ -55,18 +55,18 @@ grep "^enable_.*= true" test-config.toml | sed 's/enable_/  - /g' | sed 's/ = tr
 echo ""
 
 # Check if daemon is already running
-if pgrep -f "cosmic-connect-daemon" > /dev/null; then
+if pgrep -f "cosmic-ext-connect-daemon" > /dev/null; then
     echo -e "${YELLOW}Warning: Daemon already running. Stopping...${NC}"
-    pkill -f "cosmic-connect-daemon"
+    pkill -f "cosmic-ext-connect-daemon"
     sleep 1
 fi
 
 # Start daemon in background
 echo -e "${BLUE}Starting daemon...${NC}"
-export RUST_LOG=info,cosmic_connect_daemon=debug,cosmic_connect_protocol=debug
+export RUST_LOG=info,cosmic_ext_connect_daemon=debug,cosmic_ext_connect_protocol=debug
 export RUST_BACKTRACE=1
 
-./target/debug/cosmic-connect-daemon > /tmp/cosmic-connect-daemon.log 2>&1 &
+./target/debug/cosmic-ext-connect-daemon > /tmp/cosmic-ext-connect-daemon.log 2>&1 &
 DAEMON_PID=$!
 
 # Wait for daemon to start
@@ -76,12 +76,12 @@ sleep 2
 # Check if daemon is running
 if ! ps -p $DAEMON_PID > /dev/null; then
     echo -e "${RED}Error: Daemon failed to start. Check logs:${NC}"
-    tail -20 /tmp/cosmic-connect-daemon.log
+    tail -20 /tmp/cosmic-ext-connect-daemon.log
     exit 1
 fi
 
 echo -e "${GREEN}✓ Daemon started (PID: $DAEMON_PID)${NC}"
-echo -e "  Log file: ${YELLOW}/tmp/cosmic-connect-daemon.log${NC}"
+echo -e "  Log file: ${YELLOW}/tmp/cosmic-ext-connect-daemon.log${NC}"
 echo ""
 
 # Start applet
@@ -93,8 +93,8 @@ echo ""
 sleep 1
 
 # Start applet in foreground
-export RUST_LOG=info,cosmic_applet_connect=debug
-./target/debug/cosmic-applet-connect
+export RUST_LOG=info,cosmic_ext_applet_connect=debug
+./target/debug/cosmic-ext-applet-connect
 
 # Cleanup on exit
 echo ""

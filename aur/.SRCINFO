@@ -29,7 +29,7 @@ pkgbase = cosmic-connect
 	provides = cosmic-connect
 	conflicts = cosmic-connect-git
 	source = cosmic-connect-0.1.0.tar.gz::https://github.com/olafkfreund/cosmic-connect-desktop-app/archive/v0.1.0.tar.gz
-	source = cosmic-connect-daemon.service
+	source = cosmic-ext-connect-daemon.service
 	sha256sums = SKIP
 	sha256sums = SKIP
 

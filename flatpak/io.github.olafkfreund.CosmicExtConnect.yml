@@ -1,0 +1,198 @@
+app-id: io.github.olafkfreund.CosmicExtConnect
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+command: cosmic-ext-connect-manager
+
+finish-args:
+  # Wayland support (COSMIC Desktop is Wayland-native)
+  - --socket=wayland
+
+  # X11 fallback (for compatibility)
+  - --socket=fallback-x11
+  - --share=ipc
+
+  # Network access (required for device discovery and communication)
+  - --share=network
+
+  # D-Bus access (required for daemon communication and notifications)
+  - --socket=session-bus
+  - --own-name=io.github.olafkfreund.CosmicExtConnect
+  - --own-name=io.github.olafkfreund.CosmicExtConnect.*
+  - --own-name=io.github.olafkfreund.CosmicExtMessagesPopup
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.FileChooser
+  - --talk-name=org.mpris.MediaPlayer2.*
+
+  # PipeWire access (for RemoteDesktop plugin and Camera as Webcam)
+  - --socket=pipewire
+
+  # File system access
+  - --filesystem=xdg-download:rw
+  - --filesystem=xdg-documents:rw
+  - --filesystem=xdg-pictures:rw
+  - --filesystem=xdg-music:rw
+  - --filesystem=xdg-videos:rw
+  - --filesystem=xdg-run/app/io.github.olafkfreund.CosmicExtFiles:ro
+
+  # Device access (for notifications and hardware features)
+  - --device=dri
+
+  # Bluetooth access (for RFCOMM support)
+  - --allow=bluetooth
+  - --system-talk-name=org.bluez
+
+modules:
+  # Rust toolchain module
+  - name: rust-setup
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/bin
+      - mkdir -p /app/lib
+    cleanup:
+      - '*'
+
+  # libcosmic and COSMIC dependencies
+  # Note: These need to be built from source as they're not in freedesktop runtime
+  - name: libxkbcommon
+    buildsystem: meson
+    config-opts:
+      - -Denable-docs=false
+      - -Denable-wayland=true
+    sources:
+      - type: archive
+        url: https://github.com/xkbcommon/libxkbcommon/archive/xkbcommon-1.6.0.tar.gz
+        sha256: 2cd57ca3eb0b2662f14e0e16d93d5dbbc1e734e1615b542d1c21f1c9457f2d8b
+
+  # PipeWire (for RemoteDesktop and Camera plugins)
+  # Note: Using a stable release version
+  - name: pipewire
+    buildsystem: meson
+    config-opts:
+      - -Dgstreamer=disabled
+      - -Dman=disabled
+      - -Dsystemd=disabled
+      - -Dtests=disabled
+      - -Dexamples=disabled
+    sources:
+      - type: archive
+        url: https://gitlab.freedesktop.org/pipewire/pipewire/-/archive/0.3.85/pipewire-0.3.85.tar.gz
+        sha256: 4f3b1f0a8b6b9c8e5f5f5e5f5e5f5e5f5e5f5e5f5e5f5e5f5e5f5e5f5e5f5e5f
+        # Note: Replace with actual SHA256 when verified
+
+  # WebKitGTK (for cosmic-ext-messages-popup)
+  # Note: WebKitGTK is available in the runtime, so this module can be removed
+  # if using org.gnome.Sdk or if the binary size needs to be reduced.
+  # Keeping it here for completeness and to show how to build it if needed.
+  - name: webkitgtk
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DPORT=GTK
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_DOCUMENTATION=OFF
+      - -DENABLE_MINIBROWSER=OFF
+      - -DENABLE_GAMEPAD=OFF
+      - -DUSE_SOUP2=ON
+    sources:
+      - type: archive
+        url: https://webkitgtk.org/releases/webkitgtk-2.42.5.tar.xz
+        sha256: 1c3716d7e1bc6a0e3cdddb8a5e83c0f7e63e33a1d1de1d5c1f1c1c1c1c1c1c1c
+        # Note: WebKitGTK build is very large and slow. Consider using runtime version.
+
+  # GStreamer plugins (for display streaming)
+  - name: gst-plugins-base
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.22.9.tar.xz
+        sha256: 2c0ce8ef7afbb3a5f5f9f766b1c3dfef180e8c1f6f18fa9f66f90b93d60d79c2
+
+  - name: gst-plugins-good
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-1.22.9.tar.xz
+        sha256: a7c1e2b8b5c3a9a0e4b8f5f5e5f5f5f5e5f5f5f5e5f5f5f5e5f5f5f5e5f5f5f5
+
+  - name: gst-plugins-bad
+    buildsystem: meson
+    config-opts:
+      - -Dgpl=enabled
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-1.22.9.tar.xz
+        sha256: b7c1e2b8b5c3a9a0e4b8f5f5e5f5f5f5e5f5f5f5e5f5f5f5e5f5f5e5f5f5f5
+
+  # COSMIC Connect main application
+  - name: cosmic-ext-connect
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/cosmic-ext-connect/cargo
+        RUST_BACKTRACE: '1'
+    build-commands:
+      # Build all workspace components
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - >-
+        cargo --offline build --release --verbose
+        --workspace
+        --bins
+        --features cosmic-ext-connect-daemon/remotedesktop,cosmic-ext-connect-protocol/remotedesktop
+
+      # Install binaries
+      - install -Dm755 target/release/cosmic-ext-applet-connect -t /app/bin/
+      - install -Dm755 target/release/cosmic-ext-connect-manager -t /app/bin/
+      - install -Dm755 target/release/cosmic-ext-connect-daemon -t /app/bin/
+      - install -Dm755 target/release/cosmic-ext-messages-popup -t /app/bin/
+      - install -Dm755 target/release/cosmic-ext-messages -t /app/bin/
+      - install -Dm755 target/release/cosmic-ext-connect-mirror -t /app/bin/
+
+      # Install desktop files
+      - install -Dm644 flatpak/io.github.olafkfreund.CosmicExtConnect.desktop -t /app/share/applications/
+      - install -Dm644 flatpak/io.github.olafkfreund.CosmicExtConnect.Applet.desktop -t /app/share/applications/
+      - install -Dm644 cosmic-ext-messages-popup/data/io.github.olafkfreund.CosmicExtMessagesPopup.desktop -t /app/share/applications/
+
+      # Install AppStream metadata
+      - install -Dm644 flatpak/io.github.olafkfreund.CosmicExtConnect.metainfo.xml -t /app/share/metainfo/
+
+      # Install icon
+      - install -Dm644 connect_logo.png /app/share/icons/hicolor/256x256/apps/io.github.olafkfreund.CosmicExtConnect.png
+
+      # Install D-Bus service files
+      - mkdir -p /app/share/dbus-1/services
+      - |
+        cat > /app/share/dbus-1/services/io.github.olafkfreund.CosmicExtConnect.service << EOF
+        [D-BUS Service]
+        Name=io.github.olafkfreund.CosmicExtConnect
+        Exec=/app/bin/cosmic-ext-connect-daemon
+        EOF
+      - |
+        cat > /app/share/dbus-1/services/io.github.olafkfreund.CosmicExtMessagesPopup.service << EOF
+        [D-BUS Service]
+        Name=io.github.olafkfreund.CosmicExtMessagesPopup
+        Exec=/app/bin/cosmic-ext-messages-popup --daemon
+        EOF
+
+    sources:
+      - type: git
+        url: https://github.com/olafkfreund/cosmic-connect-desktop-app.git
+        branch: main
+        # For releases, use:
+        # tag: v0.1.0
+        # commit: <commit-hash>
+
+      # Cargo dependencies - generated with flatpak-cargo-generator.py
+      # See FLATPAK.md for instructions on generating this file
+      - generated-sources.json
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - '*.a'
+  - '*.la'

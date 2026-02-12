@@ -124,7 +124,7 @@ impl cosmic::Application for KdeConnectApplet {
     type Message = Message;
     type Executor = cosmic::executor::Default;
     type Flags = ();
-    const APP_ID: &'static str = "com.system76.CosmicAppletKdeConnect";
+    const APP_ID: &'static str = "io.github.olafkfreund.CosmicExtAppletConnect";
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Message>) {
         let applet = Self {

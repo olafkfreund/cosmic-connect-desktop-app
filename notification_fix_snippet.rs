@@ -1,5 +1,5 @@
 // This is the complete replacement for the notification handling block
-// in cosmic-connect-daemon/src/main.rs around line 2086
+// in cosmic-ext-connect-daemon/src/main.rs around line 2086
 //
 // Replace the section from:
 //   } else if should_show {

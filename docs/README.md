@@ -48,7 +48,7 @@ docs/
 ##  External Resources
 
 - [Main README](../README.md) - Project overview
-- [cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core) - Shared library
+- [cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core) - Shared library
 - [cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android) - Android app
 
 ---

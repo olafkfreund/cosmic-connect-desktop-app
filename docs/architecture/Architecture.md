@@ -7,7 +7,7 @@ COSMIC Connect implements a modern, cross-platform device connectivity solution 
 ## Repository Structure
 
 ```
-cosmic-connect-core/          # Shared Rust library (github.com/olafkfreund/cosmic-connect-core)
+cosmic-ext-connect-core/          # Shared Rust library (github.com/olafkfreund/cosmic-ext-connect-core)
 ├── protocol/                 # Core protocol types (Packet, Device, Identity)
 ├── network/                  # Discovery, TCP transport
 ├── crypto/                   # TLS, certificate management (rustls-based)
@@ -15,20 +15,20 @@ cosmic-connect-core/          # Shared Rust library (github.com/olafkfreund/cosm
 └── ffi/                      # FFI bindings for Kotlin/Swift (uniffi-rs)
 
 cosmic-connect-desktop-app/   # This repository (COSMIC Desktop)
-├── cosmic-connect-protocol/  # Desktop-specific protocol extensions
-├── cosmic-connect-daemon/    # Background daemon service
-├── cosmic-applet-connect/    # COSMIC panel applet (UI)
+├── cosmic-ext-connect-protocol/  # Desktop-specific protocol extensions
+├── cosmic-ext-connect-daemon/    # Background daemon service
+├── cosmic-ext-applet-connect/    # COSMIC panel applet (UI)
 └── cosmic-connect/           # CLI tool
 
 cosmic-connect-android/       # Android app (github.com/olafkfreund/cosmic-connect-android)
-└── Uses cosmic-connect-core via Kotlin FFI bindings
+└── Uses cosmic-ext-connect-core via Kotlin FFI bindings
 ```
 
 ## Architecture Layers
 
-### 1. Shared Core (`cosmic-connect-core`)
+### 1. Shared Core (`cosmic-ext-connect-core`)
 
-**Location:** https://github.com/olafkfreund/cosmic-connect-core
+**Location:** https://github.com/olafkfreund/cosmic-ext-connect-core
 
 **Purpose:** Platform-agnostic KDE Connect protocol v7 implementation
 
@@ -41,7 +41,7 @@ cosmic-connect-android/       # Android app (github.com/olafkfreund/cosmic-conne
 
 **Exports:**
 ```rust
-// From cosmic-connect-core
+// From cosmic-ext-connect-core
 pub use crypto::{
     CertificateInfo,        // Certificate generation and management
     DeviceInfo,             // TLS device information
@@ -61,7 +61,7 @@ pub use {Packet, ProtocolError};
 - ✅ Modern async Rust with tokio
 - ✅ FFI bindings for Android (Kotlin) via uniffi-rs
 
-### 2. Desktop Protocol Layer (`cosmic-connect-protocol`)
+### 2. Desktop Protocol Layer (`cosmic-ext-connect-protocol`)
 
 **Purpose:** Desktop-specific protocol extensions and integrations
 
@@ -75,7 +75,7 @@ pub use {Packet, ProtocolError};
 
 **Dependencies:**
 ```toml
-cosmic-connect-core = { path = "../cosmic-connect-core" }  # Shared TLS layer
+cosmic-ext-connect-core = { path = "../cosmic-ext-connect-core" }  # Shared TLS layer
 ```
 
 **Uses from core:**
@@ -83,7 +83,7 @@ cosmic-connect-core = { path = "../cosmic-connect-core" }  # Shared TLS layer
 - Certificate management (CertificateInfo)
 - Core packet types and error handling
 
-### 3. Desktop Daemon (`cosmic-connect-daemon`)
+### 3. Desktop Daemon (`cosmic-ext-connect-daemon`)
 
 **Purpose:** Background service managing device connections
 
@@ -98,10 +98,10 @@ cosmic-connect-core = { path = "../cosmic-connect-core" }  # Shared TLS layer
 
 **Dependencies:**
 ```toml
-cosmic-connect-protocol = { workspace = true }
+cosmic-ext-connect-protocol = { workspace = true }
 ```
 
-### 4. COSMIC Applet (`cosmic-applet-connect`)
+### 4. COSMIC Applet (`cosmic-ext-applet-connect`)
 
 **Purpose:** User interface in COSMIC panel
 
@@ -115,7 +115,7 @@ cosmic-connect-protocol = { workspace = true }
 **Dependencies:**
 ```toml
 libcosmic = { git = "https://github.com/pop-os/libcosmic" }
-cosmic-connect-protocol = { workspace = true }
+cosmic-ext-connect-protocol = { workspace = true }
 ```
 
 ### 5. Android App (`cosmic-connect-android`)
@@ -125,7 +125,7 @@ cosmic-connect-protocol = { workspace = true }
 **Purpose:** Android client using shared Rust core
 
 **Architecture:**
-- **Rust Core:** Uses `cosmic-connect-core` via FFI
+- **Rust Core:** Uses `cosmic-ext-connect-core` via FFI
 - **Kotlin Layer:** Android UI, system integration, Material 3 design
 - **Bridge:** uniffi-rs generates Kotlin bindings
 
@@ -140,10 +140,10 @@ cosmic-connect-protocol = { workspace = true }
 
 ### Desktop ← Core Integration
 
-The desktop app uses cosmic-connect-core for the TLS layer:
+The desktop app uses cosmic-ext-connect-core for the TLS layer:
 
 ```rust
-// cosmic-connect-protocol/src/lib.rs
+// cosmic-ext-connect-protocol/src/lib.rs
 pub use cosmic_connect_core::crypto::{
     CertificateInfo,
     DeviceInfo as TlsDeviceInfo,
@@ -157,7 +157,7 @@ pub use cosmic_connect_core::{Packet as CorePacket, ProtocolError as CoreProtoco
 
 ### Android ← Core Integration
 
-The Android app uses cosmic-connect-core via Kotlin FFI:
+The Android app uses cosmic-ext-connect-core via Kotlin FFI:
 
 ```kotlin
 // Generated Kotlin bindings from uniffi-rs
@@ -170,8 +170,8 @@ val pluginManager = createPluginManager()
 
 ## Protocol Version Compatibility
 
-- **cosmic-connect-core:** Protocol v7 (stable)
-- **cosmic-connect-protocol:** Protocol v8 (desktop extensions)
+- **cosmic-ext-connect-core:** Protocol v7 (stable)
+- **cosmic-ext-connect-protocol:** Protocol v8 (desktop extensions)
 - **Android app:** Protocol v7 (via core)
 
 All implementations maintain backward compatibility with KDE Connect ecosystem.
@@ -181,9 +181,9 @@ All implementations maintain backward compatibility with KDE Connect ecosystem.
 ### For Desktop Development
 
 ```bash
-# 1. Ensure cosmic-connect-core is cloned as sibling directory
+# 1. Ensure cosmic-ext-connect-core is cloned as sibling directory
 cd ~/Source/GitHub/
-git clone https://github.com/olafkfreund/cosmic-connect-core
+git clone https://github.com/olafkfreund/cosmic-ext-connect-core
 
 # 2. Work on desktop app
 cd cosmic-connect-desktop-app
@@ -197,7 +197,7 @@ cargo build
 # 1. Clone Android app
 git clone https://github.com/olafkfreund/cosmic-connect-android
 
-# 2. cosmic-connect-core is included as submodule or dependency
+# 2. cosmic-ext-connect-core is included as submodule or dependency
 cd cosmic-connect-android
 # Build generates Kotlin bindings automatically
 ./gradlew build
@@ -207,7 +207,7 @@ cd cosmic-connect-android
 
 ```bash
 # 1. Work on shared core
-cd cosmic-connect-core
+cd cosmic-ext-connect-core
 cargo build
 
 # 2. Test in desktop app
@@ -239,7 +239,7 @@ Plugins are defined in the shared core and implemented platform-specifically:
 - ✅ Share - File/link sharing
 - ✅ Telephony - Call/SMS notifications
 
-Each plugin implements the `Plugin` trait defined in cosmic-connect-core.
+Each plugin implements the `Plugin` trait defined in cosmic-ext-connect-core.
 
 ## Security
 
@@ -270,12 +270,12 @@ Each plugin implements the `Plugin` trait defined in cosmic-connect-core.
 
 ### Current Setup (Development)
 
-The desktop app currently uses a **local path dependency** for cosmic-connect-core:
+The desktop app currently uses a **local path dependency** for cosmic-ext-connect-core:
 
 ```toml
 # Cargo.toml
 [workspace.dependencies]
-cosmic-connect-core = { path = "../cosmic-connect-core" }
+cosmic-ext-connect-core = { path = "../cosmic-ext-connect-core" }
 ```
 
 **Advantages:**
@@ -292,10 +292,10 @@ For production builds or CI environments, you can use a git dependency:
 # Cargo.toml
 [workspace.dependencies]
 # Use main branch (latest)
-cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-core", branch = "main" }
+cosmic-ext-connect-core = { git = "https://github.com/olafkfreund/cosmic-ext-connect-core", branch = "main" }
 
 # Or use a specific tag (stable)
-cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-core", tag = "v0.1.2-alpha" }
+cosmic-ext-connect-core = { git = "https://github.com/olafkfreund/cosmic-ext-connect-core", tag = "v0.1.2-alpha" }
 ```
 
 **Advantages:**
@@ -310,9 +310,9 @@ cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-cor
 
 ### ✅ Confirmed Working
 
-1. **cosmic-connect-core Integration:**
-   - ✅ Repository: https://github.com/olafkfreund/cosmic-connect-core
-   - ✅ Local path correctly configured: `../cosmic-connect-core`
+1. **cosmic-ext-connect-core Integration:**
+   - ✅ Repository: https://github.com/olafkfreund/cosmic-ext-connect-core
+   - ✅ Local path correctly configured: `../cosmic-ext-connect-core`
    - ✅ TLS/crypto layer exports verified
    - ✅ Latest commit: `db60b5b` - TLS transport layer extracted
 
@@ -320,7 +320,7 @@ cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-cor
    - ✅ Imports from cosmic_connect_core::crypto working
    - ✅ CertificateInfo, TlsConnection, TlsServer available
    - ✅ Project builds successfully in Nix environment
-   - ✅ cosmic-connect-protocol correctly separated from core
+   - ✅ cosmic-ext-connect-protocol correctly separated from core
 
 3. **Android App Compatibility:**
    - ✅ Repository: https://github.com/olafkfreund/cosmic-connect-android
@@ -329,13 +329,13 @@ cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-cor
    - ✅ Protocol v7 compatibility maintained
 
 4. **Plugin System:**
-   - ✅ Shared plugin definitions in cosmic-connect-core
-   - ✅ Desktop implementations in cosmic-connect-protocol
+   - ✅ Shared plugin definitions in cosmic-ext-connect-core
+   - ✅ Desktop implementations in cosmic-ext-connect-protocol
    - ✅ Android implementations via FFI will use same core
 
 ## References
 
-- [cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core) - Shared Rust library
+- [cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core) - Shared Rust library
 - [cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android) - Android app
 - [cosmic-connect-desktop-app](https://github.com/olafkfreund/cosmic-connect-desktop-app) - This repository
 - [KDE Connect Protocol](https://community.kde.org/KDEConnect) - Protocol specification

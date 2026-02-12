@@ -8,12 +8,12 @@ This document describes the rich notification support implementation for COSMIC 
 
 ### Components
 
-1. **Notification Protocol Layer** (`cosmic-connect-protocol/src/plugins/notification.rs`)
+1. **Notification Protocol Layer** (`cosmic-ext-connect-protocol/src/plugins/notification.rs`)
    - Extended `Notification` struct with rich content fields
    - Added `NotificationLink` struct for clickable links
    - Helper methods for decoding images and detecting rich content
 
-2. **COSMIC Desktop Integration** (`cosmic-connect-daemon/src/cosmic_notifications.rs`)
+2. **COSMIC Desktop Integration** (`cosmic-ext-connect-daemon/src/cosmic_notifications.rs`)
    - HTML sanitization for freedesktop compatibility
    - Image data conversion to freedesktop spec format
    - Link action handling and browser integration
@@ -331,10 +331,10 @@ open = "5.0"
 
 ### Crate Usage
 
-**cosmic-connect-protocol:**
+**cosmic-ext-connect-protocol:**
 - `base64` - Image encoding/decoding
 
-**cosmic-connect-daemon:**
+**cosmic-ext-connect-daemon:**
 - `regex` - HTML sanitization
 - `open` - Browser integration
 

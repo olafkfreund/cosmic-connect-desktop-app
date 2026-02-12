@@ -48,10 +48,10 @@ enable_systemmonitor = true
 enable_wol = false
 
 [paths]
-data_dir = "/tmp/cosmic-connect-test/data"
-config_dir = "/tmp/cosmic-connect-test/config"
-cert_dir = "/tmp/cosmic-connect-test/certs"
-cache_dir = "/tmp/cosmic-connect-test/cache"
-device_registry = "/tmp/cosmic-connect-test/devices.json"
-certificate_path = "/tmp/cosmic-connect-test/cert.pem"
-private_key_path = "/tmp/cosmic-connect-test/key.pem"
+data_dir = "/tmp/cosmic-ext-connect-test/data"
+config_dir = "/tmp/cosmic-ext-connect-test/config"
+cert_dir = "/tmp/cosmic-ext-connect-test/certs"
+cache_dir = "/tmp/cosmic-ext-connect-test/cache"
+device_registry = "/tmp/cosmic-ext-connect-test/devices.json"
+certificate_path = "/tmp/cosmic-ext-connect-test/cert.pem"
+private_key_path = "/tmp/cosmic-ext-connect-test/key.pem"

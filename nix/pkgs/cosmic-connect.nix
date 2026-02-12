@@ -41,7 +41,7 @@
 }:
 
 rustPlatform.buildRustPackage rec {
-  pname = "cosmic-connect";
+  pname = "cosmic-ext-connect";
   version = "0.18.0";
 
   src = fetchFromGitHub {
@@ -55,9 +55,9 @@ rustPlatform.buildRustPackage rec {
   cargoLock = {
     lockFile = "${src}/Cargo.lock";
     outputHashes = {
-      # cosmic-connect-core git dependency
-      # To get this hash: nix-prefetch-git https://github.com/olafkfreund/cosmic-connect-core.git --rev <COMMIT_HASH>
-      "cosmic-connect-core-0.1.0" = ""; # IMPORTANT: Update this hash
+      # cosmic-ext-connect-core git dependency
+      # To get this hash: nix-prefetch-git https://github.com/olafkfreund/cosmic-ext-connect-core.git --rev <COMMIT_HASH>
+      "cosmic-ext-connect-core-0.9.0" = ""; # IMPORTANT: Update this hash
     };
   };
 
@@ -115,7 +115,7 @@ rustPlatform.buildRustPackage rec {
     "--workspace"
     "--bins"
     "--features"
-    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/audiostream-opus,cosmic-connect-daemon/extendeddisplay,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus,cosmic-connect-protocol/extendeddisplay,cosmic-connect-protocol/low_latency,cosmic-applet-connect/screenshare"
+    "cosmic-ext-connect-daemon/remotedesktop,cosmic-ext-connect-daemon/screenshare,cosmic-ext-connect-daemon/video,cosmic-ext-connect-daemon/audiostream,cosmic-ext-connect-daemon/audiostream-opus,cosmic-ext-connect-daemon/extendeddisplay,cosmic-ext-connect-protocol/remotedesktop,cosmic-ext-connect-protocol/screenshare,cosmic-ext-connect-protocol/video,cosmic-ext-connect-protocol/audiostream,cosmic-ext-connect-protocol/audiostream-opus,cosmic-ext-connect-protocol/extendeddisplay,cosmic-ext-connect-protocol/low_latency,cosmic-ext-applet-connect/screenshare"
   ];
 
   # Skip tests for now - requires running dbus session
@@ -127,33 +127,33 @@ rustPlatform.buildRustPackage rec {
 
   postInstall = ''
     # Install systemd user service
-    install -Dm644 cosmic-connect-daemon/cosmic-connect-daemon.service \
-      $out/lib/systemd/user/cosmic-connect-daemon.service
+    install -Dm644 cosmic-ext-connect-daemon/cosmic-ext-connect-daemon.service \
+      $out/lib/systemd/user/cosmic-ext-connect-daemon.service
 
     # Patch ExecStart path in systemd service
-    substituteInPlace $out/lib/systemd/user/cosmic-connect-daemon.service \
-      --replace-fail "%h/.cargo/bin/cosmic-connect-daemon" "$out/bin/cosmic-connect-daemon" \
+    substituteInPlace $out/lib/systemd/user/cosmic-ext-connect-daemon.service \
+      --replace-fail "%h/.cargo/bin/cosmic-ext-connect-daemon" "$out/bin/cosmic-ext-connect-daemon" \
       --replace-fail "ProtectHome=read-only" "" \
       --replace-fail "ReadWritePaths=%h/.config/kdeconnect %h/.local/share/kdeconnect" ""
 
     # Install DBus service for activation
     mkdir -p $out/share/dbus-1/services
-    cat > $out/share/dbus-1/services/com.system76.CosmicConnect.service << EOF
+    cat > $out/share/dbus-1/services/io.github.olafkfreund.CosmicExtConnect.service << EOF
     [D-BUS Service]
-    Name=com.system76.CosmicConnect
-    Exec=$out/bin/cosmic-connect-daemon
-    SystemdService=cosmic-connect-daemon.service
+    Name=io.github.olafkfreund.CosmicExtConnect
+    Exec=$out/bin/cosmic-ext-connect-daemon
+    SystemdService=cosmic-ext-connect-daemon.service
     EOF
 
     # Install desktop entries
-    install -Dm644 cosmic-applet-connect/data/cosmic-applet-connect.desktop \
-      $out/share/applications/cosmic-applet-connect.desktop
+    install -Dm644 cosmic-ext-applet-connect/data/cosmic-ext-applet-connect.desktop \
+      $out/share/applications/cosmic-ext-applet-connect.desktop
 
-    install -Dm644 cosmic-messages-popup/data/org.cosmicde.MessagesPopup.desktop \
-      $out/share/applications/org.cosmicde.MessagesPopup.desktop
+    install -Dm644 cosmic-ext-messages-popup/data/io.github.olafkfreund.CosmicExtMessagesPopup.desktop \
+      $out/share/applications/io.github.olafkfreund.CosmicExtMessagesPopup.desktop
 
     # Install desktop entry for manager (standalone window application)
-    cat > $out/share/applications/cosmic-connect-manager.desktop << EOF
+    cat > $out/share/applications/cosmic-ext-connect-manager.desktop << EOF
     [Desktop Entry]
     Type=Application
     Name=COSMIC Connect Manager
@@ -161,7 +161,7 @@ rustPlatform.buildRustPackage rec {
     GenericName=Device Manager
     Keywords=Cosmic;Iced;connect;phone;device;sync;manager;
     Icon=phone-symbolic
-    Exec=$out/bin/cosmic-connect-manager
+    Exec=$out/bin/cosmic-ext-connect-manager
     Categories=Settings;HardwareSettings;
     Terminal=false
     StartupNotify=true
@@ -175,7 +175,7 @@ rustPlatform.buildRustPackage rec {
   # Wrap binaries with required runtime library paths
   postFixup = ''
     # Wrap GUI binaries with display library paths
-    for bin in cosmic-applet-connect cosmic-connect-manager cosmic-messages-popup cosmic-display-mirror; do
+    for bin in cosmic-ext-applet-connect cosmic-ext-connect-manager cosmic-ext-messages-popup cosmic-ext-display-mirror; do
       wrapProgram $out/bin/$bin \
         --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
           wayland
@@ -187,7 +187,7 @@ rustPlatform.buildRustPackage rec {
     done
 
     # Wrap daemon with GStreamer plugin paths for video encoding/decoding
-    wrapProgram $out/bin/cosmic-connect-daemon \
+    wrapProgram $out/bin/cosmic-ext-connect-daemon \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
         wayland
         libxkbcommon
@@ -225,10 +225,10 @@ rustPlatform.buildRustPackage rec {
       - System monitoring
 
       This package includes:
-      - cosmic-applet-connect: Panel applet for quick device status
-      - cosmic-connect-manager: Standalone device manager window
-      - cosmic-connect-daemon: Background service with DBus activation
-      - cosmic-messages-popup: Web-based messaging interface
+      - cosmic-ext-applet-connect: Panel applet for quick device status
+      - cosmic-ext-connect-manager: Standalone device manager window
+      - cosmic-ext-connect-daemon: Background service with DBus activation
+      - cosmic-ext-messages-popup: Web-based messaging interface
 
       Built with RemoteDesktop plugin support (requires PipeWire and Wayland).
     '';
@@ -236,7 +236,7 @@ rustPlatform.buildRustPackage rec {
     changelog = "https://github.com/olafkfreund/cosmic-connect-desktop-app/releases";
     license = lib.licenses.gpl3Plus;
     maintainers = with lib.maintainers; [ ]; # Add maintainer here for nixpkgs submission
-    mainProgram = "cosmic-applet-connect";
+    mainProgram = "cosmic-ext-applet-connect";
     platforms = lib.platforms.linux;
 
     # Requires COSMIC Desktop Environment (libcosmic)

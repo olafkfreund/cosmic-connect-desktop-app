@@ -1,0 +1,41 @@
+[package]
+name = "cosmic-ext-applet-connect"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "COSMIC Connect applet for COSMIC Desktop"
+
+[dependencies]
+libcosmic = { workspace = true, features = ["applet"] }
+cosmic-ext-connect-protocol = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+zbus = { workspace = true }
+futures = { workspace = true }
+ashpd = { workspace = true }
+arboard = "3.4"
+dirs = "5.0"
+toml = "0.8"
+chrono = { workspace = true }
+
+[lib]
+name = "cosmic_ext_applet_connect"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cosmic-ext-applet-connect"
+path = "src/main.rs"
+
+[[bin]]
+name = "cosmic-ext-connect-mirror"
+path = "src/bin/mirror.rs"
+
+[features]
+default = ["screenshare"]
+screenshare = ["cosmic-ext-connect-protocol/screenshare"]

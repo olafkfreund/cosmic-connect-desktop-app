@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=COSMIC Connect
+GenericName=Device Manager
+Comment=Manage connected devices for COSMIC Desktop
+Icon=io.github.olafkfreund.CosmicExtConnect
+Exec=cosmic-ext-connect-manager
+Terminal=false
+Categories=Settings;HardwareSettings;Network;
+Keywords=connect;phone;device;sync;manager;android;share;
+StartupNotify=true
+X-Flatpak-RenamedFrom=cosmic-ext-connect-manager.desktop;
+
+[Desktop Action SendFile]
+Name=Send File
+Exec=cosmic-ext-connect-manager --action send-file
+
+[Desktop Action Devices]
+Name=View Devices
+Exec=cosmic-ext-connect-manager
+
+[Desktop Action Settings]
+Name=Settings
+Exec=cosmic-ext-connect-manager --settings

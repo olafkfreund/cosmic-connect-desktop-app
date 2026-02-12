@@ -1,4 +1,0 @@
-[D-BUS Service]
-Name=org.cosmicde.PhoneAuth
-Exec=/usr/bin/cosmic-connect-daemon
-SystemdService=cosmic-connect-daemon.service

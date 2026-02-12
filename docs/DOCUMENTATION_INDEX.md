@@ -112,7 +112,7 @@ This index is manually maintained. When adding new documentation:
 ##  External Links
 
 - [Main Project README](../README.md)
-- [cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core)
+- [cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core)
 - [cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android)
 
 ---

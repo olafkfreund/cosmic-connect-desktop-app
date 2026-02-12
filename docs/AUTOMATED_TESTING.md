@@ -37,10 +37,10 @@ RUST_LOG=debug cargo test -- --nocapture
 
 ```bash
 # Protocol unit tests only
-cargo test --package cosmic-connect-protocol
+cargo test --package cosmic-ext-connect-protocol
 
 # Daemon unit tests only
-cargo test --package cosmic-connect-daemon
+cargo test --package cosmic-ext-connect-daemon
 
 # Integration tests only
 cargo test --test plugin_integration_tests
@@ -76,7 +76,7 @@ xdg-open target/coverage/index.html
 
 ## Integration Test Suite
 
-The integration test suite (cosmic-connect-daemon/tests/plugin_integration_tests.rs) contains comprehensive end-to-end tests for all plugins.
+The integration test suite (cosmic-ext-connect-daemon/tests/plugin_integration_tests.rs) contains comprehensive end-to-end tests for all plugins.
 
 ### Test Structure
 
@@ -213,7 +213,7 @@ Protocol tests verify KDE Connect specification compliance.
 
 ```bash
 # Test all packet creation functions
-cargo test --package cosmic-connect-protocol packet
+cargo test --package cosmic-ext-connect-protocol packet
 ```
 
 **Verifies:**
@@ -420,7 +420,7 @@ println!("Body: {}", serde_json::to_string_pretty(&packet.body)?);
 cargo bench
 
 # Benchmark specific component
-cargo bench --package cosmic-connect-protocol
+cargo bench --package cosmic-ext-connect-protocol
 ```
 
 ### Latency Testing
@@ -555,7 +555,7 @@ cargo fmt && cargo clippy
 ### Test Files Locations
 
 ```
-cosmic-connect-daemon/
+cosmic-ext-connect-daemon/
 ├── tests/
 │   └── plugin_integration_tests.rs   # Integration test suite
 └── src/
@@ -564,7 +564,7 @@ cosmic-connect-daemon/
     │   └── manager.rs                # Includes unit tests
     └── ...
 
-cosmic-connect-protocol/
+cosmic-ext-connect-protocol/
 └── src/
     └── plugins/
         ├── battery.rs                # Includes unit tests

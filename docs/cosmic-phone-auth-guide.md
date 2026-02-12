@@ -399,7 +399,7 @@ pub struct AuthDaemon {
     pending: std::sync::Arc<tokio::sync::Mutex<HashMap<String, PendingAuth>>>,
 }
 
-#[dbus_interface(name = "org.cosmicde.PhoneAuth")]
+#[dbus_interface(name = "io.github.olafkfreund.CosmicExtPhoneAuth")]
 impl AuthDaemon {
     /// Called by PAM module to request authentication
     async fn request_auth(
@@ -449,11 +449,11 @@ pub async fn run_auth_daemon() -> Result<(), Box<dyn std::error::Error>> {
     
     connection
         .object_server()
-        .at("/org/cosmicde/PhoneAuth", daemon)
+        .at("/io/github/olafkfreund/CosmicExtPhoneAuth", daemon)
         .await?;
     
     connection
-        .request_name("org.cosmicde.PhoneAuth")
+        .request_name("io.github.olafkfreund.CosmicExtPhoneAuth")
         .await?;
     
     // Keep running
@@ -507,9 +507,9 @@ fn dbus_authenticate(username: &str) -> Result<bool, Box<dyn std::error::Error>>
     let connection = Connection::system()?;
     
     let proxy = connection.call_method(
-        Some("org.cosmicde.PhoneAuth"),
-        "/org/cosmicde/PhoneAuth",
-        Some("org.cosmicde.PhoneAuth"),
+        Some("io.github.olafkfreund.CosmicExtPhoneAuth"),
+        "/io/github/olafkfreund/CosmicExtPhoneAuth",
+        Some("io.github.olafkfreund.CosmicExtPhoneAuth"),
         "RequestAuth",
         &(username, "login"),
     )?;
@@ -521,9 +521,9 @@ fn dbus_authenticate(username: &str) -> Result<bool, Box<dyn std::error::Error>>
         std::thread::sleep(std::time::Duration::from_millis(500));
         
         let result = connection.call_method(
-            Some("org.cosmicde.PhoneAuth"),
-            "/org/cosmicde/PhoneAuth",
-            Some("org.cosmicde.PhoneAuth"),
+            Some("io.github.olafkfreund.CosmicExtPhoneAuth"),
+            "/io/github/olafkfreund/CosmicExtPhoneAuth",
+            Some("io.github.olafkfreund.CosmicExtPhoneAuth"),
             "CheckAuth",
             &request_id,
         );
@@ -548,7 +548,7 @@ For your cosmic-connect-android project, add biometric authentication:
 ### BiometricAuthManager.kt
 
 ```kotlin
-package org.cosmicde.connect.auth
+package io.github.olafkfreund.cosmicextconnect.auth
 
 import android.content.Context
 import androidx.biometric.BiometricManager
@@ -784,7 +784,7 @@ cosmic-greeter --lock
 ## Next Steps for cosmic-connect
 
 1. Add the `auth` plugin to your plugin system
-2. Implement the D-Bus daemon in `cosmic-connect-daemon`
+2. Implement the D-Bus daemon in `cosmic-ext-connect-daemon`
 3. Add biometric handling to `cosmic-connect-android`
 4. Create pairing UI in COSMIC Settings
 5. Add NixOS module for easy deployment

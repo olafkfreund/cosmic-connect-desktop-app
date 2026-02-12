@@ -1,6 +1,6 @@
-# CLAUDE.md - COSMIC Connect Development Guidelines
+# CLAUDE.md - COSMIC Ext Connect Development Guidelines
 
-##  MANDATORY Pre-Commit Checks
+## MANDATORY Pre-Commit Checks
 
 ### REQUIRED: Two-Step Pre-Commit Process
 
@@ -43,6 +43,23 @@ This ensures:
 - **code-simplifier**: Optimizes Rust code quality and idioms
 - Together they ensure high-quality, maintainable COSMIC Desktop code
 
+## Naming Convention (Trademark Compliance)
+
+This project follows the [COSMIC Trademark Policy](https://github.com/pop-os/cosmic-epoch/blob/master/TRADEMARK.md) for third-party projects:
+
+| Category | Value |
+|----------|-------|
+| Binary prefix | `cosmic-ext-` |
+| D-Bus namespace | `io.github.olafkfreund.CosmicExtConnect` |
+| App IDs | `io.github.olafkfreund.CosmicExt*` |
+| Nix pname | `cosmic-ext-connect` |
+| Config dirs | `cosmic-ext-connect/` |
+| Icon names | `cosmic-ext-connect-symbolic` |
+| Crate prefix | `cosmic-ext-` |
+| Rust identifier prefix | `cosmic_ext_` |
+
+**Note:** The external `cosmic-connect-core` git dependency keeps its original name. In Cargo.toml, it is mapped via `package = "cosmic-connect-core"` with the workspace key `cosmic-ext-connect-core`.
+
 ## Development Standards
 
 ### Code Style
@@ -69,17 +86,36 @@ This ensures:
 
 - Use conventional commit format: `feat(scope): description`
 - Include detailed body for complex changes
-- Add `Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>`
+- Add `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
 
 ## Project Architecture
 
+### Crate Structure
+
+| Crate | Description |
+|-------|-------------|
+| `cosmic-ext-connect-protocol` | Protocol library (plugins, discovery, pairing) |
+| `cosmic-ext-applet-connect` | COSMIC panel applet |
+| `cosmic-ext-connect-daemon` | Background daemon with D-Bus interface |
+| `cosmic-ext-connect-manager` | Device management GUI |
+| `cosmic-ext-messages` | Messaging app |
+| `cosmic-ext-messages-popup` | Notification popup |
+| `cosmic-ext-display-stream` | PipeWire capture + H.264 encoding |
+
 ### Plugin Development
 
-- Each plugin in `cosmic-connect-core/src/plugins/`
+- Each plugin in `cosmic-ext-connect-protocol/src/plugins/`
 - Implement both `Plugin` and `PluginFactory` traits
-- Add config flag in `cosmic-connect-daemon/src/config.rs`
-- Register factory in `cosmic-connect-daemon/src/main.rs`
+- Add config flag in `cosmic-ext-connect-daemon/src/config.rs`
+- Register factory in `cosmic-ext-connect-daemon/src/main.rs`
 - Follow existing plugin patterns (ping, battery, etc.)
+
+### D-Bus Interface
+
+- **Service:** `io.github.olafkfreund.CosmicExtConnect`
+- **Object path:** `/io/github/olafkfreund/CosmicExtConnect`
+- **Interface:** `io.github.olafkfreund.CosmicExtConnect`
+- **Open interface:** `io.github.olafkfreund.CosmicExtConnect.Open`
 
 ### Testing Strategy
 
@@ -96,4 +132,4 @@ This ensures:
 
 ---
 
-_This project implements COSMIC Connect - a device connectivity solution for COSMIC Desktop_
+_This project implements COSMIC Ext Connect - a device connectivity solution for COSMIC Desktop_

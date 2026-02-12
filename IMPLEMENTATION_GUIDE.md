@@ -11,7 +11,7 @@ This guide documents the changes needed to fix Android notification action butto
 ## Solution
 
 ### Location
-File: `cosmic-connect-daemon/src/main.rs`
+File: `cosmic-ext-connect-daemon/src/main.rs`
 Lines: ~2086-2098 (the `else if should_show` block for non-messaging notifications)
 
 ### Current Code

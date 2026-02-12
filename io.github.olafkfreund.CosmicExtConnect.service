@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.olafkfreund.CosmicExtConnect
+Exec=/home/olafkfreund/Source/GitHub/cosmic-connect-desktop-app/target/debug/cosmic-ext-connect-daemon
+SystemdService=cosmic-ext-connect-daemon.service

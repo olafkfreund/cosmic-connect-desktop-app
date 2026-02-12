@@ -1,3 +1,3 @@
-[submodule "cosmic-connect-core"]
-	path = cosmic-connect-core
-	url = https://github.com/olafkfreund/cosmic-connect-core.git
+[submodule "cosmic-ext-connect-core"]
+	path = cosmic-ext-connect-core
+	url = https://github.com/olafkfreund/cosmic-ext-connect-core.git

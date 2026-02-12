@@ -30,26 +30,26 @@ Configure logging via command-line options:
 
 ```bash
 # Set log level
-cosmic-connect-daemon --log-level debug
+cosmic-ext-connect-daemon --log-level debug
 
 # Enable JSON structured logging
-cosmic-connect-daemon --json-logs
+cosmic-ext-connect-daemon --json-logs
 
 # Disable timestamps
-cosmic-connect-daemon --timestamps false
+cosmic-ext-connect-daemon --timestamps false
 
 # Combine options
-cosmic-connect-daemon --log-level trace --json-logs
+cosmic-ext-connect-daemon --log-level trace --json-logs
 ```
 
 Environment variable control:
 
 ```bash
 # Set log level via environment
-RUST_LOG=debug cosmic-connect-daemon
+RUST_LOG=debug cosmic-ext-connect-daemon
 
 # Module-specific logging
-RUST_LOG=cosmic_connect_protocol=trace,cosmic_connect_daemon=debug cosmic-connect-daemon
+RUST_LOG=cosmic_connect_protocol=trace,cosmic_connect_daemon=debug cosmic-ext-connect-daemon
 ```
 
 ### Applet Logging
@@ -58,10 +58,10 @@ The applet supports environment variable-based log control:
 
 ```bash
 # Debug level logging
-RUST_LOG=debug cosmic-applet-connect
+RUST_LOG=debug cosmic-ext-applet-connect
 
 # Trace level for detailed output
-RUST_LOG=trace cosmic-applet-connect
+RUST_LOG=trace cosmic-ext-applet-connect
 ```
 
 ### Log Output
@@ -91,10 +91,10 @@ Show version and build information:
 
 ```bash
 # Basic version
-cosmic-connect-daemon version
+cosmic-ext-connect-daemon version
 
 # Detailed build information
-cosmic-connect-daemon version --verbose
+cosmic-ext-connect-daemon version --verbose
 ```
 
 Output includes:
@@ -111,10 +111,10 @@ Show all known devices:
 
 ```bash
 # Basic list
-cosmic-connect-daemon list-devices
+cosmic-ext-connect-daemon list-devices
 
 # Detailed device information
-cosmic-connect-daemon list-devices --verbose
+cosmic-ext-connect-daemon list-devices --verbose
 ```
 
 Shows:
@@ -129,7 +129,7 @@ Shows:
 Get detailed information about a specific device:
 
 ```bash
-cosmic-connect-daemon device-info <device-id>
+cosmic-ext-connect-daemon device-info <device-id>
 ```
 
 Shows:
@@ -146,10 +146,10 @@ Test connection to a specific device:
 
 ```bash
 # Test with default 10 second timeout
-cosmic-connect-daemon test-connectivity <device-id>
+cosmic-ext-connect-daemon test-connectivity <device-id>
 
 # Custom timeout
-cosmic-connect-daemon test-connectivity <device-id> --timeout 30
+cosmic-ext-connect-daemon test-connectivity <device-id> --timeout 30
 ```
 
 ### Dump Configuration
@@ -158,10 +158,10 @@ Show current daemon configuration:
 
 ```bash
 # Basic configuration
-cosmic-connect-daemon dump-config
+cosmic-ext-connect-daemon dump-config
 
 # Include sensitive information (paths, etc.)
-cosmic-connect-daemon dump-config --show-sensitive
+cosmic-ext-connect-daemon dump-config --show-sensitive
 ```
 
 Shows:
@@ -176,15 +176,15 @@ Export logs for bug reporting:
 
 ```bash
 # Export last 1000 lines (default)
-cosmic-connect-daemon export-logs
+cosmic-ext-connect-daemon export-logs
 
 # Custom output file and line count
-cosmic-connect-daemon export-logs --output my-logs.txt --lines 5000
+cosmic-ext-connect-daemon export-logs --output my-logs.txt --lines 5000
 ```
 
 Note: Currently provides instructions for manual journal extraction:
 ```bash
-journalctl -u cosmic-connect-daemon -n 1000 > cosmic-connect-logs.txt
+journalctl -u cosmic-ext-connect-daemon -n 1000 > cosmic-connect-logs.txt
 ```
 
 ---
@@ -196,7 +196,7 @@ journalctl -u cosmic-connect-daemon -n 1000 > cosmic-connect-logs.txt
 Run daemon with metrics collection:
 
 ```bash
-cosmic-connect-daemon --metrics
+cosmic-ext-connect-daemon --metrics
 ```
 
 ### View Metrics
@@ -205,13 +205,13 @@ Display performance metrics:
 
 ```bash
 # Show 10 updates with 1 second intervals (default)
-cosmic-connect-daemon metrics
+cosmic-ext-connect-daemon metrics
 
 # Custom interval and count
-cosmic-connect-daemon metrics --interval 5 --count 20
+cosmic-ext-connect-daemon metrics --interval 5 --count 20
 
 # Continuous monitoring
-cosmic-connect-daemon metrics --count 0
+cosmic-ext-connect-daemon metrics --count 0
 ```
 
 ### Metrics Collected
@@ -245,10 +245,10 @@ Note: Metrics integration with runtime is pending (Issue #36).
 
 ```bash
 # Enable packet dumping
-cosmic-connect-daemon --dump-packets
+cosmic-ext-connect-daemon --dump-packets
 
 # Combined with debug logging
-cosmic-connect-daemon --log-level debug --dump-packets --metrics
+cosmic-ext-connect-daemon --log-level debug --dump-packets --metrics
 ```
 
 ### Packet Dumping
@@ -271,7 +271,7 @@ Note: Packet dumping implementation is pending (Issue #36).
 
 ```bash
 # List all known devices
-cosmic-connect-daemon list-devices
+cosmic-ext-connect-daemon list-devices
 
 # Check device registry
 cat ~/.local/share/cosmic/cosmic-connect/devices.json
@@ -281,36 +281,36 @@ cat ~/.local/share/cosmic/cosmic-connect/devices.json
 
 ```bash
 # Test connectivity
-cosmic-connect-daemon test-connectivity <device-id>
+cosmic-ext-connect-daemon test-connectivity <device-id>
 
 # Check daemon logs
-journalctl -u cosmic-connect-daemon --since "5 minutes ago"
+journalctl -u cosmic-ext-connect-daemon --since "5 minutes ago"
 
 # Verify network settings
-cosmic-connect-daemon dump-config
+cosmic-ext-connect-daemon dump-config
 ```
 
 ### Pairing Issues
 
 ```bash
 # Check device certificate
-cosmic-connect-daemon device-info <device-id>
+cosmic-ext-connect-daemon device-info <device-id>
 
 # View pairing-related logs
-journalctl -u cosmic-connect-daemon | grep -i pair
+journalctl -u cosmic-ext-connect-daemon | grep -i pair
 ```
 
 ### Plugin Not Working
 
 ```bash
 # Verify plugin is enabled
-cosmic-connect-daemon dump-config
+cosmic-ext-connect-daemon dump-config
 
 # Check device capabilities
-cosmic-connect-daemon device-info <device-id>
+cosmic-ext-connect-daemon device-info <device-id>
 
 # Monitor plugin activity
-RUST_LOG=cosmic_connect_protocol::plugins=debug cosmic-connect-daemon
+RUST_LOG=cosmic_connect_protocol::plugins=debug cosmic-ext-connect-daemon
 ```
 
 ---
@@ -320,29 +320,29 @@ RUST_LOG=cosmic_connect_protocol::plugins=debug cosmic-connect-daemon
 ### View Daemon Status
 
 ```bash
-systemctl status cosmic-connect-daemon
+systemctl status cosmic-ext-connect-daemon
 ```
 
 ### View Logs
 
 ```bash
 # Recent logs
-journalctl -u cosmic-connect-daemon
+journalctl -u cosmic-ext-connect-daemon
 
 # Follow logs in real-time
-journalctl -u cosmic-connect-daemon -f
+journalctl -u cosmic-ext-connect-daemon -f
 
 # Logs since boot
-journalctl -u cosmic-connect-daemon -b
+journalctl -u cosmic-ext-connect-daemon -b
 
 # Last 100 lines
-journalctl -u cosmic-connect-daemon -n 100
+journalctl -u cosmic-ext-connect-daemon -n 100
 ```
 
 ### Restart Daemon
 
 ```bash
-systemctl restart cosmic-connect-daemon
+systemctl restart cosmic-ext-connect-daemon
 ```
 
 ---
@@ -353,22 +353,22 @@ When filing a bug report, include:
 
 1. **Version Information**:
    ```bash
-   cosmic-connect-daemon version --verbose
+   cosmic-ext-connect-daemon version --verbose
    ```
 
 2. **Configuration**:
    ```bash
-   cosmic-connect-daemon dump-config
+   cosmic-ext-connect-daemon dump-config
    ```
 
 3. **Device List**:
    ```bash
-   cosmic-connect-daemon list-devices --verbose
+   cosmic-ext-connect-daemon list-devices --verbose
    ```
 
 4. **Logs**:
    ```bash
-   journalctl -u cosmic-connect-daemon --since "1 hour ago" > logs.txt
+   journalctl -u cosmic-ext-connect-daemon --since "1 hour ago" > logs.txt
    ```
 
 5. **Steps to Reproduce**: Clear description of the issue

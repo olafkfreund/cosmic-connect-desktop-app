@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "cosmic-connect-protocol",
-    "cosmic-applet-connect",
-    "cosmic-connect-daemon",
-    "cosmic-connect-manager",
-    "cosmic-messages",
-    "cosmic-messages-popup",
-    "cosmic-display-stream",
+    "cosmic-ext-connect-protocol",
+    "cosmic-ext-applet-connect",
+    "cosmic-ext-connect-daemon",
+    "cosmic-ext-connect-manager",
+    "cosmic-ext-messages",
+    "cosmic-ext-messages-popup",
+    "cosmic-ext-display-stream",
 ]
 
 [workspace.package]
@@ -27,13 +27,13 @@ libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = fa
 
 # Shared Cosmic Connect Core (TLS and crypto layer)
 # Using git dependency instead of path for better Nix flake support
-cosmic-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-core.git", branch = "main" }
+cosmic-ext-connect-core = { git = "https://github.com/olafkfreund/cosmic-connect-core.git", branch = "main", package = "cosmic-connect-core" }
 
 # Protocol implementation
-cosmic-connect-protocol = { path = "./cosmic-connect-protocol" }
+cosmic-ext-connect-protocol = { path = "./cosmic-ext-connect-protocol" }
 
 # Display stream (extended display to Android tablet)
-cosmic-display-stream = { path = "./cosmic-display-stream" }
+cosmic-ext-display-stream = { path = "./cosmic-ext-display-stream" }
 
 # Async Runtime
 tokio = { version = "1.40", features = ["full"] }

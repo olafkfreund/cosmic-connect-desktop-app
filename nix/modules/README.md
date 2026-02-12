@@ -154,7 +154,7 @@ auth  required  pam_unix.so try_first_pass
 
 1. Check daemon status:
    ```bash
-   systemctl --user status cosmic-connect-daemon
+   systemctl --user status cosmic-ext-connect-daemon
    ```
 
 2. Verify paired devices:
@@ -169,7 +169,7 @@ auth  required  pam_unix.so try_first_pass
 
 4. View daemon logs:
    ```bash
-   journalctl --user -u cosmic-connect-daemon -f
+   journalctl --user -u cosmic-ext-connect-daemon -f
    ```
 
 #### Locked out of system

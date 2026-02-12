@@ -412,10 +412,10 @@ services.cosmic-connect.plugins.remotedesktop = true;
 
 ```bash
 # Check if daemon is running
-systemctl --user status cosmic-connect-daemon
+systemctl --user status cosmic-ext-connect-daemon
 
 # View logs
-journalctl --user -u cosmic-connect-daemon -f
+journalctl --user -u cosmic-ext-connect-daemon -f
 ```
 
 ### Enable Debug Logging
@@ -510,7 +510,7 @@ just build
 nix build .#
 
 # Run from result
-./result/bin/cosmic-connect-daemon --help
+./result/bin/cosmic-ext-connect-daemon --help
 ```
 
 ## Updating
@@ -536,7 +536,7 @@ sudo nixos-rebuild switch --flake .#
 ## Support
 
 - **Issues**: https://github.com/olafkfreund/cosmic-connect-desktop-app/issues
-- **Protocol Docs**: See `cosmic-connect-protocol/src/plugins/remotedesktop/README.md`
+- **Protocol Docs**: See `cosmic-ext-connect-protocol/src/plugins/remotedesktop/README.md`
 - **Implementation Status**: See `IMPLEMENTATION_STATUS.md`
 
 ---

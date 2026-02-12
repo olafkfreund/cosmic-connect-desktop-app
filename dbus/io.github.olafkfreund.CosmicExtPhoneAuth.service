@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.olafkfreund.CosmicExtPhoneAuth
+Exec=/usr/bin/cosmic-ext-connect-daemon
+SystemdService=cosmic-ext-connect-daemon.service

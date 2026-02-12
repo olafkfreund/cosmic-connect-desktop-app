@@ -12,7 +12,7 @@ A modern, cross-platform device connectivity solution for COSMIC Desktop, writte
 
 This project is part of a **multi-platform ecosystem**:
 
-- **[cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core)** - Shared Rust library (protocol, TLS, plugins)
+- **[cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core)** - Shared Rust library (protocol, TLS, plugins)
 - **[cosmic-connect-desktop-app](https://github.com/olafkfreund/cosmic-connect-desktop-app)** - This repository (COSMIC Desktop)
 - **[cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android)** - Android app with Kotlin FFI bindings
 
@@ -31,7 +31,7 @@ This project is part of a **multi-platform ecosystem**:
 See **[Architecture Documentation](docs/architecture/Architecture.md)** for comprehensive documentation.
 
 ```
-cosmic-connect-core (Shared Library)
+cosmic-ext-connect-core (Shared Library)
 ├── Protocol v7 implementation
 ├── TLS/crypto layer (rustls)
 ├── Network & discovery
@@ -39,9 +39,9 @@ cosmic-connect-core (Shared Library)
 └── FFI bindings (uniffi-rs) ──┐
                                 │
                                 ├──→ Desktop (This Repo)
-                                │    ├── cosmic-connect-protocol
-                                │    ├── cosmic-connect-daemon
-                                │    └── cosmic-applet-connect
+                                │    ├── cosmic-ext-connect-protocol
+                                │    ├── cosmic-ext-connect-daemon
+                                │    └── cosmic-ext-applet-connect
                                 │
                                 └──→ Android App
                                      └── Kotlin via FFI
@@ -51,7 +51,7 @@ cosmic-connect-core (Shared Library)
 
 This repository contains seven main components that work together to provide the full COSMIC Connect experience:
 
-### cosmic-connect-protocol
+### cosmic-ext-connect-protocol
 
 The **protocol library** implements the CConnect/KDE Connect v7/v8 protocol specification in pure Rust.
 
@@ -73,7 +73,7 @@ The **protocol library** implements the CConnect/KDE Connect v7/v8 protocol spec
 
 ---
 
-### cosmic-connect-daemon
+### cosmic-ext-connect-daemon
 
 The **background service** that handles all device communication, running as a systemd user service.
 
@@ -81,13 +81,13 @@ The **background service** that handles all device communication, running as a s
 |---------|-------------|
 | **Device Management** | Tracks paired devices, connection state, and trust levels |
 | **Plugin Orchestration** | Loads and manages plugins per device based on capabilities |
-| **DBus Interface** | Exposes `org.cosmicde.CosmicConnect` for IPC with applet/manager |
+| **DBus Interface** | Exposes `io.github.olafkfreund.CosmicExtConnect` for IPC with applet/manager |
 | **Notification Forwarding** | Captures desktop notifications via DBus and forwards to devices |
 | **Desktop Icons** | Creates `.desktop` files for paired devices in `~/.local/share/applications/` |
 
 **DBus Methods:**
 ```
-org.cosmicde.CosmicConnect
+io.github.olafkfreund.CosmicExtConnect
 ├── GetDevices() → Array<Device>
 ├── PairDevice(device_id: String)
 ├── UnpairDevice(device_id: String)
@@ -102,7 +102,7 @@ org.cosmicde.CosmicConnect
 
 ---
 
-### cosmic-applet-connect
+### cosmic-ext-applet-connect
 
 The **COSMIC panel applet** that provides quick access to device status and common actions.
 
@@ -121,7 +121,7 @@ The **COSMIC panel applet** that provides quick access to device status and comm
 
 ---
 
-### cosmic-connect-manager
+### cosmic-ext-connect-manager
 
 The **standalone window application** for comprehensive device management.
 
@@ -151,14 +151,14 @@ The **standalone window application** for comprehensive device management.
 
 **Launch:**
 ```bash
-cosmic-connect-manager                    # Open manager
-cosmic-connect-manager --select-device ID # Open with device selected
-cosmic-connect-manager --device-action ID ping  # Execute action directly
+cosmic-ext-connect-manager                    # Open manager
+cosmic-ext-connect-manager --select-device ID # Open with device selected
+cosmic-ext-connect-manager --device-action ID ping  # Execute action directly
 ```
 
 ---
 
-### cosmic-display-stream
+### cosmic-ext-display-stream
 
 The **display streaming library** for using Android tablets as extended displays.
 
@@ -189,7 +189,7 @@ The **display streaming library** for using Android tablets as extended displays
 
 ---
 
-### cosmic-messages-popup
+### cosmic-ext-messages-popup
 
 The **web messenger popup** for responding to messages directly from desktop notifications.
 
@@ -198,7 +198,7 @@ The **web messenger popup** for responding to messages directly from desktop not
 | **WebView Integration** | Embedded browser using wry/WebKitGTK |
 | **Session Persistence** | Maintains login state per messenger service |
 | **Notification Trigger** | Opens automatically when message notification received |
-| **DBus Interface** | `org.cosmicde.MessagesPopup` for daemon integration |
+| **DBus Interface** | `io.github.olafkfreund.CosmicExtMessagesPopup` for daemon integration |
 | **Multi-Service** | Supports Google Messages, WhatsApp, Telegram, Signal, Discord, Slack |
 
 **Why Web-Based:**
@@ -362,10 +362,10 @@ Click the "Open Manager" button in the COSMIC Connect applet dropdown.
 **From Command Line:**
 ```bash
 # Open manager window
-cosmic-connect-manager
+cosmic-ext-connect-manager
 
 # Open with a specific device selected
-cosmic-connect-manager --device <device-id>
+cosmic-ext-connect-manager --device <device-id>
 ```
 
 ### Window Layout
@@ -465,11 +465,11 @@ The **COSMIC Messages Popup** provides a native COSMIC interface for web-based m
 ### Architecture
 
 ```
-cosmic-connect-daemon
+cosmic-ext-connect-daemon
         │
         ▼
   ┌──────────────┐    D-Bus     ┌─────────────────────────────┐
-  │ Notification │─────────────│   cosmic-messages-popup     │
+  │ Notification │─────────────│   cosmic-ext-messages-popup     │
   │   Service    │              │                             │
   └──────────────┘              │  ┌───────────────────────┐  │
                                 │  │     WebView (wry)     │  │
@@ -485,26 +485,26 @@ cosmic-connect-daemon
 **From Command Line:**
 ```bash
 # Open messages popup
-cosmic-messages-popup
+cosmic-ext-messages-popup
 
 # Open with specific messenger
-cosmic-messages-popup --messenger google-messages --show
+cosmic-ext-messages-popup --messenger google-messages --show
 
 # Run in daemon mode (D-Bus only)
-cosmic-messages-popup --daemon
+cosmic-ext-messages-popup --daemon
 ```
 
 ### Key Features
 
 - **Session Persistence**: WebView sessions are stored per-messenger, maintaining login state
 - **Notification Integration**: Automatically detects messenger from Android notification package
-- **D-Bus Interface**: Accessible from cosmic-connect daemon via `org.cosmicde.MessagesPopup`
+- **D-Bus Interface**: Accessible from cosmic-connect daemon via `io.github.olafkfreund.CosmicExtMessagesPopup`
 - **Keyboard Shortcuts**: Cmd+1/2/3 to switch between messengers
 - **Configurable Settings**: Enable/disable individual messengers, auto-open behavior
 
 ### Configuration
 
-Settings are stored in `~/.config/cosmic/org.cosmicde.MessagesPopup.ron`:
+Settings are stored in `~/.config/cosmic/io.github.olafkfreund.CosmicExtMessagesPopup.ron`:
 
 - Enable/disable individual messaging services
 - Popup window size and position
@@ -551,15 +551,15 @@ Add to your `flake.nix`:
 cargo build --release
 
 # Install daemon
-sudo install -Dm755 target/release/cosmic-connect-daemon /usr/local/bin/
-sudo install -Dm644 cosmic-connect-daemon/cosmic-connect-daemon.service \
+sudo install -Dm755 target/release/cosmic-ext-connect-daemon /usr/local/bin/
+sudo install -Dm644 cosmic-ext-connect-daemon/cosmic-ext-connect-daemon.service \
   /usr/lib/systemd/user/
 
 # Install applet
-sudo install -Dm755 target/release/cosmic-applet-connect /usr/local/bin/
+sudo install -Dm755 target/release/cosmic-ext-applet-connect /usr/local/bin/
 
 # Enable and start daemon
-systemctl --user enable --now cosmic-connect-daemon
+systemctl --user enable --now cosmic-ext-connect-daemon
 ```
 
 ## Documentation

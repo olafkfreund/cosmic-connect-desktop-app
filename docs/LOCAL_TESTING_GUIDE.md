@@ -26,8 +26,8 @@ cargo build
 ```
 
 This builds:
-- `cosmic-connect-daemon` - Background service
-- `cosmic-applet-connect` - UI applet for COSMIC panel
+- `cosmic-ext-connect-daemon` - Background service
+- `cosmic-ext-applet-connect` - UI applet for COSMIC panel
 - `cosmic-connect` - CLI tool
 
 ### 2. Start Local Test Environment
@@ -46,7 +46,7 @@ This script will:
 1. Create test directories in `/tmp/cosmic-connect-test/`
 2. Start daemon with `test-config.toml`
 3. Start applet UI in foreground
-4. Show logs in `/tmp/cosmic-connect-daemon.log`
+4. Show logs in `/tmp/cosmic-ext-connect-daemon.log`
 
 ### 3. Stop Test Environment
 
@@ -63,7 +63,7 @@ If you prefer manual control:
 export RUST_LOG=info,cosmic_connect_daemon=debug,cosmic_connect_protocol=debug
 export RUST_BACKTRACE=1
 
-./target/debug/cosmic-connect-daemon --config test-config.toml
+./target/debug/cosmic-ext-connect-daemon --config test-config.toml
 ```
 
 ### Start Applet
@@ -72,14 +72,14 @@ export RUST_BACKTRACE=1
 # In another terminal
 export RUST_LOG=info,cosmic_applet_connect=debug
 
-./target/debug/cosmic-applet-connect
+./target/debug/cosmic-ext-applet-connect
 ```
 
 ### View Logs
 
 ```bash
 # Follow daemon logs
-tail -f /tmp/cosmic-connect-daemon.log
+tail -f /tmp/cosmic-ext-connect-daemon.log
 
 # With debug output
 export RUST_LOG=debug
@@ -170,7 +170,7 @@ Since the UI for RemoteDesktop may not be fully wired yet, you can test via CLI:
   --body '{"mode":"control","quality":"medium","fps":30}'
 
 # Check logs for response with password
-tail -f /tmp/cosmic-connect-daemon.log | grep -i "remotedesktop\|vnc"
+tail -f /tmp/cosmic-ext-connect-daemon.log | grep -i "remotedesktop\|vnc"
 ```
 
 #### 3. Connect VNC Client
@@ -239,7 +239,7 @@ In VNC client window:
 netstat -tuln | grep 5900
 
 # Check daemon logs
-tail -100 /tmp/cosmic-connect-daemon.log | grep -i remotedesktop
+tail -100 /tmp/cosmic-ext-connect-daemon.log | grep -i remotedesktop
 
 # Enable verbose VNC logging
 export RUST_LOG=cosmic_connect_protocol::plugins::remotedesktop=trace
@@ -274,13 +274,13 @@ Common issues:
 
 ```bash
 # Is daemon running?
-pgrep -a cosmic-connect-daemon
+pgrep -a cosmic-ext-connect-daemon
 
 # What ports is it using?
 netstat -tuln | grep -E '1716|1739|5900'
 
 # Check logs
-tail -50 /tmp/cosmic-connect-daemon.log
+tail -50 /tmp/cosmic-ext-connect-daemon.log
 ```
 
 ### View Device Registry
@@ -317,7 +317,7 @@ nix develop
 just build
 
 # Start with same configuration
-./target/debug/cosmic-connect-daemon --config test-config.toml
+./target/debug/cosmic-ext-connect-daemon --config test-config.toml
 ```
 
 ### Pair Devices
@@ -436,10 +436,10 @@ export RUST_BACKTRACE=full               # Full backtraces
 
 ```bash
 # Kill daemon
-pkill cosmic-connect-daemon
+pkill cosmic-ext-connect-daemon
 
 # Kill applet
-pkill cosmic-applet-connect
+pkill cosmic-ext-applet-connect
 
 # Kill VNC sessions
 pkill -f vncviewer
@@ -452,7 +452,7 @@ pkill -f vncviewer
 rm -rf /tmp/cosmic-connect-test/
 
 # Remove logs
-rm -f /tmp/cosmic-connect-daemon.log
+rm -f /tmp/cosmic-ext-connect-daemon.log
 ```
 
 ## Next Steps
@@ -475,7 +475,7 @@ After local testing is successful:
 pgrep cosmic-panel
 
 # Check applet logs
-journalctl --user -f -u cosmic-applet-connect
+journalctl --user -f -u cosmic-ext-applet-connect
 
 # Restart COSMIC panel
 systemctl --user restart cosmic-panel
@@ -485,10 +485,10 @@ systemctl --user restart cosmic-panel
 
 ```bash
 # Check logs
-tail -100 /tmp/cosmic-connect-daemon.log
+tail -100 /tmp/cosmic-ext-connect-daemon.log
 
 # Check config syntax
-./target/debug/cosmic-connect-daemon --config test-config.toml --check
+./target/debug/cosmic-ext-connect-daemon --config test-config.toml --check
 
 # Check port conflicts
 netstat -tuln | grep 1716
@@ -512,18 +512,18 @@ ip addr show
 
 ### RemoteDesktop Issues
 
-See `cosmic-connect-protocol/src/plugins/remotedesktop/TESTING.md` for comprehensive RemoteDesktop testing guide.
+See `cosmic-ext-connect-protocol/src/plugins/remotedesktop/TESTING.md` for comprehensive RemoteDesktop testing guide.
 
 ## Getting Help
 
-1. **Check logs** - `/tmp/cosmic-connect-daemon.log`
+1. **Check logs** - `/tmp/cosmic-ext-connect-daemon.log`
 2. **Enable debug logging** - `RUST_LOG=debug`
-3. **Review documentation** - `cosmic-connect-protocol/src/plugins/remotedesktop/README.md`
+3. **Review documentation** - `cosmic-ext-connect-protocol/src/plugins/remotedesktop/README.md`
 4. **Report issues** - Include logs, environment, and steps to reproduce
 
 ## Reference
 
 - **Main README**: `README.md`
-- **RemoteDesktop README**: `cosmic-connect-protocol/src/plugins/remotedesktop/README.md`
-- **RemoteDesktop Testing**: `cosmic-connect-protocol/src/plugins/remotedesktop/TESTING.md`
-- **Implementation Status**: `cosmic-connect-protocol/src/plugins/remotedesktop/IMPLEMENTATION_STATUS.md`
+- **RemoteDesktop README**: `cosmic-ext-connect-protocol/src/plugins/remotedesktop/README.md`
+- **RemoteDesktop Testing**: `cosmic-ext-connect-protocol/src/plugins/remotedesktop/TESTING.md`
+- **Implementation Status**: `cosmic-ext-connect-protocol/src/plugins/remotedesktop/IMPLEMENTATION_STATUS.md`

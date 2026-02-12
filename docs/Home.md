@@ -18,8 +18,8 @@ Understand the system design and technical architecture:
 ### Key Architectural Concepts
 
 - **70%+ Code Sharing** - Unified Rust core shared between desktop and Android
-- **cosmic-connect-core** - Shared library providing TLS, protocol, and plugins
-- **cosmic-connect-protocol** - Desktop-specific protocol extensions
+- **cosmic-ext-connect-core** - Shared library providing TLS, protocol, and plugins
+- **cosmic-ext-connect-protocol** - Desktop-specific protocol extensions
 - **FFI Bindings** - Kotlin/Swift support via uniffi-rs
 
 ##  Development
@@ -39,7 +39,7 @@ Everything you need to develop COSMIC Connect:
 
 ### Development Workflow
 
-1. Clone [cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core) as sibling directory
+1. Clone [cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core) as sibling directory
 2. Clone this repository
 3. Enter Nix development shell: `nix develop`
 4. Build: `cargo build`
@@ -90,7 +90,7 @@ COSMIC Connect uses an extensible plugin system:
 
 ### Adding New Plugins
 
-Plugins are defined in `cosmic-connect-protocol/src/plugins/`. See [Development Guide](development/Development-Guide.md) for details.
+Plugins are defined in `cosmic-ext-connect-protocol/src/plugins/`. See [Development Guide](development/Development-Guide.md) for details.
 
 ##  Multi-Platform Ecosystem
 
@@ -98,14 +98,14 @@ COSMIC Connect is part of a larger ecosystem:
 
 ### Related Repositories
 
-- **[cosmic-connect-core](https://github.com/olafkfreund/cosmic-connect-core)** - Shared Rust library (TLS, protocol, plugins)
+- **[cosmic-ext-connect-core](https://github.com/olafkfreund/cosmic-ext-connect-core)** - Shared Rust library (TLS, protocol, plugins)
 - **[cosmic-connect-android](https://github.com/olafkfreund/cosmic-connect-android)** - Android app with Kotlin FFI
 - **[cosmic-connect-desktop-app](https://github.com/olafkfreund/cosmic-connect-desktop-app)** - This repository
 
 ### Integration Architecture
 
 ```
-cosmic-connect-core (Shared Library)
+cosmic-ext-connect-core (Shared Library)
 ├── Protocol v7 implementation
 ├── TLS/crypto layer (rustls)
 ├── Network & discovery
@@ -113,9 +113,9 @@ cosmic-connect-core (Shared Library)
 └── FFI bindings (uniffi-rs) ──┐
                                 │
                                 ├──→ Desktop (This Repo)
-                                │    ├── cosmic-connect-protocol
-                                │    ├── cosmic-connect-daemon
-                                │    └── cosmic-applet-connect
+                                │    ├── cosmic-ext-connect-protocol
+                                │    ├── cosmic-ext-connect-daemon
+                                │    └── cosmic-ext-applet-connect
                                 │
                                 └──→ Android App
                                      └── Kotlin via FFI
@@ -130,7 +130,7 @@ cosmic-connect-core (Shared Library)
 Run tests:
 ```bash
 cargo test                           # All tests
-cargo test -p cosmic-connect-protocol # Protocol tests only
+cargo test -p cosmic-ext-connect-protocol # Protocol tests only
 cargo test -- --nocapture            # Verbose output
 ```
 

@@ -240,7 +240,7 @@ impl Application for KdeConnectApplet {
     type Message = Message;
     type Executor = cosmic::executor::Default;
     type Flags = ();
-    const APP_ID: &'static str = "com.system76.CosmicAppletKdeConnect";
+    const APP_ID: &'static str = "io.github.olafkfreund.CosmicExtAppletConnect";
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, cosmic::iced::Command<Message>) {
         (Self { core }, cosmic::iced::Command::none())
@@ -303,7 +303,7 @@ impl Application for KdeConnectApp {
     type Message = Message;
     type Executor = cosmic::executor::Default;
     type Flags = ();
-    const APP_ID: &'static str = "com.system76.CosmicKdeConnect";
+    const APP_ID: &'static str = "io.github.olafkfreund.CosmicExtConnect.Manager";
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, cosmic::iced::Command<Message>) {
         (Self { core }, cosmic::iced::Command::none())

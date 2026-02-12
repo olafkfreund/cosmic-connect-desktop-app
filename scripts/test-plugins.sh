@@ -16,9 +16,9 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # DBus service details
-DBUS_SERVICE="com.system76.CosmicConnect"
-DBUS_PATH="/com/system76/CosmicConnect"
-DBUS_INTERFACE="com.system76.CosmicConnect"
+DBUS_SERVICE="io.github.olafkfreund.CosmicExtConnect"
+DBUS_PATH="/io/github/olafkfreund/CosmicExtConnect"
+DBUS_INTERFACE="io.github.olafkfreund.CosmicExtConnect"
 
 # Get device ID
 DEVICE_ID="${1:-}"
@@ -360,7 +360,7 @@ else
     echo "     → Disconnect and re-pair if necessary"
     echo ""
     echo "  5. Check plugin configuration"
-    echo "     → ~/.config/cosmic-connect/config.json"
+    echo "     → ~/.config/cosmic-ext-connect/config.json"
     echo ""
     echo "For more help, see:"
     echo "  → docs/DEBUGGING.md"

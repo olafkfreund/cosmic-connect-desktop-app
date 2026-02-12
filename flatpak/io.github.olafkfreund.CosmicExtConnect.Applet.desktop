@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=COSMIC Connect Applet
+Comment=Device connectivity panel applet
+Icon=io.github.olafkfreund.CosmicExtConnect
+Exec=cosmic-ext-applet-connect
+Terminal=false
+Categories=COSMIC;Utility;
+NoDisplay=true
+StartupNotify=false
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto
+X-OverflowPriority=10

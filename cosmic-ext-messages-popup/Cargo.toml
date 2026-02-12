@@ -1,0 +1,53 @@
+[package]
+name = "cosmic-ext-messages-popup"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Web-based messaging popup for COSMIC Desktop with notification integration"
+
+[dependencies]
+# COSMIC Desktop
+libcosmic = { workspace = true, features = ["winit"] }
+
+# WebView with GTK support for Linux/Wayland
+wry = "0.47"
+
+# GTK for WebView window on Linux
+gtk = "0.18"
+glib = "0.18"
+gdk = "0.18"
+
+# D-Bus
+zbus = { workspace = true }
+
+# Desktop notifications
+notify-rust = "4"
+
+# Async Runtime
+tokio = { workspace = true, features = ["sync", "macros", "time"] }
+async-trait = { workspace = true }
+futures = { workspace = true, features = ["std"] }
+async-io = "2"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+ron = "0.8"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+dirs = { workspace = true }
+chrono = { workspace = true }
+open = { workspace = true }
+
+# CLI
+clap = { workspace = true }

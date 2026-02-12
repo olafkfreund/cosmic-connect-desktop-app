@@ -1,4 +1,4 @@
-# cosmic-applet-connect - Build Commands
+# cosmic-ext-applet-connect - Build Commands
 # https://github.com/casey/just
 
 # Default recipe (runs when you just type 'just')
@@ -15,31 +15,31 @@ build-release:
 
 # Build only the protocol library
 build-protocol:
-    cargo build -p kdeconnect-protocol
+    cargo build -p cosmic-ext-connect-protocol
 
 # Build only the applet
 build-applet:
-    cargo build -p cosmic-applet-connect
+    cargo build -p cosmic-ext-applet-connect
 
 # Build only the full application
 build-app:
-    cargo build -p cosmic-connect-daemon
+    cargo build -p cosmic-ext-connect-daemon
 
 # Build only the daemon
 build-daemon:
-    cargo build -p cosmic-connect-daemon
+    cargo build -p cosmic-ext-connect-daemon
 
 # Run the applet in development mode
 run-applet:
-    RUST_LOG=debug cargo run -p cosmic-applet-connect
+    RUST_LOG=debug cargo run -p cosmic-ext-applet-connect
 
 # Run the full application
 run-app:
-    RUST_LOG=debug cargo run -p cosmic-connect-daemon
+    RUST_LOG=debug cargo run -p cosmic-ext-connect-daemon
 
 # Run the daemon
 run-daemon:
-    RUST_LOG=debug cargo run -p cosmic-connect-daemon
+    RUST_LOG=debug cargo run -p cosmic-ext-connect-daemon
 
 # Run all tests
 test:
@@ -51,7 +51,7 @@ test-verbose:
 
 # Run only protocol tests
 test-protocol:
-    cargo test -p kdeconnect-protocol
+    cargo test -p cosmic-ext-connect-protocol
 
 # Run integration tests
 test-integration:
@@ -59,7 +59,7 @@ test-integration:
 
 # Test device discovery (requires network)
 test-discovery:
-    cargo test -p kdeconnect-protocol discovery -- --nocapture --ignored
+    cargo test -p cosmic-ext-connect-protocol discovery -- --nocapture --ignored
 
 # Run tests with coverage (requires cargo-tarpaulin)
 test-coverage:
@@ -105,44 +105,44 @@ doc:
 
 # Generate protocol documentation
 doc-protocol:
-    cargo doc --no-deps -p kdeconnect-protocol --open
+    cargo doc --no-deps -p cosmic-ext-connect-protocol --open
 
 # Install all components (requires sudo)
 install: build-release
-    sudo install -Dm755 target/release/cosmic-applet-connect \
-        /usr/bin/cosmic-applet-connect
-    sudo install -Dm755 target/release/cosmic-connect-daemon \
-        /usr/bin/cosmic-connect-daemon
-    sudo install -Dm755 target/release/cosmic-connect-daemon \
-        /usr/bin/cosmic-connect-daemon
-    sudo install -Dm644 cosmic-applet-connect/data/cosmic-applet-connect.desktop \
-        /usr/share/applications/cosmic-applet-connect.desktop
+    sudo install -Dm755 target/release/cosmic-ext-applet-connect \
+        /usr/bin/cosmic-ext-applet-connect
+    sudo install -Dm755 target/release/cosmic-ext-connect-daemon \
+        /usr/bin/cosmic-ext-connect-daemon
+    sudo install -Dm755 target/release/cosmic-ext-connect-daemon \
+        /usr/bin/cosmic-ext-connect-daemon
+    sudo install -Dm644 cosmic-ext-applet-connect/data/cosmic-ext-applet-connect.desktop \
+        /usr/share/applications/cosmic-ext-applet-connect.desktop
     @echo "✅ Installed successfully!"
 
 # Install only the applet
 install-applet: build-release
-    sudo install -Dm755 target/release/cosmic-applet-connect \
-        /usr/bin/cosmic-applet-connect
-    sudo install -Dm644 cosmic-applet-connect/data/cosmic-applet-connect.desktop \
-        /usr/share/applications/cosmic-applet-connect.desktop
+    sudo install -Dm755 target/release/cosmic-ext-applet-connect \
+        /usr/bin/cosmic-ext-applet-connect
+    sudo install -Dm644 cosmic-ext-applet-connect/data/cosmic-ext-applet-connect.desktop \
+        /usr/share/applications/cosmic-ext-applet-connect.desktop
 
 # Install to local directory (no sudo required)
 install-local PREFIX="$HOME/.local": build-release
-    install -Dm755 target/release/cosmic-applet-connect \
-        {{PREFIX}}/bin/cosmic-applet-connect
-    install -Dm755 target/release/cosmic-connect-daemon \
-        {{PREFIX}}/bin/cosmic-connect-daemon
-    install -Dm755 target/release/cosmic-connect-daemon \
-        {{PREFIX}}/bin/cosmic-connect-daemon
-    install -Dm644 cosmic-applet-connect/data/cosmic-applet-connect.desktop \
-        {{PREFIX}}/share/applications/cosmic-applet-connect.desktop
+    install -Dm755 target/release/cosmic-ext-applet-connect \
+        {{PREFIX}}/bin/cosmic-ext-applet-connect
+    install -Dm755 target/release/cosmic-ext-connect-daemon \
+        {{PREFIX}}/bin/cosmic-ext-connect-daemon
+    install -Dm755 target/release/cosmic-ext-connect-daemon \
+        {{PREFIX}}/bin/cosmic-ext-connect-daemon
+    install -Dm644 cosmic-ext-applet-connect/data/cosmic-ext-applet-connect.desktop \
+        {{PREFIX}}/share/applications/cosmic-ext-applet-connect.desktop
 
 # Uninstall all components
 uninstall:
-    sudo rm -f /usr/bin/cosmic-applet-connect
-    sudo rm -f /usr/bin/cosmic-connect-daemon
-    sudo rm -f /usr/bin/cosmic-connect-daemon
-    sudo rm -f /usr/share/applications/cosmic-applet-connect.desktop
+    sudo rm -f /usr/bin/cosmic-ext-applet-connect
+    sudo rm -f /usr/bin/cosmic-ext-connect-daemon
+    sudo rm -f /usr/bin/cosmic-ext-connect-daemon
+    sudo rm -f /usr/share/applications/cosmic-ext-applet-connect.desktop
 
 # Setup development environment
 setup:
@@ -192,7 +192,7 @@ watch-test:
 
 # Watch and run applet
 watch-applet:
-    cargo watch -x 'run -p cosmic-applet-connect'
+    cargo watch -x 'run -p cosmic-ext-applet-connect'
 
 # Benchmark performance
 bench:
@@ -218,18 +218,18 @@ release VERSION:
 package: build-release
     @echo "📦 Creating distribution package..."
     mkdir -p dist
-    tar czf dist/cosmic-applet-connect-$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "cosmic-applet-connect") | .version').tar.gz \
+    tar czf dist/cosmic-ext-applet-connect-$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "cosmic-ext-applet-connect") | .version').tar.gz \
         -C target/release \
-        cosmic-applet-connect \
-        cosmic-connect-daemon \
-        cosmic-connect-daemon
+        cosmic-ext-applet-connect \
+        cosmic-ext-connect-daemon \
+        cosmic-ext-connect-daemon
     @echo "✅ Package created in dist/"
 
 # Deploy to a remote NixOS host (e.g., just deploy-remote user@host)
 deploy-remote TARGET:
     @echo "🚀 Deploying to {{TARGET}}..."
     nix copy --to ssh://{{TARGET}} .#default
-    ssh {{TARGET}} "sudo systemctl restart cosmic-connect-daemon || systemctl --user restart cosmic-connect-daemon"
+    ssh {{TARGET}} "sudo systemctl restart cosmic-ext-connect-daemon || systemctl --user restart cosmic-ext-connect-daemon"
     @echo "✅ Deployment complete!"
 
 # Print project statistics
@@ -243,7 +243,7 @@ stats:
     @cargo tree | head -20
     @echo ""
     @echo "Binary sizes:"
-    @ls -lh target/release/cosmic-applet-connect target/release/cosmic-connect-daemon target/release/cosmic-connect-daemon 2>/dev/null || echo "  (not built yet)"
+    @ls -lh target/release/cosmic-ext-applet-connect target/release/cosmic-ext-connect-daemon target/release/cosmic-ext-connect-daemon 2>/dev/null || echo "  (not built yet)"
 
 # Development helpers
 dev-server:
@@ -254,15 +254,15 @@ dev-server:
 
 # Validate desktop entries
 validate-desktop:
-    desktop-file-validate cosmic-applet-connect/data/cosmic-applet-connect.desktop
+    desktop-file-validate cosmic-ext-applet-connect/data/cosmic-ext-applet-connect.desktop
 
 # Generate a new plugin template
 new-plugin NAME:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Generating new plugin: {{NAME}}"
-    mkdir -p kdeconnect-protocol/src/plugins
-    cat > kdeconnect-protocol/src/plugins/{{NAME}}.rs << 'TEMPLATE_EOF'
+    mkdir -p cosmic-ext-connect-protocol/src/plugins
+    cat > cosmic-ext-connect-protocol/src/plugins/{{NAME}}.rs << 'TEMPLATE_EOF'
     use crate::{Packet, Plugin, ProtocolError};
     use async_trait::async_trait;
 
@@ -290,27 +290,27 @@ new-plugin NAME:
         }
     }
     TEMPLATE_EOF
-    echo "✅ Plugin template created at kdeconnect-protocol/src/plugins/{{NAME}}.rs"
+    echo "✅ Plugin template created at cosmic-ext-connect-protocol/src/plugins/{{NAME}}.rs"
 
 # List all plugins
 list-plugins:
     @echo "Available plugins:"
-    @find kdeconnect-protocol/src/plugins -name "*.rs" -not -name "mod.rs" | xargs -I {} basename {} .rs
+    @find cosmic-ext-connect-protocol/src/plugins -name "*.rs" -not -name "mod.rs" | xargs -I {} basename {} .rs
 
 # Run with specific log level
 run-debug LEVEL="debug":
-    RUST_LOG={{LEVEL}} cargo run -p cosmic-applet-connect
+    RUST_LOG={{LEVEL}} cargo run -p cosmic-ext-applet-connect
 
 # Memory profiling with valgrind
 profile-memory:
     cargo build --release
     valgrind --leak-check=full --show-leak-kinds=all \
-        target/release/cosmic-applet-connect
+        target/release/cosmic-ext-applet-connect
 
 # CPU profiling with perf
 profile-cpu:
     cargo build --release
-    perf record -g target/release/cosmic-applet-connect
+    perf record -g target/release/cosmic-ext-applet-connect
     perf report
 
 # Display help for firewall configuration

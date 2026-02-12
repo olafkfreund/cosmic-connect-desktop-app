@@ -30,20 +30,20 @@ python3 /tmp/flatpak-tools/cargo/flatpak-cargo-generator.py \
 
 ```bash
 # Build from project root
-flatpak-builder --user --install --force-clean build-dir flatpak/org.cosmicde.CosmicConnect.yml
+flatpak-builder --user --install --force-clean build-dir flatpak/io.github.olafkfreund.CosmicExtConnect.yml
 
 # Run the application
-flatpak run org.cosmicde.CosmicConnect
+flatpak run io.github.olafkfreund.CosmicExtConnect
 ```
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `org.cosmicde.CosmicConnect.yml` | Flatpak manifest (build configuration) |
-| `org.cosmicde.CosmicConnect.metainfo.xml` | AppStream metadata (app information) |
-| `org.cosmicde.CosmicConnect.desktop` | Desktop entry (manager application) |
-| `org.cosmicde.CosmicConnect.Applet.desktop` | Desktop entry (panel applet) |
+| `io.github.olafkfreund.CosmicExtConnect.yml` | Flatpak manifest (build configuration) |
+| `io.github.olafkfreund.CosmicExtConnect.metainfo.xml` | AppStream metadata (app information) |
+| `io.github.olafkfreund.CosmicExtConnect.desktop` | Desktop entry (manager application) |
+| `io.github.olafkfreund.CosmicExtConnect.Applet.desktop` | Desktop entry (panel applet) |
 | `FLATPAK.md` | Comprehensive build and submission guide |
 | `README.md` | This file |
 | `generated-sources.json` | Cargo dependencies (generated, not in git) |
@@ -62,12 +62,12 @@ See **[FLATPAK.md](FLATPAK.md)** for:
 
 The Flatpak package includes:
 
-- **cosmic-connect-manager** - Device management window
-- **cosmic-applet-connect** - COSMIC panel applet
-- **cosmic-connect-daemon** - Background service
-- **cosmic-messages-popup** - Web messaging interface
+- **cosmic-ext-connect-manager** - Device management window
+- **cosmic-ext-applet-connect** - COSMIC panel applet
+- **cosmic-ext-connect-daemon** - Background service
+- **cosmic-ext-messages-popup** - Web messaging interface
 - **cosmic-messages** - CLI messaging utility
-- **cosmic-display-stream** - Display streaming library
+- **cosmic-ext-display-stream** - Display streaming library
 
 ## Daemon Limitations
 

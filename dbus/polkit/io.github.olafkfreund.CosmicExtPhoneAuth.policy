@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+
+<!--
+  Polkit policy for io.github.olafkfreund.CosmicExtPhoneAuth
+
+  This policy defines authorization rules for phone-based biometric authentication.
+  Regular authentication requests require no special privileges, while administrative
+  actions like viewing all pending requests require admin authentication.
+-->
+<policyconfig>
+  <vendor>COSMIC Desktop</vendor>
+  <vendor_url>https://github.com/pop-os/cosmic-epoch</vendor_url>
+
+  <!--
+    Request biometric authentication from phone
+
+    This action allows users to request authentication from their paired mobile devices.
+    Any active user can request authentication for their own account.
+  -->
+  <action id="io.github.olafkfreund.CosmicExtPhoneAuth.request">
+    <description>Request biometric authentication from mobile device</description>
+    <message>Authentication is required to use phone-based biometric authentication</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!--
+    Cancel pending authentication request
+
+    This action allows users to cancel their own authentication requests.
+    Users can only cancel requests they initiated.
+  -->
+  <action id="io.github.olafkfreund.CosmicExtPhoneAuth.cancel">
+    <description>Cancel pending authentication request</description>
+    <message>Authentication is required to cancel a pending request</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!--
+    View all pending authentication requests (Administrative)
+
+    This action allows viewing all system-wide pending authentication requests.
+    This is an administrative function that requires elevated privileges.
+  -->
+  <action id="io.github.olafkfreund.CosmicExtPhoneAuth.admin">
+    <description>View all pending authentication requests</description>
+    <message>Administrative authentication is required to view all pending requests</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/cosmic-ext-connect-daemon</annotate>
+  </action>
+
+  <!--
+    Configure phone authentication settings (Administrative)
+
+    This action allows modifying system-wide phone authentication settings
+    such as default timeout values and security policies.
+  -->
+  <action id="io.github.olafkfreund.CosmicExtPhoneAuth.configure">
+    <description>Configure phone authentication settings</description>
+    <message>Administrative authentication is required to configure phone authentication</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/cosmic-ext-connect-daemon</annotate>
+  </action>
+</policyconfig>

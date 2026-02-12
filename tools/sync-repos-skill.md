@@ -4,7 +4,7 @@
 
 This skill enables Claude to assist with syncing changes between:
 - `cosmic-connect-desktop-app` (Rust - source)
-- `cosmic-connect-core` (Rust - shared library)
+- `cosmic-ext-connect-core` (Rust - shared library)
 - `cosmic-connect-android` (Kotlin - mobile client)
 
 **Key Features:**
@@ -37,7 +37,7 @@ Claude will present findings and ask:
 
 ### 3. Generation Phase (AI-Assisted)
 For each approved change, Claude will:
-- Generate Rust code for cosmic-connect-core
+- Generate Rust code for cosmic-ext-connect-core
 - Generate Kotlin code for cosmic-connect-android
 - Preserve language idioms and best practices
 - Add appropriate comments and documentation
@@ -70,7 +70,7 @@ Found 8 commits since last sync (commit: abc123f)
 📦 Changes detected:
 
 1. **Protocol Version Update** [CRITICAL]
-   - File: cosmic-connect-protocol/src/lib.rs
+   - File: cosmic-ext-connect-protocol/src/lib.rs
    - Change: PROTOCOL_VERSION: 7 → 8
    - Affects: ✅ core, ✅ android
 
@@ -81,7 +81,7 @@ You: y
 Claude:
 ✅ Generating sync code...
 
-🦀 For cosmic-connect-core:
+🦀 For cosmic-ext-connect-core:
 ```rust
 // Update protocol version
 pub const PROTOCOL_VERSION: u32 = 8;
@@ -99,13 +99,13 @@ You: y
 
 Claude:
 ✅ Created commits:
-- cosmic-connect-core: feat: update protocol version to 8
+- cosmic-ext-connect-core: feat: update protocol version to 8
 - cosmic-connect-android: feat: update protocol version to 8
 
 Next change...
 
 2. **New Packet Type** [HIGH]
-   - File: cosmic-connect-protocol/src/plugins/telephony.rs
+   - File: cosmic-ext-connect-protocol/src/plugins/telephony.rs
    - New packet: "kdeconnect.telephony.request_mute"
    - Affects: ✅ android (needs packet handler)
 
@@ -233,7 +233,7 @@ Shall I guide you through each step? [y/n]
 🔗 Dependency Analysis:
 
 This change depends on:
-  - cosmic-connect-core v0.5.0+ (current: v0.4.2)
+  - cosmic-ext-connect-core v0.5.0+ (current: v0.4.2)
 
 Shall I:
   a) Update core version first
@@ -249,7 +249,7 @@ Choose [a/b/c]:
 ```bash
 # .git/hooks/pre-commit
 #!/bin/bash
-if [[ $(git diff --cached --name-only) =~ "cosmic-connect-protocol" ]]; then
+if [[ $(git diff --cached --name-only) =~ "cosmic-ext-connect-protocol" ]]; then
     echo "Protocol changes detected. Remember to run /sync-repos!"
 fi
 ```
@@ -266,7 +266,7 @@ jobs:
     steps:
       - name: Check for protocol changes
         run: |
-          if git diff origin/main --name-only | grep -q "cosmic-connect-protocol"; then
+          if git diff origin/main --name-only | grep -q "cosmic-ext-connect-protocol"; then
             echo "::warning::Protocol changes detected. Run /sync-repos before merging!"
           fi
 ```
@@ -279,7 +279,7 @@ You can customize the skill by editing `.sync-config.yaml`:
 # Add new trigger
 triggers:
   custom_type_change:
-    files: ["cosmic-connect-protocol/src/custom/*.rs"]
+    files: ["cosmic-ext-connect-protocol/src/custom/*.rs"]
     pattern: "pub struct.*Custom"
     sync_to: [core]
     severity: medium

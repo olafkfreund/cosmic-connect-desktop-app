@@ -45,29 +45,29 @@ The error handling system consists of four main components:
 
 ### Components
 
-1. **ProtocolError** (`cosmic-connect-protocol/src/error.rs`)
+1. **ProtocolError** (`cosmic-ext-connect-protocol/src/error.rs`)
    - Comprehensive error enum with 20+ variants
    - Error classification methods
    - User-friendly message generation
 
-2. **ErrorHandler** (`cosmic-connect-daemon/src/error_handler.rs`)
+2. **ErrorHandler** (`cosmic-ext-connect-daemon/src/error_handler.rs`)
    - Centralized error processing
    - Automatic logging at appropriate levels
    - Triggers user notifications when needed
    - Coordinates with recovery system
 
-3. **CosmicNotifier** (`cosmic-connect-daemon/src/cosmic_notifications.rs`)
+3. **CosmicNotifier** (`cosmic-ext-connect-daemon/src/cosmic_notifications.rs`)
    - User notification system via COSMIC Desktop
    - 10+ specialized notification methods
    - Recovery action buttons (Re-pair, Settings, Retry)
 
-4. **RecoveryManager** (`cosmic-connect-protocol/src/recovery.rs`)
+4. **RecoveryManager** (`cosmic-ext-connect-protocol/src/recovery.rs`)
    - Reconnection strategies with exponential backoff
    - Packet retry queue
    - Transfer state tracking
    - State persistence for crash recovery
 
-5. **RecoveryCoordinator** (`cosmic-connect-protocol/src/recovery_coordinator.rs`)
+5. **RecoveryCoordinator** (`cosmic-ext-connect-protocol/src/recovery_coordinator.rs`)
    - Bridges ConnectionManager and RecoveryManager
    - Listens to connection events
    - Triggers automatic recovery actions
@@ -846,12 +846,12 @@ WARN  Failed to restore transfer states: Permission denied
 
 ## Related Documentation
 
-- [Protocol Error Types](../cosmic-connect-protocol/src/error.rs)
-- [User Notifications](../cosmic-connect-daemon/src/cosmic_notifications.rs)
-- [Error Handler](../cosmic-connect-daemon/src/error_handler.rs)
-- [Recovery Manager](../cosmic-connect-protocol/src/recovery.rs)
-- [Recovery Coordinator](../cosmic-connect-protocol/src/recovery_coordinator.rs)
-- [File System Utils](../cosmic-connect-protocol/src/fs_utils.rs)
+- [Protocol Error Types](../cosmic-ext-connect-protocol/src/error.rs)
+- [User Notifications](../cosmic-ext-connect-daemon/src/cosmic_notifications.rs)
+- [Error Handler](../cosmic-ext-connect-daemon/src/error_handler.rs)
+- [Recovery Manager](../cosmic-ext-connect-protocol/src/recovery.rs)
+- [Recovery Coordinator](../cosmic-ext-connect-protocol/src/recovery_coordinator.rs)
+- [File System Utils](../cosmic-ext-connect-protocol/src/fs_utils.rs)
 
 ## Version History
 

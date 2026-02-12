@@ -214,7 +214,7 @@ if bytes.len() > MAX_BT_PACKET_SIZE {
 }
 ```
 
-**Location:** `cosmic-connect-protocol/src/transport/bluetooth.rs:264-269`
+**Location:** `cosmic-ext-connect-protocol/src/transport/bluetooth.rs:264-269`
 
 ### Recommendations
 
@@ -363,7 +363,7 @@ for batch in contacts.chunks(5) {
 **Related Documentation:**
 - [Transport Layer Architecture](./TRANSPORT_LAYER.md)
 - [Issue #42 Progress Report](./ISSUE_42_PROGRESS.md)
-- [Bluetooth Discovery Integration](../cosmic-connect-protocol/src/discovery/bluetooth.rs)
+- [Bluetooth Discovery Integration](../cosmic-ext-connect-protocol/src/discovery/bluetooth.rs)
 
 ---
 

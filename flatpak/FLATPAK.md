@@ -6,12 +6,12 @@ This guide covers building, testing, and submitting the COSMIC Connect Flatpak p
 
 The Flatpak package provides a distribution-agnostic way to install COSMIC Connect on any Linux distribution. It includes:
 
-- **cosmic-connect-manager** - Standalone device management window
-- **cosmic-applet-connect** - COSMIC panel applet
-- **cosmic-connect-daemon** - Background service (limited in sandbox)
-- **cosmic-messages-popup** - Web messaging interface
+- **cosmic-ext-connect-manager** - Standalone device management window
+- **cosmic-ext-applet-connect** - COSMIC panel applet
+- **cosmic-ext-connect-daemon** - Background service (limited in sandbox)
+- **cosmic-ext-messages-popup** - Web messaging interface
 - **cosmic-messages** - CLI messaging utility
-- **cosmic-display-stream** - Display streaming library
+- **cosmic-ext-display-stream** - Display streaming library
 
 ## Prerequisites
 
@@ -70,22 +70,22 @@ Build the Flatpak locally for testing:
 
 ```bash
 # From the project root
-flatpak-builder --force-clean build-dir flatpak/org.cosmicde.CosmicConnect.yml
+flatpak-builder --force-clean build-dir flatpak/io.github.olafkfreund.CosmicExtConnect.yml
 
 # Install locally
-flatpak-builder --user --install --force-clean build-dir flatpak/org.cosmicde.CosmicConnect.yml
+flatpak-builder --user --install --force-clean build-dir flatpak/io.github.olafkfreund.CosmicExtConnect.yml
 ```
 
 ### Test the Application
 
 ```bash
 # Run the manager
-flatpak run org.cosmicde.CosmicConnect
+flatpak run io.github.olafkfreund.CosmicExtConnect
 
 # Run with debugging enabled
-flatpak run --devel --command=sh org.cosmicde.CosmicConnect
+flatpak run --devel --command=sh io.github.olafkfreund.CosmicExtConnect
 # Then inside the sandbox:
-cosmic-connect-manager --verbose
+cosmic-ext-connect-manager --verbose
 ```
 
 ### Export as Bundle
@@ -94,10 +94,10 @@ Create a distributable `.flatpak` bundle:
 
 ```bash
 # Build and export
-flatpak-builder --repo=repo --force-clean build-dir flatpak/org.cosmicde.CosmicConnect.yml
+flatpak-builder --repo=repo --force-clean build-dir flatpak/io.github.olafkfreund.CosmicExtConnect.yml
 
 # Create single-file bundle
-flatpak build-bundle repo cosmic-connect.flatpak org.cosmicde.CosmicConnect
+flatpak build-bundle repo cosmic-connect.flatpak io.github.olafkfreund.CosmicExtConnect
 ```
 
 Users can install the bundle with:
@@ -125,7 +125,7 @@ The Flatpak manifest requests the following permissions:
 
 ### Daemon Limitations
 
-**Important:** The background daemon (`cosmic-connect-daemon`) has limited functionality in the Flatpak sandbox:
+**Important:** The background daemon (`cosmic-ext-connect-daemon`) has limited functionality in the Flatpak sandbox:
 
 - **D-Bus activation** works within the sandbox
 - **Network discovery** works (UDP broadcast on port 1816)
@@ -140,7 +140,7 @@ nix profile install github:olafkfreund/cosmic-connect-desktop-app
 
 # Manual installation (see README.md)
 cargo build --release
-sudo install target/release/cosmic-connect-daemon /usr/local/bin/
+sudo install target/release/cosmic-ext-connect-daemon /usr/local/bin/
 ```
 
 ### Testing Sandbox Restrictions
@@ -149,10 +149,10 @@ Test specific sandbox scenarios:
 
 ```bash
 # Test network access
-flatpak run --command=cosmic-connect-daemon org.cosmicde.CosmicConnect --test-network
+flatpak run --command=cosmic-ext-connect-daemon io.github.olafkfreund.CosmicExtConnect --test-network
 
 # Test file access
-flatpak run --command=sh org.cosmicde.CosmicConnect
+flatpak run --command=sh io.github.olafkfreund.CosmicExtConnect
 ls ~/Downloads  # Should work
 ls ~/Documents  # Should work
 ls /etc         # Should fail (no host access)
@@ -177,13 +177,13 @@ Before submitting to Flathub, ensure:
 
 ```bash
 # Validate desktop file
-desktop-file-validate flatpak/org.cosmicde.CosmicConnect.desktop
+desktop-file-validate flatpak/io.github.olafkfreund.CosmicExtConnect.desktop
 
 # Validate AppStream metadata
-appstreamcli validate flatpak/org.cosmicde.CosmicConnect.metainfo.xml
+appstreamcli validate flatpak/io.github.olafkfreund.CosmicExtConnect.metainfo.xml
 
 # Check for common Flatpak issues
-flatpak run org.flatpak.Builder --show-manifest flatpak/org.cosmicde.CosmicConnect.yml
+flatpak run org.flatpak.Builder --show-manifest flatpak/io.github.olafkfreund.CosmicExtConnect.yml
 ```
 
 ### Submit to Flathub
@@ -200,22 +200,22 @@ flatpak run org.flatpak.Builder --show-manifest flatpak/org.cosmicde.CosmicConne
 
    ```bash
    git checkout -b add-cosmic-connect
-   mkdir org.cosmicde.CosmicConnect
+   mkdir io.github.olafkfreund.CosmicExtConnect
    ```
 
 3. **Copy manifest and metadata:**
 
    ```bash
-   cp /path/to/cosmic-connect/flatpak/org.cosmicde.CosmicConnect.yml org.cosmicde.CosmicConnect/
-   cp /path/to/cosmic-connect/flatpak/org.cosmicde.CosmicConnect.metainfo.xml org.cosmicde.CosmicConnect/
-   cp /path/to/cosmic-connect/flatpak/generated-sources.json org.cosmicde.CosmicConnect/
-   cp /path/to/cosmic-connect/flatpak/*.desktop org.cosmicde.CosmicConnect/
+   cp /path/to/cosmic-connect/flatpak/io.github.olafkfreund.CosmicExtConnect.yml io.github.olafkfreund.CosmicExtConnect/
+   cp /path/to/cosmic-connect/flatpak/io.github.olafkfreund.CosmicExtConnect.metainfo.xml io.github.olafkfreund.CosmicExtConnect/
+   cp /path/to/cosmic-connect/flatpak/generated-sources.json io.github.olafkfreund.CosmicExtConnect/
+   cp /path/to/cosmic-connect/flatpak/*.desktop io.github.olafkfreund.CosmicExtConnect/
    ```
 
 4. **Add flathub.json (required):**
 
    ```bash
-   cat > org.cosmicde.CosmicConnect/flathub.json << 'EOF'
+   cat > io.github.olafkfreund.CosmicExtConnect/flathub.json << 'EOF'
    {
      "only-arches": ["x86_64", "aarch64"]
    }
@@ -225,8 +225,8 @@ flatpak run org.flatpak.Builder --show-manifest flatpak/org.cosmicde.CosmicConne
 5. **Create pull request:**
 
    ```bash
-   git add org.cosmicde.CosmicConnect
-   git commit -m "Add org.cosmicde.CosmicConnect"
+   git add io.github.olafkfreund.CosmicExtConnect
+   git commit -m "Add io.github.olafkfreund.CosmicExtConnect"
    git push origin add-cosmic-connect
    ```
 
@@ -247,7 +247,7 @@ flatpak run org.flatpak.Builder --show-manifest flatpak/org.cosmicde.CosmicConne
 Once merged, your application will be available on Flathub:
 
 ```bash
-flatpak install flathub org.cosmicde.CosmicConnect
+flatpak install flathub io.github.olafkfreund.CosmicExtConnect
 ```
 
 ## Maintenance
@@ -259,7 +259,7 @@ When releasing a new version:
 1. **Update the manifest:**
 
    ```yaml
-   # In org.cosmicde.CosmicConnect.yml
+   # In io.github.olafkfreund.CosmicExtConnect.yml
    sources:
      - type: git
        url: https://github.com/olafkfreund/cosmic-connect-desktop-app.git
@@ -287,7 +287,7 @@ When releasing a new version:
 4. **Submit update to Flathub:**
 
    ```bash
-   cd flathub/org.cosmicde.CosmicConnect
+   cd flathub/io.github.olafkfreund.CosmicExtConnect
    # Update files
    git commit -am "Update to version 0.2.0"
    git push origin update-0.2.0
@@ -329,7 +329,7 @@ Error: Could not connect to session bus
 ```yaml
 finish-args:
   - --socket=session-bus
-  - --own-name=org.cosmicde.CosmicConnect
+  - --own-name=io.github.olafkfreund.CosmicExtConnect
 ```
 
 ---

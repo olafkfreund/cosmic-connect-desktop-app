@@ -5,7 +5,7 @@
 This system helps you maintain consistency across three COSMIC Connect repositories:
 
 1. **cosmic-connect-desktop-app** (Rust) - Desktop client [SOURCE]
-2. **cosmic-connect-core** (Rust) - Shared protocol library [TARGET]
+2. **cosmic-ext-connect-core** (Rust) - Shared protocol library [TARGET]
 3. **cosmic-connect-android** (Kotlin) - Android client [TARGET]
 
 **Philosophy:** AI-assisted, human-verified synchronization. Claude analyzes changes, generates appropriate code, but YOU approve every sync.
@@ -39,7 +39,7 @@ Ensure all three repos are cloned locally:
 ```
 ~/Source/GitHub/
 ├── cosmic-connect-desktop-app/   # You're here
-├── cosmic-connect-core/           # Clone this
+├── cosmic-ext-connect-core/           # Clone this
 └── cosmic-connect-android/        # Clone this
 ```
 
@@ -47,7 +47,7 @@ Clone the other repos if needed:
 
 ```bash
 cd ~/Source/GitHub/
-git clone https://github.com/olafkfreund/cosmic-connect-core
+git clone https://github.com/olafkfreund/cosmic-ext-connect-core
 git clone https://github.com/olafkfreund/cosmic-connect-android
 ```
 
@@ -58,7 +58,7 @@ Edit `.sync-config.yaml` and verify paths are correct:
 ```yaml
 repos:
   core:
-    path: /home/olafkfreund/Source/GitHub/cosmic-connect-core
+    path: /home/olafkfreund/Source/GitHub/cosmic-ext-connect-core
   android:
     path: /home/olafkfreund/Source/GitHub/cosmic-connect-android
 ```
@@ -111,12 +111,12 @@ Claude: Let me analyze the changes...
 I found 2 changes that need syncing:
 
 1. **Protocol Version: 7 → 8** [CRITICAL]
-   - File: cosmic-connect-protocol/src/lib.rs
+   - File: cosmic-ext-connect-protocol/src/lib.rs
    - Line: pub const PROTOCOL_VERSION: u32 = 8;
    - Sync to: core, android
 
 2. **New Packet Type: kdeconnect.telephony.request_mute**
-   - File: cosmic-connect-protocol/src/plugins/telephony.rs
+   - File: cosmic-ext-connect-protocol/src/plugins/telephony.rs
    - Sync to: android
 
 Let's handle these one by one.
@@ -127,7 +127,7 @@ Change 1: Protocol Version Update
 
 This affects both repositories. Here's what I'll do:
 
-🦀 cosmic-connect-core:
+🦀 cosmic-ext-connect-core:
 ```rust
 pub const PROTOCOL_VERSION: u32 = 8;
 ```
@@ -380,7 +380,7 @@ triggers:
 
 # Exclusions (what NOT to sync)
 exclude:
-  - "cosmic-connect-daemon/**"  # Desktop-only
+  - "cosmic-ext-connect-daemon/**"  # Desktop-only
   - "**/tests/**"               # Test code
 ```
 
@@ -391,7 +391,7 @@ Edit `.sync-config.yaml`:
 ```yaml
 triggers:
   custom_capability:
-    files: ["cosmic-connect-protocol/src/plugins/custom/*.rs"]
+    files: ["cosmic-ext-connect-protocol/src/plugins/custom/*.rs"]
     pattern: "pub const CAPABILITY"
     sync_to: [android]
     severity: medium

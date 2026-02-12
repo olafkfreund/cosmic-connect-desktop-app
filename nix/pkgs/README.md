@@ -48,7 +48,7 @@ cargoLock = {
 cargoLock = {
   lockFile = ./Cargo.lock;  # Must be in same directory
   outputHashes = {
-    "cosmic-connect-core-0.1.0" = "sha256-...";  # Manual hash required
+    "cosmic-ext-connect-core-0.1.0" = "sha256-...";  # Manual hash required
   };
 };
 ```
@@ -92,17 +92,17 @@ cargoLock = {
 
 3. **Get Dependency Hash**
    ```bash
-   # Find cosmic-connect-core commit from Cargo.lock
-   grep -A 5 "cosmic-connect-core" ../../Cargo.lock
+   # Find cosmic-ext-connect-core commit from Cargo.lock
+   grep -A 5 "cosmic-ext-connect-core" ../../Cargo.lock
 
    # Get hash for that specific commit
-   nix-prefetch-git https://github.com/olafkfreund/cosmic-connect-core.git \
+   nix-prefetch-git https://github.com/olafkfreund/cosmic-ext-connect-core.git \
      --rev <COMMIT_HASH>
    ```
 
 4. **Update cosmic-connect.nix**
    - Fill in `src.hash` with source hash from step 2
-   - Fill in `outputHashes."cosmic-connect-core-0.1.0"` with hash from step 3
+   - Fill in `outputHashes."cosmic-ext-connect-core-0.1.0"` with hash from step 3
    - Add your maintainer information
 
 5. **Test Build**
@@ -132,10 +132,10 @@ Note: In nixpkgs `by-name` structure, the derivation must be named `package.nix`
 nix-build -E 'with import <nixpkgs> {}; callPackage ./nix/pkgs/cosmic-connect.nix {}'
 
 # Test binaries
-./result/bin/cosmic-applet-connect --version
-./result/bin/cosmic-connect-daemon --version
-./result/bin/cosmic-connect-manager --version
-./result/bin/cosmic-messages-popup --version
+./result/bin/cosmic-ext-applet-connect --version
+./result/bin/cosmic-ext-connect-daemon --version
+./result/bin/cosmic-ext-connect-manager --version
+./result/bin/cosmic-ext-messages-popup --version
 ```
 
 ### NixOS Module Test
@@ -201,7 +201,7 @@ Common issues:
 
 **Missing dependency hash:**
 ```
-error: hash mismatch for cosmic-connect-core
+error: hash mismatch for cosmic-ext-connect-core
 ```
 Solution: Run `nix-prefetch-git` for the specific commit
 

@@ -25,9 +25,9 @@
 
 This document defines the notification handling protocol for the COSMIC Connect ecosystem. It serves as the authoritative reference for implementing notification synchronization between:
 
-- **COSMIC Connect Desktop** (cosmic-connect-daemon, cosmic-applet-connect)
+- **COSMIC Connect Desktop** (cosmic-ext-connect-daemon, cosmic-ext-applet-connect)
 - **COSMIC Connect Android** (cosmic-connect-android)
-- **COSMIC Connect Core** (cosmic-connect-core FFI library)
+- **COSMIC Connect Core** (cosmic-ext-connect-core FFI library)
 - **COSMIC Notifications NG** (cosmic-notifications-ng daemon)
 
 ### Protocol Compatibility
@@ -633,7 +633,7 @@ fn decode_entities(text: &str) -> String {
 
 ### Component: Notification Plugin (Protocol Layer)
 
-**File:** `cosmic-connect-protocol/src/plugins/notification.rs`
+**File:** `cosmic-ext-connect-protocol/src/plugins/notification.rs`
 
 - [ ] Parse all notification body fields
 - [ ] Serialize notification to JSON correctly
@@ -650,7 +650,7 @@ fn decode_entities(text: &str) -> String {
 
 ### Component: Notification Listener (DBus Capture)
 
-**File:** `cosmic-connect-daemon/src/notification_listener.rs`
+**File:** `cosmic-ext-connect-daemon/src/notification_listener.rs`
 
 - [ ] Connect to session DBus
 - [ ] Create MatchRule for `org.freedesktop.Notifications.Notify`
@@ -665,7 +665,7 @@ fn decode_entities(text: &str) -> String {
 
 ### Component: Image Processing
 
-**File:** `cosmic-connect-daemon/src/notification_image.rs`
+**File:** `cosmic-ext-connect-daemon/src/notification_image.rs`
 
 - [ ] Convert RGBA image-data to PNG
 - [ ] Convert RGB image-data to RGBA then PNG
@@ -677,7 +677,7 @@ fn decode_entities(text: &str) -> String {
 
 ### Component: Desktop Notification Display
 
-**File:** `cosmic-connect-daemon/src/cosmic_notifications.rs` (or integration)
+**File:** `cosmic-ext-connect-daemon/src/cosmic_notifications.rs` (or integration)
 
 - [ ] Receive notification from remote device
 - [ ] Sanitize richBody HTML
@@ -736,9 +736,9 @@ fn decode_entities(text: &str) -> String {
 
 | File | Purpose |
 |------|---------|
-| `cosmic-connect-protocol/src/plugins/notification.rs` | Protocol layer notification handling |
-| `cosmic-connect-daemon/src/notification_listener.rs` | DBus notification capture |
-| `cosmic-connect-daemon/src/notification_image.rs` | Image processing for notifications |
+| `cosmic-ext-connect-protocol/src/plugins/notification.rs` | Protocol layer notification handling |
+| `cosmic-ext-connect-daemon/src/notification_listener.rs` | DBus notification capture |
+| `cosmic-ext-connect-daemon/src/notification_image.rs` | Image processing for notifications |
 | `docs/RICH_NOTIFICATIONS.md` | Rich notification implementation details |
 
 ### COSMIC Notifications NG

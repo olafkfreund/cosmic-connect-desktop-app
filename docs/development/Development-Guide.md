@@ -97,9 +97,9 @@ cargo build --package cosmic-applet-kdeconnect
 ## DBus Interface
 
 The daemon exposes a comprehensive DBus interface at:
-- **Service**: `com.system76.CosmicKdeConnect`
-- **Path**: `/com/system76/CosmicKdeConnect`
-- **Interface**: `com.system76.CosmicKdeConnect`
+- **Service**: `io.github.olafkfreund.CosmicExtConnect`
+- **Path**: `/io/github/olafkfreund/CosmicExtConnect`
+- **Interface**: `io.github.olafkfreund.CosmicExtConnect`
 
 ### Methods
 
@@ -188,19 +188,19 @@ Use `busctl` to interact with the daemon:
 
 ```bash
 # List devices
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   ListDevices
 
 # Send a ping
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   SendPing ss "device-id-here" "Hello!"
 
 # Monitor signals
-busctl --user monitor com.system76.CosmicKdeConnect
+busctl --user monitor io.github.olafkfreund.CosmicExtConnect
 ```
 
 ## Plugin System
@@ -406,9 +406,9 @@ The daemon exposes file sharing via DBus:
 
 ```bash
 # Share a file
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   ShareFile ss "device-id" "/path/to/file.pdf"
 ```
 
@@ -719,7 +719,7 @@ Current test coverage:
 1. Add method to `KdeConnectInterface` in `kdeconnect-daemon/src/dbus.rs`:
 
 ```rust
-#[interface(name = "com.system76.CosmicKdeConnect")]
+#[interface(name = "io.github.olafkfreund.CosmicExtConnect")]
 impl KdeConnectInterface {
     async fn my_new_method(&self, param: String) -> Result<String, zbus::fdo::Error> {
         // Implementation
@@ -731,9 +731,9 @@ impl KdeConnectInterface {
 2. Test with busctl:
 
 ```bash
-busctl --user call com.system76.CosmicKdeConnect \
-  /com/system76/CosmicKdeConnect \
-  com.system76.CosmicKdeConnect \
+busctl --user call io.github.olafkfreund.CosmicExtConnect \
+  /io/github/olafkfreund/CosmicExtConnect \
+  io.github.olafkfreund.CosmicExtConnect \
   MyNewMethod s "parameter"
 ```
 
@@ -754,7 +754,7 @@ RUST_LOG=debug cargo run --package kdeconnect-daemon
 RUST_LOG=kdeconnect_daemon::plugins=trace cargo run --package kdeconnect-daemon
 
 # Monitor DBus traffic
-busctl --user monitor com.system76.CosmicKdeConnect
+busctl --user monitor io.github.olafkfreund.CosmicExtConnect
 
 # Check daemon status
 systemctl --user status cosmic-kdeconnect-daemon

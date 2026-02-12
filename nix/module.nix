@@ -8,10 +8,10 @@
 with lib;
 
 let
-  cfg = config.services.cosmic-connect;
+  cfg = config.services.cosmic-ext-connect;
 
   # Import the package
-  cosmic-connect-pkg = pkgs.callPackage ./package.nix { };
+  cosmic-ext-connect-pkg = pkgs.callPackage ./package.nix { };
 
   # TOML format generator
   tomlFormat = pkgs.formats.toml { };
@@ -19,16 +19,16 @@ let
 in
 {
   # PAM module import disabled until Phone Auth is fully implemented
-  # imports = [ ./modules/pam-cosmic-connect.nix ];
+  # imports = [ ./modules/pam-cosmic-ext-connect.nix ];
 
-  options.services.cosmic-connect = {
+  options.services.cosmic-ext-connect = {
     enable = mkEnableOption "COSMIC Connect - Device connectivity for COSMIC Desktop";
 
     package = mkOption {
       type = types.package;
-      default = cosmic-connect-pkg;
-      example = literalExpression "pkgs.cosmic-connect";
-      description = "The cosmic-connect package to use.";
+      default = cosmic-ext-connect-pkg;
+      example = literalExpression "pkgs.cosmic-ext-connect";
+      description = "The cosmic-ext-connect package to use.";
     };
 
     openFirewall = mkOption {
@@ -84,14 +84,14 @@ in
               listen_port = 1816;
             };
             security = {
-              certificate_dir = "~/.config/cosmic-connect/certs";
+              certificate_dir = "~/.config/cosmic-ext-connect/certs";
             };
           }
         '';
         description = ''
           Additional configuration for the COSMIC Connect daemon.
-          These settings are merged with plugin configuration and written to /etc/xdg/cosmic-connect/daemon.toml
-          Plugin settings are automatically configured based on services.cosmic-connect.plugins options.
+          These settings are merged with plugin configuration and written to /etc/xdg/cosmic-ext-connect/daemon.toml
+          Plugin settings are automatically configured based on services.cosmic-ext-connect.plugins options.
         '';
       };
     };
@@ -392,7 +392,7 @@ in
     security = {
       certificateDirectory = mkOption {
         type = types.str;
-        default = "~/.config/cosmic-connect/certs";
+        default = "~/.config/cosmic-ext-connect/certs";
         description = ''
           Directory where device certificates are stored.
           Each paired device has its own certificate for TLS communication.
@@ -420,7 +420,7 @@ in
 
       dataDirectory = mkOption {
         type = types.str;
-        default = "~/.local/share/cosmic-connect";
+        default = "~/.local/share/cosmic-ext-connect";
         description = ''
           Base directory for COSMIC Connect data.
         '';
@@ -433,11 +433,11 @@ in
     assertions = [
       {
         assertion = cfg.daemon.enable -> cfg.enable;
-        message = "The COSMIC Connect daemon requires services.cosmic-connect.enable to be true.";
+        message = "The COSMIC Connect daemon requires services.cosmic-ext-connect.enable to be true.";
       }
       {
         assertion = cfg.applet.enable -> cfg.enable;
-        message = "The COSMIC Connect applet requires services.cosmic-connect.enable to be true.";
+        message = "The COSMIC Connect applet requires services.cosmic-ext-connect.enable to be true.";
       }
     ];
 
@@ -468,7 +468,7 @@ in
     };
 
     # User systemd service for the daemon
-    systemd.user.services.cosmic-connect-daemon = mkIf cfg.daemon.enable {
+    systemd.user.services.cosmic-ext-connect-daemon = mkIf cfg.daemon.enable {
       description = "COSMIC Connect Daemon - Device connectivity service";
       documentation = [ "https://github.com/olafkfreund/cosmic-connect-desktop-app" ];
 
@@ -477,7 +477,7 @@ in
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/cosmic-connect-daemon";
+        ExecStart = "${cfg.package}/bin/cosmic-ext-connect-daemon";
         Restart = "on-failure";
         RestartSec = 5;
 
@@ -508,7 +508,7 @@ in
     };
 
     # Generate configuration file
-    environment.etc."xdg/cosmic-connect/daemon.toml" = mkIf cfg.daemon.enable {
+    environment.etc."xdg/cosmic-ext-connect/daemon.toml" = mkIf cfg.daemon.enable {
       source =
         let
           daemonConfig = {
@@ -557,7 +557,7 @@ in
     };
 
     # Create necessary directories
-    system.activationScripts.cosmic-connect = ''
+    system.activationScripts.cosmic-ext-connect = ''
       # Ensure config directory exists
       mkdir -p /etc/xdg/cosmic-connect
 

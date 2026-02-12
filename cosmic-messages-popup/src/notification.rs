@@ -76,10 +76,23 @@ impl MessengerType {
             Self::GoogleMessages => "https://messages.google.com/web",
             Self::WhatsApp => "https://web.whatsapp.com",
             Self::Telegram => "https://web.telegram.org",
-            Self::Signal => "https://signal.link",
+            Self::Signal => "https://signal.org/download/",
             Self::Discord => "https://discord.com/app",
             Self::Slack => "https://app.slack.com",
             Self::Unknown => "",
+        }
+    }
+
+    /// Get the keyboard shortcut index (Cmd+1-6) for this messenger
+    pub fn shortcut_index(&self) -> Option<u8> {
+        match self {
+            Self::GoogleMessages => Some(1),
+            Self::WhatsApp => Some(2),
+            Self::Telegram => Some(3),
+            Self::Signal => Some(4),
+            Self::Discord => Some(5),
+            Self::Slack => Some(6),
+            Self::Unknown => None,
         }
     }
 }
@@ -176,11 +189,13 @@ impl NotificationHandler {
         .clone()
     }
 
-    /// Format notification body for display
+    /// Format notification body for display (UTF-8 safe truncation)
     pub fn format_body(&self, data: &NotificationData) -> String {
-        const MAX_LEN: usize = 200;
-        if data.text.len() > MAX_LEN {
-            format!("{}...", &data.text[..MAX_LEN])
+        const MAX_CHARS: usize = 200;
+        let char_count = data.text.chars().count();
+        if char_count > MAX_CHARS {
+            let truncated: String = data.text.chars().take(MAX_CHARS).collect();
+            format!("{}...", truncated)
         } else {
             data.text.clone()
         }

@@ -22,10 +22,13 @@ gdk = "0.18"
 # D-Bus
 zbus = { workspace = true }
 
+# Desktop notifications
+notify-rust = "4"
+
 # Async Runtime
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync", "macros", "time"] }
 async-trait = { workspace = true }
-futures = { workspace = true }
+futures = { workspace = true, features = ["std"] }
 async-io = "2"
 
 # Serialization

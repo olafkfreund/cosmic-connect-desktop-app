@@ -51,7 +51,7 @@ use crate::error::{DisplayStreamError, Result};
 use enigo::Settings;
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tracing::{debug, error, trace, warn};
 
 /// Touch action types
@@ -229,11 +229,16 @@ pub struct InputHandler {
     /// Active touch points (for multi-touch tracking)
     active_touches: std::collections::HashMap<u32, DesktopCoordinates>,
 
-    /// Enigo instance for input injection (wrapped in Arc<Mutex<>> for interior mutability)
-    enigo: Arc<Mutex<Option<Enigo>>>,
+    /// Enigo instance for input injection (lazily initialized on first use).
+    /// Wrapped in Mutex because Enigo contains xkb raw pointers that are not
+    /// Sync, but the Plugin trait requires Sync. Mutex<T> is Sync when T: Send.
+    /// No Arc needed since InputHandler is not shared across threads.
+    /// Availability is derived from the Option state after init, eliminating
+    /// the previous split-state race with a separate `input_available` bool.
+    enigo: Mutex<Option<Enigo>>,
 
-    /// Whether input injection is available on this system
-    input_available: bool,
+    /// Whether initialization has been attempted (prevents repeated retries)
+    init_attempted: bool,
 
     /// Statistics
     events_processed: u64,
@@ -269,15 +274,11 @@ impl InputHandler {
             geometry.offset.0, geometry.offset.1, geometry.size.0, geometry.size.1
         );
 
-        // Initialize enigo with default settings
-        // We delay initialization until first use to handle potential errors
-        let enigo = Arc::new(Mutex::new(None));
-
         Self {
             geometry,
             active_touches: std::collections::HashMap::new(),
-            enigo,
-            input_available: true, // Assumed true until first init attempt
+            enigo: Mutex::new(None),
+            init_attempted: false,
             events_processed: 0,
             events_injected: 0,
             events_failed: 0,
@@ -286,61 +287,72 @@ impl InputHandler {
 
     /// Initialize the enigo instance for input injection
     ///
-    /// This is called lazily on first use. It attempts to create an Enigo
-    /// instance with libei support for Wayland.
+    /// Called lazily on first use. Attempts to create an Enigo instance with
+    /// libei support for Wayland. Only attempts initialization once — if it
+    /// fails, subsequent calls return `false` immediately without retrying.
     ///
-    /// # Errors
-    ///
-    /// Returns error if enigo initialization fails (e.g., no libei support)
+    /// Returns `true` if enigo is available, `false` if not (test env or
+    /// missing compositor support).
     fn ensure_enigo_initialized(&mut self) -> Result<bool> {
-        // mut is needed in non-test builds for the assignment in cfg(not(test)) block
-        #[allow(unused_mut)]
-        let mut enigo_guard = self.enigo.lock().map_err(|e| {
-            DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
-        })?;
-
-        if enigo_guard.is_none() {
-            // Skip initialization in test mode to avoid panics from missing portals
-            #[cfg(test)]
-            {
-                warn!("Skipping enigo initialization in test mode");
-                self.input_available = false;
-                return Ok(false);
-            }
-
-            #[cfg(not(test))]
-            {
-                debug!("Initializing enigo for input injection");
-                return match Enigo::new(&Settings::default()) {
-                    Ok(enigo) => {
-                        *enigo_guard = Some(enigo);
-                        self.input_available = true;
-                        debug!("Enigo initialized successfully");
-                        Ok(true)
-                    }
-                    Err(e) => {
-                        // In environments without compositor support, this is expected
-                        // Log once here — callers will not retry
-                        warn!(
-                            "Failed to initialize enigo: {}. Input injection will be simulated.",
-                            e
-                        );
-                        self.input_available = false;
-                        Ok(false)
-                    }
-                };
+        // Check current state via mutex
+        {
+            let guard = self.enigo.lock().map_err(|e| {
+                DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+            })?;
+            if guard.is_some() {
+                return Ok(true);
             }
         }
-        Ok(true)
+
+        // Already tried and failed — don't retry
+        if self.init_attempted {
+            return Ok(false);
+        }
+
+        self.init_attempted = true;
+
+        // Skip initialization in test mode to avoid panics from missing portals
+        #[cfg(test)]
+        {
+            warn!("Skipping enigo initialization in test mode");
+            return Ok(false);
+        }
+
+        #[cfg(not(test))]
+        {
+            debug!("Initializing enigo for input injection");
+            match Enigo::new(&Settings::default()) {
+                Ok(enigo) => {
+                    let mut guard = self.enigo.lock().map_err(|e| {
+                        DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
+                    })?;
+                    *guard = Some(enigo);
+                    debug!("Enigo initialized successfully");
+                    Ok(true)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to initialize enigo: {}. Input injection will be simulated.",
+                        e
+                    );
+                    Ok(false)
+                }
+            }
+        }
     }
 
     /// Check whether input injection is available on this system
     ///
     /// Returns `true` if enigo/libei initialized successfully, `false` if
     /// running in a test environment or without compositor support.
+    /// Before first use, returns `true` (optimistic — init hasn't been attempted).
     #[must_use]
     pub fn is_input_available(&self) -> bool {
-        self.input_available
+        if self.init_attempted {
+            self.enigo.lock().map(|g| g.is_some()).unwrap_or(false)
+        } else {
+            true // Optimistic until first init attempt
+        }
     }
 
     /// Update the virtual display geometry
@@ -563,45 +575,37 @@ impl InputHandler {
     ///
     /// Returns error if injection fails
     fn inject_pointer_down(&mut self, coords: DesktopCoordinates) -> Result<()> {
-        let initialized = self.ensure_enigo_initialized()?;
-
-        if !initialized {
-            // In test mode or without compositor, just log
+        if !self.ensure_enigo_initialized()? {
             trace!("Simulated pointer down at ({}, {})", coords.x, coords.y);
             return Ok(());
         }
 
-        let mut enigo_guard = self.enigo.lock().map_err(|e| {
+        let mut guard = self.enigo.lock().map_err(|e| {
             DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
         })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
-        if let Some(enigo) = enigo_guard.as_mut() {
-            // Move to position first (using absolute coordinates)
-            if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
-                error!(
-                    "Failed to move mouse to ({}, {}): {}",
-                    coords.x, coords.y, e
-                );
-                self.events_failed += 1;
-                return Err(DisplayStreamError::Input(format!(
-                    "Failed to move mouse: {e}"
-                )));
-            }
-
-            // Press left button
-            if let Err(e) = enigo.button(Button::Left, Direction::Press) {
-                error!("Failed to press mouse button: {}", e);
-                self.events_failed += 1;
-                return Err(DisplayStreamError::Input(format!(
-                    "Failed to press mouse button: {e}"
-                )));
-            }
-
-            trace!("Injected pointer down at ({}, {})", coords.x, coords.y);
-            Ok(())
-        } else {
-            Ok(())
+        if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
+            error!(
+                "Failed to move mouse to ({}, {}): {}",
+                coords.x, coords.y, e
+            );
+            self.events_failed += 1;
+            return Err(DisplayStreamError::Input(format!(
+                "Failed to move mouse: {e}"
+            )));
         }
+
+        if let Err(e) = enigo.button(Button::Left, Direction::Press) {
+            error!("Failed to press mouse button: {}", e);
+            self.events_failed += 1;
+            return Err(DisplayStreamError::Input(format!(
+                "Failed to press mouse button: {e}"
+            )));
+        }
+
+        trace!("Injected pointer down at ({}, {})", coords.x, coords.y);
+        Ok(())
     }
 
     /// Inject pointer move event
@@ -613,35 +617,29 @@ impl InputHandler {
     ///
     /// Returns error if injection fails
     fn inject_pointer_move(&mut self, coords: DesktopCoordinates) -> Result<()> {
-        let initialized = self.ensure_enigo_initialized()?;
-
-        if !initialized {
-            // In test mode or without compositor, just log
+        if !self.ensure_enigo_initialized()? {
             trace!("Simulated pointer move to ({}, {})", coords.x, coords.y);
             return Ok(());
         }
 
-        let mut enigo_guard = self.enigo.lock().map_err(|e| {
+        let mut guard = self.enigo.lock().map_err(|e| {
             DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
         })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
-        if let Some(enigo) = enigo_guard.as_mut() {
-            if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
-                error!(
-                    "Failed to move mouse to ({}, {}): {}",
-                    coords.x, coords.y, e
-                );
-                self.events_failed += 1;
-                return Err(DisplayStreamError::Input(format!(
-                    "Failed to move mouse: {e}"
-                )));
-            }
-
-            trace!("Injected pointer move to ({}, {})", coords.x, coords.y);
-            Ok(())
-        } else {
-            Ok(())
+        if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
+            error!(
+                "Failed to move mouse to ({}, {}): {}",
+                coords.x, coords.y, e
+            );
+            self.events_failed += 1;
+            return Err(DisplayStreamError::Input(format!(
+                "Failed to move mouse: {e}"
+            )));
         }
+
+        trace!("Injected pointer move to ({}, {})", coords.x, coords.y);
+        Ok(())
     }
 
     /// Inject pointer up event
@@ -653,45 +651,37 @@ impl InputHandler {
     ///
     /// Returns error if injection fails
     fn inject_pointer_up(&mut self, coords: DesktopCoordinates) -> Result<()> {
-        let initialized = self.ensure_enigo_initialized()?;
-
-        if !initialized {
-            // In test mode or without compositor, just log
+        if !self.ensure_enigo_initialized()? {
             trace!("Simulated pointer up at ({}, {})", coords.x, coords.y);
             return Ok(());
         }
 
-        let mut enigo_guard = self.enigo.lock().map_err(|e| {
+        let mut guard = self.enigo.lock().map_err(|e| {
             DisplayStreamError::Input(format!("Failed to acquire enigo lock: {e}"))
         })?;
+        let enigo = guard.as_mut().expect("enigo initialized above");
 
-        if let Some(enigo) = enigo_guard.as_mut() {
-            // Move to position first (using absolute coordinates)
-            if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
-                error!(
-                    "Failed to move mouse to ({}, {}): {}",
-                    coords.x, coords.y, e
-                );
-                self.events_failed += 1;
-                return Err(DisplayStreamError::Input(format!(
-                    "Failed to move mouse: {e}"
-                )));
-            }
-
-            // Release left button
-            if let Err(e) = enigo.button(Button::Left, Direction::Release) {
-                error!("Failed to release mouse button: {}", e);
-                self.events_failed += 1;
-                return Err(DisplayStreamError::Input(format!(
-                    "Failed to release mouse button: {e}"
-                )));
-            }
-
-            trace!("Injected pointer up at ({}, {})", coords.x, coords.y);
-            Ok(())
-        } else {
-            Ok(())
+        if let Err(e) = enigo.move_mouse(coords.x, coords.y, Coordinate::Abs) {
+            error!(
+                "Failed to move mouse to ({}, {}): {}",
+                coords.x, coords.y, e
+            );
+            self.events_failed += 1;
+            return Err(DisplayStreamError::Input(format!(
+                "Failed to move mouse: {e}"
+            )));
         }
+
+        if let Err(e) = enigo.button(Button::Left, Direction::Release) {
+            error!("Failed to release mouse button: {}", e);
+            self.events_failed += 1;
+            return Err(DisplayStreamError::Input(format!(
+                "Failed to release mouse button: {e}"
+            )));
+        }
+
+        trace!("Injected pointer up at ({}, {})", coords.x, coords.y);
+        Ok(())
     }
 
     /// Get number of currently active touches

@@ -35,6 +35,7 @@
   webkitgtk_4_1,
   gobject-introspection,
   gst_all_1,
+  libopus,
   libgbm,
   stdenv,
 }:
@@ -103,6 +104,8 @@ rustPlatform.buildRustPackage rec {
     gst_all_1.gst-plugins-bad
     gst_all_1.gst-plugins-ugly
     gst_all_1.gst-libav
+    # Opus codec for audio streaming
+    libopus
     # DMA-BUF / GBM support for extended display capture
     libgbm
   ];
@@ -112,11 +115,15 @@ rustPlatform.buildRustPackage rec {
     "--workspace"
     "--bins"
     "--features"
-    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/extendeddisplay,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/extendeddisplay"
+    "cosmic-connect-daemon/remotedesktop,cosmic-connect-daemon/screenshare,cosmic-connect-daemon/video,cosmic-connect-daemon/audiostream,cosmic-connect-daemon/audiostream-opus,cosmic-connect-daemon/extendeddisplay,cosmic-connect-protocol/remotedesktop,cosmic-connect-protocol/screenshare,cosmic-connect-protocol/video,cosmic-connect-protocol/audiostream,cosmic-connect-protocol/audiostream-opus,cosmic-connect-protocol/extendeddisplay,cosmic-connect-protocol/low_latency,cosmic-applet-connect/screenshare"
   ];
 
   # Skip tests for now - requires running dbus session
   doCheck = false;
+
+  # Tell audiopus_sys to use system opus library instead of building from source
+  OPUS_LIB_DIR = "${libopus}/lib";
+  OPUS_INCLUDE_DIR = "${libopus}/include/opus";
 
   postInstall = ''
     # Install systemd user service

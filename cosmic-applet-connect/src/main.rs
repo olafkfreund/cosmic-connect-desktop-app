@@ -2526,14 +2526,23 @@ impl cosmic::Application for CConnectApplet {
             }
             // Extended display events
             Message::StartExtendedDisplay(device_id) => {
-                let client = self.dbus_client.clone();
+                let id = device_id.clone();
                 cosmic::task::future(async move {
-                    if let Some(client) = client {
-                        if let Err(e) = client.start_extended_display(&device_id).await {
-                            tracing::error!("Failed to start extended display: {}", e);
+                    match dbus_client::DbusClient::connect().await {
+                        Ok((client, _)) => {
+                            if let Err(e) = client.start_extended_display(&id).await {
+                                tracing::error!("Failed to start extended display: {}", e);
+                                return Message::ExtendedDisplayError(
+                                    id,
+                                    format!("Failed to start: {}", e),
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to connect to daemon: {}", e);
                             return Message::ExtendedDisplayError(
-                                device_id,
-                                format!("Failed to start: {}", e),
+                                id,
+                                format!("Daemon connection failed: {}", e),
                             );
                         }
                     }
@@ -2546,15 +2555,20 @@ impl cosmic::Application for CConnectApplet {
                 })
             }
             Message::StopExtendedDisplay(device_id) => {
-                let client = self.dbus_client.clone();
+                let id = device_id.clone();
                 cosmic::task::future(async move {
-                    if let Some(client) = client {
-                        if let Err(e) = client.stop_extended_display(&device_id).await {
-                            tracing::error!("Failed to stop extended display: {}", e);
+                    match dbus_client::DbusClient::connect().await {
+                        Ok((client, _)) => {
+                            if let Err(e) = client.stop_extended_display(&id).await {
+                                tracing::error!("Failed to stop extended display: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to connect to daemon: {}", e);
                         }
                     }
                     // Actual stopped signal arrives via D-Bus signal listener
-                    Message::ExtendedDisplayStopped(device_id)
+                    Message::ExtendedDisplayStopped(id)
                 })
             }
             Message::ExtendedDisplayStarted(device_id) => {

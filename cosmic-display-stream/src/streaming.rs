@@ -335,7 +335,10 @@ impl StreamingServer {
         // Create WebRTC API
         let api = Arc::new(Self::create_webrtc_api()?);
 
-        // Create frame channel
+        // Create frame channel with 32-frame buffer (~533ms at 60fps).
+        // This provides buffering for temporary encoder/network hiccups while
+        // keeping latency reasonable. Slow clients that can't keep up will
+        // experience frame drops when the channel fills.
         let (frame_tx, frame_rx) = mpsc::channel(32);
 
         let server_id = uuid::Uuid::new_v4().to_string();
@@ -456,31 +459,56 @@ impl StreamingServer {
         let config = self.config.clone();
         let running = self.running.clone();
         let server_id = self.server_id.clone();
+        let shutdown_notify = self.shutdown_notify.clone();
+        let max_clients = self.config.max_clients;
 
         let handle = tokio::spawn(async move {
             info!("Signaling server listening on {}", addr);
 
-            while *running.read().await {
-                match listener.accept().await {
-                    Ok((stream, peer_addr)) => {
-                        info!("New signaling connection from {}", peer_addr);
-                        let clients = clients.clone();
-                        let api = api.clone();
-                        let config = config.clone();
-                        let server_id = server_id.clone();
+            loop {
+                tokio::select! {
+                    result = listener.accept() => {
+                        if !*running.read().await {
+                            break;
+                        }
+                        match result {
+                            Ok((stream, peer_addr)) => {
+                                // Check client capacity before spawning handler
+                                if clients.read().await.len() >= max_clients {
+                                    warn!(
+                                        "Rejecting connection from {} - at capacity ({}/{})",
+                                        peer_addr,
+                                        clients.read().await.len(),
+                                        max_clients
+                                    );
+                                    drop(stream);
+                                    continue;
+                                }
 
-                        tokio::spawn(async move {
-                            if let Err(e) = Self::handle_signaling_connection(
-                                stream, peer_addr, clients, api, config, server_id,
-                            )
-                            .await
-                            {
-                                error!("Signaling connection error: {}", e);
+                                info!("New signaling connection from {}", peer_addr);
+                                let clients = clients.clone();
+                                let api = api.clone();
+                                let config = config.clone();
+                                let server_id = server_id.clone();
+
+                                tokio::spawn(async move {
+                                    if let Err(e) = Self::handle_signaling_connection(
+                                        stream, peer_addr, clients, api, config, server_id,
+                                    )
+                                    .await
+                                    {
+                                        error!("Signaling connection error: {}", e);
+                                    }
+                                });
                             }
-                        });
+                            Err(e) => {
+                                error!("Failed to accept signaling connection: {}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to accept signaling connection: {}", e);
+                    _ = shutdown_notify.notified() => {
+                        info!("Signaling server shutdown requested");
+                        break;
                     }
                 }
             }
@@ -551,11 +579,14 @@ impl StreamingServer {
         // Handle RTCP packets — parse Receiver Reports for stats
         tokio::spawn(async move {
             while let Ok((packets, _)) = rtp_sender.read_rtcp().await {
-                // The webrtc crate returns parsed RTCP packets; we just read
-                // to keep the RTCP feedback loop alive. Detailed stats come
-                // from the peer connection stats API when needed.
-                let _ = packets;
+                for pkt in &packets {
+                    // Log RTCP packet types for monitoring
+                    // Note: webrtc crate provides Box<dyn rtcp::packet::Packet>
+                    // Full stats parsing requires downcast to specific types
+                    debug!("RTCP packet received: {} bytes", pkt.marshal_size());
+                }
             }
+            debug!("RTCP reader task ended");
         });
 
         // Set up ICE candidate handler
@@ -789,6 +820,12 @@ impl StreamingServer {
         let nal_count = nals.len();
 
         for (nal_idx, nal) in nals.iter().enumerate() {
+            // Validate NAL unit has at least a header byte
+            if nal.is_empty() {
+                warn!("Skipping empty NAL unit");
+                continue;
+            }
+
             let is_last_nal = nal_idx == nal_count - 1;
 
             if nal.len() <= MAX_RTP_PAYLOAD_SIZE {
@@ -808,14 +845,22 @@ impl StreamingServer {
                     payload: nal.clone().into(),
                 };
 
-                track.write_rtp(&rtp_packet).await.map_err(|e| {
-                    DisplayStreamError::Streaming(format!("Failed to write RTP packet: {e}"))
-                })?;
+                if let Err(e) = track.write_rtp(&rtp_packet).await {
+                    warn!("Failed to write RTP packet: {e}");
+                    // Continue sending remaining NALs rather than aborting entire frame
+                    continue;
+                }
 
                 *seq_num = seq_num.wrapping_add(1);
                 counters.packets_sent.fetch_add(1, Ordering::Relaxed);
             } else {
                 // FU-A fragmentation for large NAL units (RFC 6184 §5.8)
+                // Validate NAL has header + payload for fragmentation
+                if nal.len() < 2 {
+                    warn!("NAL unit too short for fragmentation: {} bytes", nal.len());
+                    continue;
+                }
+
                 let nal_header = nal[0];
                 let nri = nal_header & 0x60; // NRI bits
                 let nal_type = nal_header & 0x1F;
@@ -860,9 +905,11 @@ impl StreamingServer {
                         payload: payload.into(),
                     };
 
-                    track.write_rtp(&rtp_packet).await.map_err(|e| {
-                        DisplayStreamError::Streaming(format!("Failed to write RTP FU-A: {e}"))
-                    })?;
+                    if let Err(e) = track.write_rtp(&rtp_packet).await {
+                        warn!("Failed to write RTP FU-A fragment: {e}");
+                        // Continue sending remaining fragments rather than aborting entire frame
+                        continue;
+                    }
 
                     *seq_num = seq_num.wrapping_add(1);
                     counters.packets_sent.fetch_add(1, Ordering::Relaxed);

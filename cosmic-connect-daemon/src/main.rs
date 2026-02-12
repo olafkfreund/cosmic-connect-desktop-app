@@ -3274,33 +3274,28 @@ async fn handle_internal_packet(dbus: &dbus::DbusServer, device_id: &str, packet
             true
         }
         "cconnect.internal.extendeddisplay.started" => {
-            #[cfg(feature = "extendeddisplay")]
             if let Err(e) = dbus.emit_extended_display_started(device_id).await {
                 error!("Failed to emit extended_display_started signal: {}", e);
             }
             true
         }
         "cconnect.internal.extendeddisplay.stopped" => {
-            #[cfg(feature = "extendeddisplay")]
             if let Err(e) = dbus.emit_extended_display_stopped(device_id).await {
                 error!("Failed to emit extended_display_stopped signal: {}", e);
             }
             true
         }
         "cconnect.internal.extendeddisplay.error" => {
-            #[cfg(feature = "extendeddisplay")]
+            let error_msg = packet
+                .body
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            if let Err(e) = dbus
+                .emit_extended_display_error(device_id, error_msg)
+                .await
             {
-                let error_msg = packet
-                    .body
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown error");
-                if let Err(e) = dbus
-                    .emit_extended_display_error(device_id, error_msg)
-                    .await
-                {
-                    error!("Failed to emit extended_display_error signal: {}", e);
-                }
+                error!("Failed to emit extended_display_error signal: {}", e);
             }
             true
         }

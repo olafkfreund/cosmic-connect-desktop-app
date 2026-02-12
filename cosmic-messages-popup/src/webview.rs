@@ -9,6 +9,25 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
+/// Desktop user agent for web messaging services
+pub const DESKTOP_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/// Get user agent string for a specific messenger
+pub fn user_agent_for_messenger(_messenger_id: &str) -> String {
+    // Most messengers work best with a desktop Chrome user agent
+    // Some may need specific handling in the future
+    DESKTOP_USER_AGENT.to_string()
+}
+
+/// Get the WebView data directory for a messenger
+pub fn webview_data_dir(messenger_id: &str) -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("cosmic-messages-popup")
+        .join("webview-data")
+        .join(messenger_id)
+}
+
 /// WebView context for persisting sessions
 #[derive(Debug)]
 #[allow(dead_code)]

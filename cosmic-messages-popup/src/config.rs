@@ -18,6 +18,10 @@ pub struct Config {
 
     /// Notification settings
     pub notifications: NotificationConfig,
+
+    /// Whether config needs to be saved
+    #[serde(skip)]
+    pub dirty: bool,
 }
 
 /// Configuration for individual messenger services
@@ -140,7 +144,7 @@ impl Default for Config {
                     id: "signal".to_string(),
                     name: "Signal".to_string(),
                     package_name: "org.thoughtcrime.securesms".to_string(),
-                    web_url: "https://signal.link".to_string(),
+                    web_url: "https://signal.org/download/".to_string(),
                     icon: Some("signal".to_string()),
                     enabled: false,
                 },
@@ -174,6 +178,7 @@ impl Default for Config {
                 play_sound: true,
                 auto_open: false,
             },
+            dirty: false,
         }
     }
 }
@@ -268,6 +273,20 @@ impl Config {
             icon: None,
             enabled: true,
         });
+    }
+
+    /// Mark config as dirty (needs saving)
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Save if dirty and mark as clean
+    pub fn save_if_dirty(&mut self) -> anyhow::Result<()> {
+        if self.dirty {
+            self.save()?;
+            self.dirty = false;
+        }
+        Ok(())
     }
 }
 

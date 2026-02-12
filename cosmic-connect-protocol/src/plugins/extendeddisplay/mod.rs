@@ -157,6 +157,9 @@ pub struct ExtendedDisplayPlugin {
 
     /// Shared flag to signal stop to background tasks
     stop_flag: Arc<AtomicBool>,
+
+    /// Current display resolution (width, height) for touch coordinate validation
+    display_resolution: (u32, u32),
 }
 
 impl ExtendedDisplayPlugin {
@@ -173,6 +176,7 @@ impl ExtendedDisplayPlugin {
             capture_task: None,
             config: ExtendedDisplayConfig::default(),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            display_resolution: (1920, 1080), // Default resolution
         }
     }
 
@@ -185,7 +189,12 @@ impl ExtendedDisplayPlugin {
     ///
     /// Sets up screen capture, video encoding, and WebRTC streaming.
     /// Sends a `ready` packet with the signaling address back to the device.
-    pub async fn start_session(&mut self, device_id: &str, capabilities: &str) -> Result<()> {
+    pub async fn start_session(
+        &mut self,
+        device_id: &str,
+        capabilities: &str,
+        requested_resolution: Option<(u32, u32)>,
+    ) -> Result<()> {
         if self.session_active {
             warn!("Extended display session already active, stopping first");
             self.stop_session(device_id).await?;
@@ -198,9 +207,8 @@ impl ExtendedDisplayPlugin {
 
         self.stop_flag.store(false, Ordering::SeqCst);
 
-        // Detect encoder (None = auto-detect best available)
-        let display_width = 1920u32;
-        let display_height = 1080u32;
+        // Use requested resolution or default to 1920x1080
+        let (display_width, display_height) = requested_resolution.unwrap_or((1920, 1080));
         let encoder_config = EncoderConfig {
             width: display_width,
             height: display_height,
@@ -212,52 +220,30 @@ impl ExtendedDisplayPlugin {
             transform: VideoTransform::None,
         };
 
-        let encoder = match VideoEncoder::new(encoder_config) {
-            Ok(enc) => {
-                info!("Video encoder initialized: {:?}", enc.encoder_type());
-                enc
-            }
-            Err(e) => {
-                error!("Failed to create video encoder: {}", e);
-                self.emit_internal_packet(
-                    device_id,
-                    "cconnect.internal.extendeddisplay.error",
-                    serde_json::json!({ "error": format!("Encoder init failed: {}", e) }),
-                )
-                .await;
-                return Err(ProtocolError::Plugin(format!("Encoder init failed: {}", e)));
-            }
-        };
+        // Create encoder (but don't store it yet until all operations succeed)
+        let encoder = VideoEncoder::new(encoder_config).map_err(|e| {
+            error!("Failed to create video encoder: {}", e);
+            ProtocolError::Plugin(format!("Encoder creation failed: {}", e))
+        })?;
 
-        // Create streaming server
+        info!("Video encoder initialized: {:?}", encoder.encoder_type());
+
+        // Create streaming server (encoder not stored yet, so failure is clean)
         let stream_config = StreamConfig {
             signaling_port: self.config.signaling_port,
             max_clients: 1,
             ..StreamConfig::default()
         };
 
-        let mut server = match StreamingServer::new(stream_config) {
-            Ok(s) => {
-                info!(
-                    "WebRTC streaming server ready on port {}",
-                    self.config.signaling_port
-                );
-                s
-            }
-            Err(e) => {
-                error!("Failed to create streaming server: {}", e);
-                self.emit_internal_packet(
-                    device_id,
-                    "cconnect.internal.extendeddisplay.error",
-                    serde_json::json!({ "error": format!("Server init failed: {}", e) }),
-                )
-                .await;
-                return Err(ProtocolError::Plugin(format!(
-                    "Streaming server init failed: {}",
-                    e
-                )));
-            }
-        };
+        let mut server = StreamingServer::new(stream_config).map_err(|e| {
+            error!("Failed to create streaming server: {}", e);
+            ProtocolError::Plugin(format!("Server creation failed: {}", e))
+        })?;
+
+        info!(
+            "WebRTC streaming server ready on port {}",
+            self.config.signaling_port
+        );
 
         // Initialize input handler for touch events
         // Use (0,0) offset and encoder resolution as display size
@@ -341,10 +327,11 @@ impl ExtendedDisplayPlugin {
             info!("Capture task exited");
         });
 
-        // Store state
+        // Store state (including resolution for touch coordinate validation)
         self.streaming_server = Some(server_arc);
         self.input_handler = Some(input_handler);
         self.capture_task = Some(capture_task);
+        self.display_resolution = (display_width, display_height);
         self.session_active = true;
 
         // Determine local IP for the device to connect to
@@ -383,16 +370,22 @@ impl ExtendedDisplayPlugin {
 
         info!("Stopping extended display session for device {}", device_id);
 
-        // Signal background tasks to stop
+        // Step 1: Signal background tasks to stop
         self.stop_flag.store(true, Ordering::SeqCst);
 
-        // Stop capture task first (this will release the server Arc clone)
+        // Step 2: Wait for capture task to finish gracefully (don't abort)
         if let Some(handle) = self.capture_task.take() {
-            handle.abort();
-            let _ = handle.await;
+            match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
+                Ok(Ok(())) => debug!("Capture task finished cleanly"),
+                Ok(Err(e)) => warn!("Capture task panicked: {}", e),
+                Err(_) => {
+                    warn!("Capture task did not finish within 5s, force stopping");
+                    // Task timeout - it will be dropped when handle is dropped
+                }
+            }
         }
 
-        // Stop streaming server - try to unwrap Arc to get exclusive ownership
+        // Step 3: Now Arc should be unwrappable since task released its clone
         if let Some(server_arc) = self.streaming_server.take() {
             match Arc::try_unwrap(server_arc) {
                 Ok(mut server) => {
@@ -401,11 +394,13 @@ impl ExtendedDisplayPlugin {
                     }
                 }
                 Err(arc) => {
-                    // Another reference still exists (shouldn't happen since task is aborted)
+                    // Arc still has multiple references (shouldn't happen after timeout)
                     warn!(
-                        "Could not unwrap streaming server Arc (ref count: {}), dropping instead",
+                        "Could not unwrap streaming server Arc (ref count: {})",
                         Arc::strong_count(&arc)
                     );
+                    // Force stop through the Arc even if we can't unwrap
+                    // This is safe since we know no other tasks are using it after timeout
                     drop(arc);
                 }
             }
@@ -433,7 +428,7 @@ impl ExtendedDisplayPlugin {
     }
 
     /// Handle a touch event from the Android device
-    fn handle_touch(&mut self, body: &serde_json::Value) {
+    fn handle_touch(&mut self, body: &serde_json::Value, display_bounds: (u32, u32)) {
         let handler = match &mut self.input_handler {
             Some(h) if h.is_input_available() => h,
             _ => {
@@ -442,8 +437,24 @@ impl ExtendedDisplayPlugin {
             }
         };
 
-        let x = body["x"].as_f64().unwrap_or(0.0);
-        let y = body["y"].as_f64().unwrap_or(0.0);
+        let raw_x = body["x"].as_f64().unwrap_or(0.0);
+        let raw_y = body["y"].as_f64().unwrap_or(0.0);
+
+        // Validate and clamp coordinates
+        // If coordinates are normalized [0.0, 1.0], accept them
+        // If they're absolute pixels, clamp to display bounds
+        let (x, y) = if raw_x >= 0.0 && raw_x <= 1.0 && raw_y >= 0.0 && raw_y <= 1.0 {
+            // Normalized coordinates - pass through
+            (raw_x, raw_y)
+        } else {
+            // Absolute coordinates - clamp to display bounds
+            let (max_x, max_y) = display_bounds;
+            (
+                raw_x.clamp(0.0, max_x as f64),
+                raw_y.clamp(0.0, max_y as f64),
+            )
+        };
+
         let touch_id = body["pointerId"].as_u64().unwrap_or(0) as u32;
 
         let action_str = body["touchAction"].as_str().unwrap_or("move");
@@ -552,11 +563,25 @@ impl Plugin for ExtendedDisplayPlugin {
 
     async fn stop(&mut self) -> Result<()> {
         info!("Stopping ExtendedDisplay plugin");
-        self.enabled = false;
 
+        // Notify Android device before cleanup if session is active
         if self.session_active {
+            if let Some(ref device_id) = self.device_id {
+                // Send stopped notification to Android
+                let stop_body = serde_json::json!({ "action": "stopped" });
+                self.send_packet(device_id, PACKET_TYPE, stop_body).await;
+
+                // Emit internal stopped signal for D-Bus
+                self.emit_internal_packet(
+                    device_id,
+                    "cconnect.internal.extendeddisplay.stopped",
+                    serde_json::json!({}),
+                )
+                .await;
+            }
+
             let device_id = self.device_id.clone().unwrap_or_default();
-            // Signal stop but don't send packets (plugin is shutting down)
+            // Now do cleanup
             self.stop_flag.store(true, Ordering::SeqCst);
             if let Some(handle) = self.capture_task.take() {
                 handle.abort();
@@ -578,6 +603,7 @@ impl Plugin for ExtendedDisplayPlugin {
             );
         }
 
+        self.enabled = false;
         Ok(())
     }
 
@@ -604,10 +630,21 @@ impl Plugin for ExtendedDisplayPlugin {
                 let capabilities = packet.body["capabilities"]
                     .as_str()
                     .unwrap_or("h264,touch");
-                self.start_session(&device_id, capabilities).await?;
+
+                // Extract requested resolution from packet if provided
+                let requested_resolution = if let (Some(w), Some(h)) = (
+                    packet.body.get("width").and_then(|v| v.as_u64()),
+                    packet.body.get("height").and_then(|v| v.as_u64()),
+                ) {
+                    Some((w as u32, h as u32))
+                } else {
+                    None
+                };
+
+                self.start_session(&device_id, capabilities, requested_resolution).await?;
             }
             "touch" => {
-                self.handle_touch(&packet.body);
+                self.handle_touch(&packet.body, self.display_resolution);
             }
             "stop" => {
                 self.stop_session(&device_id).await?;

@@ -277,13 +277,8 @@ impl DeviceInfo {
             .get_body_field::<u16>("tcpPort")
             .ok_or_else(|| ProtocolError::InvalidPacket("Missing tcpPort".to_string()))?;
 
-        let incoming_capabilities = packet
-            .get_body_field::<Vec<String>>("incomingCapabilities")
-            .unwrap_or_default();
-
-        let outgoing_capabilities = packet
-            .get_body_field::<Vec<String>>("outgoingCapabilities")
-            .unwrap_or_default();
+        let incoming_capabilities = parse_capabilities(&packet, "incomingCapabilities");
+        let outgoing_capabilities = parse_capabilities(&packet, "outgoingCapabilities");
 
         Ok(Self {
             device_id,
@@ -295,6 +290,26 @@ impl DeviceInfo {
             tcp_port,
         })
     }
+}
+
+/// Parse capabilities from a packet field, handling both JSON array and
+/// stringified JSON array formats.
+///
+/// Some clients (e.g. Android) send capabilities as a JSON string containing
+/// an array (`"[\"cconnect.ping\"]"`) rather than a native JSON array
+/// (`["cconnect.ping"]`). This helper handles both formats.
+fn parse_capabilities(packet: &Packet, field: &str) -> Vec<String> {
+    // Try as a native JSON array first
+    if let Some(caps) = packet.get_body_field::<Vec<String>>(field) {
+        return caps;
+    }
+    // Fall back to stringified JSON array
+    if let Some(s) = packet.get_body_field::<String>(field) {
+        if let Ok(caps) = serde_json::from_str::<Vec<String>>(&s) {
+            return caps;
+        }
+    }
+    Vec::new()
 }
 
 /// Synchronous device discovery (for testing and simple use cases)
@@ -468,5 +483,67 @@ mod tests {
         let discovery = Discovery::new(device_info).unwrap();
         let result = discovery.broadcast_identity();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_capabilities_native_array() {
+        let packet = Packet::new(
+            "cconnect.identity",
+            serde_json::json!({
+                "deviceId": "test-device",
+                "deviceName": "Test",
+                "deviceType": "phone",
+                "protocolVersion": 8,
+                "tcpPort": 1816,
+                "incomingCapabilities": ["cconnect.ping", "cconnect.battery"],
+                "outgoingCapabilities": ["cconnect.ping"],
+            }),
+        );
+        let info = DeviceInfo::from_identity_packet(&packet).unwrap();
+        assert_eq!(info.incoming_capabilities, vec!["cconnect.ping", "cconnect.battery"]);
+        assert_eq!(info.outgoing_capabilities, vec!["cconnect.ping"]);
+    }
+
+    #[test]
+    fn test_parse_capabilities_stringified_array() {
+        // Android sends capabilities as JSON strings, not native arrays
+        let packet = Packet::new(
+            "cconnect.identity",
+            serde_json::json!({
+                "deviceId": "test-android",
+                "deviceName": "Android Phone",
+                "deviceType": "phone",
+                "protocolVersion": 8,
+                "tcpPort": 1816,
+                "incomingCapabilities": "[\"cconnect.ping\",\"cconnect.extendeddisplay\"]",
+                "outgoingCapabilities": "[\"cconnect.ping\",\"cconnect.extendeddisplay.request\"]",
+            }),
+        );
+        let info = DeviceInfo::from_identity_packet(&packet).unwrap();
+        assert_eq!(
+            info.incoming_capabilities,
+            vec!["cconnect.ping", "cconnect.extendeddisplay"]
+        );
+        assert_eq!(
+            info.outgoing_capabilities,
+            vec!["cconnect.ping", "cconnect.extendeddisplay.request"]
+        );
+    }
+
+    #[test]
+    fn test_parse_capabilities_missing() {
+        let packet = Packet::new(
+            "cconnect.identity",
+            serde_json::json!({
+                "deviceId": "test-minimal",
+                "deviceName": "Minimal",
+                "deviceType": "desktop",
+                "protocolVersion": 8,
+                "tcpPort": 1816,
+            }),
+        );
+        let info = DeviceInfo::from_identity_packet(&packet).unwrap();
+        assert!(info.incoming_capabilities.is_empty());
+        assert!(info.outgoing_capabilities.is_empty());
     }
 }

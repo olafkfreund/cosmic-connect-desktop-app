@@ -363,11 +363,12 @@ impl VideoEncoder {
         match encoder_type {
             EncoderType::Vaapi => {
                 // VAAPI-specific settings
-                encoder.set_property("rate-control", 2u32); // CBR
+                // Use set_property_from_str for GLib enum types
+                encoder.set_property_from_str("rate-control", "cbr");
                 encoder.set_property("bitrate", config.bitrate / 1000); // kbps
                 encoder.set_property("keyframe-period", config.keyframe_interval);
                 if config.low_latency {
-                    encoder.set_property("tune", 3u32); // low-latency
+                    encoder.set_property_from_str("tune", "low-power");
                 }
             }
             EncoderType::Nvenc => {
@@ -378,7 +379,7 @@ impl VideoEncoder {
                     i32::try_from(config.keyframe_interval).unwrap_or(30),
                 );
                 if config.low_latency {
-                    encoder.set_property("preset", 5u32); // low-latency-hq
+                    encoder.set_property_from_str("preset", "low-latency-hq");
                     encoder.set_property("zerolatency", true);
                 }
             }
@@ -387,8 +388,10 @@ impl VideoEncoder {
                 encoder.set_property("bitrate", config.bitrate / 1000); // kbps
                 encoder.set_property("key-int-max", config.keyframe_interval);
                 if config.low_latency {
-                    encoder.set_property("tune", 0x00000004u32); // GstX264EncTune: zerolatency
-                    encoder.set_property("speed-preset", 1u32); // GstX264EncPreset: ultrafast
+                    // Use set_property_from_str for GLib enum/flags types
+                    // (GstX264EncTune and GstX264EncPreset)
+                    encoder.set_property_from_str("tune", "zerolatency");
+                    encoder.set_property_from_str("speed-preset", "ultrafast");
                 }
             }
         }

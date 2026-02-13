@@ -544,16 +544,17 @@ impl VideoTransform {
     /// - 6: vertical flip (= horiz-flip + 180°)
     /// - 7: vertical flip then 270° CW (= horiz-flip + 270° CCW)
     #[must_use]
-    pub fn to_gst_flip_method(&self) -> i32 {
+    pub fn to_gst_flip_method(&self) -> gstreamer_video::VideoOrientationMethod {
+        use gstreamer_video::VideoOrientationMethod;
         match self {
-            Self::None => 0,       // GST_VIDEO_ORIENTATION_IDENTITY
-            Self::Rotate90 => 1,   // GST_VIDEO_ORIENTATION_90R
-            Self::Rotate180 => 2,  // GST_VIDEO_ORIENTATION_180
-            Self::Rotate270 => 3,  // GST_VIDEO_ORIENTATION_90L
-            Self::Flipped => 4,    // GST_VIDEO_ORIENTATION_HORIZ
-            Self::Flipped90 => 5,  // GST_VIDEO_ORIENTATION_UR_LL
-            Self::Flipped180 => 6, // GST_VIDEO_ORIENTATION_VERT
-            Self::Flipped270 => 7, // GST_VIDEO_ORIENTATION_UL_LR
+            Self::None => VideoOrientationMethod::Identity,
+            Self::Rotate90 => VideoOrientationMethod::_90r,
+            Self::Rotate180 => VideoOrientationMethod::_180,
+            Self::Rotate270 => VideoOrientationMethod::_90l,
+            Self::Flipped => VideoOrientationMethod::Horiz,
+            Self::Flipped90 => VideoOrientationMethod::UrLl,
+            Self::Flipped180 => VideoOrientationMethod::Vert,
+            Self::Flipped270 => VideoOrientationMethod::UlLr,
         }
     }
 }
@@ -968,14 +969,39 @@ mod tests {
 
     #[test]
     fn test_video_transform_to_gst_flip_method() {
-        assert_eq!(VideoTransform::None.to_gst_flip_method(), 0);
-        assert_eq!(VideoTransform::Rotate90.to_gst_flip_method(), 1);
-        assert_eq!(VideoTransform::Rotate180.to_gst_flip_method(), 2);
-        assert_eq!(VideoTransform::Rotate270.to_gst_flip_method(), 3);
-        assert_eq!(VideoTransform::Flipped.to_gst_flip_method(), 4);
-        assert_eq!(VideoTransform::Flipped90.to_gst_flip_method(), 5);
-        assert_eq!(VideoTransform::Flipped180.to_gst_flip_method(), 6);
-        assert_eq!(VideoTransform::Flipped270.to_gst_flip_method(), 7);
+        use gstreamer_video::VideoOrientationMethod;
+        assert_eq!(
+            VideoTransform::None.to_gst_flip_method(),
+            VideoOrientationMethod::Identity
+        );
+        assert_eq!(
+            VideoTransform::Rotate90.to_gst_flip_method(),
+            VideoOrientationMethod::_90r
+        );
+        assert_eq!(
+            VideoTransform::Rotate180.to_gst_flip_method(),
+            VideoOrientationMethod::_180
+        );
+        assert_eq!(
+            VideoTransform::Rotate270.to_gst_flip_method(),
+            VideoOrientationMethod::_90l
+        );
+        assert_eq!(
+            VideoTransform::Flipped.to_gst_flip_method(),
+            VideoOrientationMethod::Horiz
+        );
+        assert_eq!(
+            VideoTransform::Flipped90.to_gst_flip_method(),
+            VideoOrientationMethod::UrLl
+        );
+        assert_eq!(
+            VideoTransform::Flipped180.to_gst_flip_method(),
+            VideoOrientationMethod::Vert
+        );
+        assert_eq!(
+            VideoTransform::Flipped270.to_gst_flip_method(),
+            VideoOrientationMethod::UlLr
+        );
     }
 
     #[test]

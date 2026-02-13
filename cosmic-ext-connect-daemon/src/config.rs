@@ -330,7 +330,7 @@ pub struct PathConfig {
 }
 
 fn default_discovery_port() -> u16 {
-    1716
+    1814
 }
 
 fn default_transfer_port_start() -> u16 {
@@ -633,7 +633,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.network.discovery_port, 1716);
+        assert_eq!(config.network.discovery_port, 1814);
         assert_eq!(config.network.transfer_port_start, 1739);
         assert!(config.plugins.enable_ping);
         assert!(config.plugins.enable_battery);

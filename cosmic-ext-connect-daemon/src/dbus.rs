@@ -642,14 +642,14 @@ impl CConnectInterface {
     /// Connect to a device at a specific address
     ///
     /// # Arguments
-    /// * `address` - The IP:port or hostname:port to connect to (defaults to port 1716 if not specified)
+    /// * `address` - The IP:port or hostname:port to connect to (defaults to port 1814 if not specified)
     ///
     /// # Returns
     /// * Success if connection attempt initiated
     async fn connect_to_address(&self, address: String) -> Result<(), zbus::fdo::Error> {
         info!("DBus: ConnectToAddress called with address: {}", address);
 
-        // Parse the address, default to port 1716 if not specified
+        // Parse the address, default to port 1814 if not specified
         use std::net::{SocketAddr, ToSocketAddrs};
 
         let socket_addr: SocketAddr = if address.contains(':') {
@@ -660,8 +660,8 @@ impl CConnectInterface {
                 .next()
                 .ok_or_else(|| zbus::fdo::Error::Failed("Could not resolve address".to_string()))?
         } else {
-            // Address is just hostname/IP, add default port 1716
-            format!("{}:1716", address)
+            // Address is just hostname/IP, add default port 1814
+            format!("{}:1814", address)
                 .to_socket_addrs()
                 .map_err(|e| zbus::fdo::Error::Failed(format!("Invalid address format: {}", e)))?
                 .next()

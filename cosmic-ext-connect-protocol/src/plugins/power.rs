@@ -636,7 +636,7 @@ mod tests {
                 protocol_version: 7,
                 incoming_capabilities: vec!["cconnect.power".to_string()],
                 outgoing_capabilities: vec!["cconnect.power".to_string()],
-                tcp_port: 1716,
+                tcp_port: 1814,
             },
             crate::ConnectionState::Disconnected,
             crate::PairingStatus::Paired,

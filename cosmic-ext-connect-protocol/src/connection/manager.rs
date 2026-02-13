@@ -78,7 +78,7 @@ pub struct ConnectionConfig {
 impl Default for ConnectionConfig {
     fn default() -> Self {
         Self {
-            listen_addr: "0.0.0.0:1716".parse().unwrap(),
+            listen_addr: "0.0.0.0:1814".parse().unwrap(),
             keep_alive_interval: KEEP_ALIVE_INTERVAL,
             connection_timeout: CONNECTION_TIMEOUT,
         }

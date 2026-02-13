@@ -698,7 +698,7 @@ fn convert_device_info(info: &dbus_client::DeviceInfo) -> DeviceState {
         PairingStatus::Unpaired
     };
 
-    let mut protocol_info = ProtocolDeviceInfo::new(&info.name, device_type, 1716);
+    let mut protocol_info = ProtocolDeviceInfo::new(&info.name, device_type, 1814);
     protocol_info.device_id = info.id.clone();
 
     let device = Device {

@@ -242,7 +242,7 @@ mod tests {
             protocol_version: 8,
             incoming_capabilities: vec![],
             outgoing_capabilities: vec![],
-            tcp_port: 1716,
+            tcp_port: 1814,
         };
 
         // Create managers
